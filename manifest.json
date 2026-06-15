@@ -1,0 +1,17 @@
+{
+  "name": "PFCメモ — カロリー・栄養管理",
+  "short_name": "PFCメモ",
+  "description": "食事のカロリー・PFCを記録するアプリ。Garmin連携で消費カロリーも管理。",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f9fb",
+  "theme_color": "#3266ad",
+  "lang": "ja",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ],
+  "categories": ["health", "lifestyle"],
+  "screenshots": []
+}
