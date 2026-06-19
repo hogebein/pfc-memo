@@ -12,17 +12,11 @@
   <title>PFCメモ</title>
   <style>
     :root {
-      --bg: #f8f9fb;
-      --surface: #ffffff;
-      --border: #e8eaee;
-      --text: #1a1d23;
-      --text-sub: #6b7280;
-      --accent: #3266ad;
-      --accent-light: #e6f1fb;
-      --green: #2e7d32;
-      --green-light: #e8f5e9;
-      --amber: #e8a838;
-      --red: #c0392b;
+      --bg: #f8f9fb; --surface: #ffffff; --border: #e8eaee;
+      --text: #1a1d23; --text-sub: #6b7280;
+      --accent: #3266ad; --accent-light: #e6f1fb;
+      --green: #2e7d32; --green-light: #e8f5e9;
+      --amber: #e8a838; --red: #c0392b;
       --radius: 12px;
       --safe-bottom: env(safe-area-inset-bottom, 0px);
       --safe-top: env(safe-area-inset-top, 0px);
@@ -44,7 +38,7 @@
     /* nav */
     #content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
     #nav { display: flex; border-top: 1px solid var(--border); background: var(--surface); padding-bottom: var(--safe-bottom); }
-    .nav-btn { flex: 1; border: none; background: none; padding: 8px 4px 6px; display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; color: var(--text-sub); font-size: 10px; }
+    .nav-btn { flex: 1; border: none; background: none; padding: 8px 2px 6px; display: flex; flex-direction: column; align-items: center; gap: 2px; cursor: pointer; color: var(--text-sub); font-size: 9px; }
     .nav-btn.active { color: var(--accent); }
     .nav-btn svg { width: 20px; height: 20px; }
 
@@ -53,19 +47,19 @@
     .panel.active { display: block; }
 
     /* card */
-    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; }
-    .sl { font-size: 11px; font-weight: 600; color: var(--text-sub); letter-spacing: .05em; margin-bottom: 8px; }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+    .sl { font-size: 11px; font-weight: 600; color: var(--text-sub); letter-spacing: .05em; margin-bottom: 8px; text-transform: uppercase; }
 
     /* form */
     .field { display: flex; flex-direction: column; gap: 4px; flex: 1; }
     .field label { font-size: 11px; color: var(--text-sub); }
     .field input, .field select { font-size: 15px; padding: 10px 11px; border: 1.5px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); width: 100%; }
     .field input:focus, .field select:focus { outline: none; border-color: var(--accent); }
-    .row { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-end; }
-    .btn { padding: 10px 14px; font-size: 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; font-weight: 500; white-space: nowrap; }
+    .row { display: flex; gap: 8px; margin-bottom: 8px; align-items: flex-end; }
+    .btn { padding: 9px 14px; font-size: 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--text); cursor: pointer; font-weight: 500; white-space: nowrap; }
     .btn:active { opacity: .8; }
     .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
-    .btn-sm { padding: 4px 9px; font-size: 12px; border-radius: 7px; }
+    .btn-sm { padding: 4px 9px; font-size: 11px; border-radius: 7px; }
     .btn-danger { color: var(--red); border-color: transparent; background: none; }
     .btn-success { background: var(--green); color: #fff; border-color: var(--green); }
     .btn-ghost { border-color: transparent; background: none; }
@@ -98,6 +92,23 @@
     .cal-dots { display: flex; gap: 2px; margin-top: 3px; position: relative; z-index: 1; }
     .cal-dot { width: 4px; height: 4px; border-radius: 50%; background: var(--border); }
     .cal-dot.filled { background: var(--accent); }
+
+    /* energy balance */
+    .balance-card { border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+    .balance-card.surplus { background: linear-gradient(135deg,#fff3cd,#ffeaa7); }
+    .balance-card.deficit { background: linear-gradient(135deg,#d4edda,#c3e6cb); }
+    .balance-card.neutral { background: linear-gradient(135deg,#e6f1fb,#cce0f5); }
+    .balance-value { font-size: 32px; font-weight: 700; line-height: 1; }
+    .balance-sub { font-size: 11px; color: rgba(0,0,0,.5); margin-top: 5px; line-height: 1.5; }
+    .balance-bar-wrap { height: 8px; border-radius: 4px; background: rgba(0,0,0,.1); margin-top: 8px; overflow: hidden; }
+    .balance-bar-fill { height: 100%; border-radius: 4px; transition: width .5s; }
+    .energy-row { display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 0.5px solid var(--border); font-size: 12px; }
+    .energy-row:last-child { border-bottom: none; }
+    .energy-row .label { color: var(--text-sub); }
+    .energy-row .value { font-weight: 500; }
+    .energy-row .value.neg { color: var(--red); }
+    .energy-row .value.pos { color: var(--green); }
+    .energy-sep { font-size: 10px; color: var(--text-sub); padding: 6px 0 2px; font-weight: 600; letter-spacing: .05em; }
 
     /* metrics */
     .metric-grid { display: grid; grid-template-columns: repeat(4,1fr); gap: 6px; margin-bottom: 10px; }
@@ -136,6 +147,11 @@
     .li-cal { font-size: 13px; font-weight: 600; color: var(--accent); }
     .edit-form { padding: 11px 13px; background: var(--bg); border-top: 1px solid var(--border); }
 
+    /* exercise block */
+    .exercise-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 8px; overflow: hidden; }
+    .ex-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 13px; border-top: 1px solid var(--border); }
+    .ex-cal { font-size: 13px; font-weight: 600; color: #e91e63; }
+
     /* add panel */
     .add-panel { border-top: 1px solid var(--border); padding: 12px 13px; background: var(--bg); }
     .search-wrap { position: relative; margin-bottom: 9px; }
@@ -165,16 +181,13 @@
     .macro-row .field label { font-size: 10px; }
     .status-msg { font-size: 11px; min-height: 15px; margin-top: 5px; }
     .status-ok { color: var(--green); } .status-err { color: var(--red); }
-    .empty-day { text-align: center; padding: 1.5rem 0; color: var(--text-sub); font-size: 13px; }
 
-    /* copy */
-    details summary { font-size: 13px; font-weight: 500; color: var(--text-sub); cursor: pointer; padding: 7px 0; border-bottom: 1px solid var(--border); list-style: none; display: flex; align-items: center; gap: 5px; }
-    details summary::before { content: '▶'; font-size: 9px; transition: transform .2s; }
-    details[open] summary::before { transform: rotate(90deg); }
-    .copy-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; margin-bottom: 6px; }
-    .ci-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-    .ci-title { font-size: 13px; font-weight: 500; }
-    .ci-food { font-size: 11px; color: var(--text-sub); padding: 1px 0; }
+    /* profile */
+    .toggle-group { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 4px; }
+    .toggle-btn { padding: 6px 11px; font-size: 12px; border-radius: 10px; border: 1px solid var(--border); background: var(--surface); color: var(--text-sub); cursor: pointer; }
+    .toggle-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    .info-box { background: var(--bg); border-radius: 10px; padding: 10px 12px; font-size: 11px; color: var(--text-sub); line-height: 1.7; margin-top: 8px; }
+    .info-box strong { color: var(--text); }
 
     /* stats */
     .period-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
@@ -185,19 +198,25 @@
     .goal-bar-track { height: 9px; border-radius: 5px; background: var(--border); overflow: hidden; }
     .goal-bar-fill { height: 100%; border-radius: 5px; transition: width .4s; }
     .chart-wrap { position: relative; width: 100%; margin-bottom: 12px; }
+    .chart-tab-row { display: flex; gap: 6px; margin-bottom: 8px; }
+    .chart-tab { padding: 4px 10px; font-size: 11px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface); color: var(--text-sub); cursor: pointer; }
+    .chart-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-    /* garmin */
-    .garmin-card { background: linear-gradient(135deg, #1a3a5c 0%, #2754a0 100%); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
-    .gc-title { font-size: 14px; font-weight: 600; }
-    .gc-sub { font-size: 11px; opacity: .75; margin-top: 2px; }
-    .garmin-connect-btn { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; }
-
-    /* csv */
-    .csv-area { width: 100%; font-size: 11px; font-family: monospace; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 120px; }
-
-    /* custom */
+    /* copy/custom */
+    details summary { font-size: 13px; font-weight: 500; color: var(--text-sub); cursor: pointer; padding: 7px 0; border-bottom: 1px solid var(--border); list-style: none; display: flex; align-items: center; gap: 5px; }
+    details summary::before { content: '▶'; font-size: 9px; transition: transform .2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+    .copy-item { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 9px 11px; margin-bottom: 6px; }
+    .ci-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+    .ci-title { font-size: 13px; font-weight: 500; }
+    .ci-food { font-size: 11px; color: var(--text-sub); padding: 1px 0; }
     .custom-item { background: var(--bg); border-radius: 10px; padding: 9px 11px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
     .combo-ingredient { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--bg); border-radius: 9px; margin-bottom: 5px; font-size: 13px; }
+    .csv-area { width: 100%; font-size: 11px; font-family: monospace; padding: 9px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); color: var(--text); resize: vertical; min-height: 120px; }
+
+    /* garmin */
+    .garmin-card { background: linear-gradient(135deg,#1a3a5c,#2754a0); border-radius: var(--radius); padding: 14px; margin-bottom: 12px; color: #fff; display: flex; justify-content: space-between; align-items: center; }
+    .garmin-connect-btn { background: rgba(255,255,255,.2); border: 1px solid rgba(255,255,255,.3); color: #fff; border-radius: 8px; padding: 7px 12px; font-size: 12px; cursor: pointer; }
   </style>
 </head>
 <body>
@@ -209,10 +228,10 @@
 <div id="app">
   <div id="header">
     <div>
-      <div id="header-h1" style="font-size:16px;font-weight:600">PFCメモ</div>
+      <div style="font-size:16px;font-weight:600">PFCメモ</div>
       <div class="hdate" id="headerDate"></div>
     </div>
-    <button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGarmin()">⌚ Garmin同期</button>
+    <button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGarmin()">⌚ 同期</button>
   </div>
 
   <!-- カレンダーポップオーバー -->
@@ -239,22 +258,67 @@
         <button class="nav-arr" onclick="changeDate(1)">&#8250;</button>
         <button class="btn btn-sm" onclick="goToday()" id="todayBtn" style="display:none;font-size:11px;padding:5px 10px">今日へ</button>
       </div>
+
+      <!-- エネルギー収支カード -->
+      <div id="balanceCard"></div>
+
+      <!-- エネルギー内訳 -->
+      <details id="energyDetails" style="margin-bottom:10px">
+        <summary>エネルギー内訳を見る</summary>
+        <div class="card" style="padding:10px;margin-top:8px" id="energyBreakdown"></div>
+      </details>
+
       <div class="metric-grid" id="recMetrics"></div>
       <div class="pfc-bar"><div class="bar-p" id="recBarP"></div><div class="bar-f" id="recBarF"></div><div class="bar-c" id="recBarC"></div></div>
       <div class="micro-grid" id="microGrid"></div>
       <div id="mealBlocks"></div>
+
+      <!-- 運動ブロック -->
+      <div class="exercise-block" id="exerciseBlock">
+        <div class="meal-block-header">
+          <div class="meal-block-left">
+            <div class="meal-icon" style="background:#fce4ec">🏃</div>
+            <div><div class="meal-name">運動</div><div class="meal-sub" id="exerciseSub">未記録</div></div>
+          </div>
+          <button class="meal-add-btn" id="exAddBtn" onclick="toggleExercisePanel()">＋ 追加</button>
+        </div>
+        <div id="exerciseItems"></div>
+        <div id="exerciseAddPanel" style="display:none">
+          <div class="add-panel">
+            <div class="row">
+              <div class="field" style="flex:3"><label>運動種目</label>
+                <select id="exType" onchange="onExTypeChange()">
+                  <option value="3.5">ウォーキング（3.5 METs）</option>
+                  <option value="7.0">ジョギング（7.0 METs）</option>
+                  <option value="8.0">ランニング（8.0 METs）</option>
+                  <option value="6.0">サイクリング（6.0 METs）</option>
+                  <option value="8.0">水泳（8.0 METs）</option>
+                  <option value="4.5">筋トレ（4.5 METs）</option>
+                  <option value="3.0">ヨガ・ストレッチ（3.0 METs）</option>
+                  <option value="6.0">バドミントン（6.0 METs）</option>
+                  <option value="7.0">テニス（7.0 METs）</option>
+                  <option value="0">その他（手動入力）</option>
+                </select>
+              </div>
+              <div class="field" style="flex:1"><label>時間(分)</label><input type="number" id="exMinutes" value="30" min="1" max="600"></div>
+            </div>
+            <div class="row" id="exManualRow" style="display:none">
+              <div class="field"><label>消費kcal（手動）</label><input type="number" id="exManualCal" placeholder="0" min="0"></div>
+              <div class="field"><label>種目名</label><input type="text" id="exManualName" placeholder="種目名"></div>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="addExercise()">運動を追加</button>
+            <div id="exMsg" class="status-msg"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- コピー -->
       <details style="margin-top:4px" onToggle="this.open&&renderCopyPanel()">
         <summary>過去の食事からコピー</summary>
         <div style="padding-top:10px">
           <div class="row" style="margin-bottom:8px">
-            <div class="field"><label>絞り込み</label>
-              <select id="copyFilter" onchange="renderCopyPanel()">
-                <option value="">すべて</option><option>朝食</option><option>昼食</option><option>夕食</option><option>間食</option>
-              </select>
-            </div>
-            <div class="field"><label>コピー先</label>
-              <select id="copyTarget"><option>朝食</option><option>昼食</option><option>夕食</option><option>間食</option></select>
-            </div>
+            <div class="field"><label>絞り込み</label><select id="copyFilter" onchange="renderCopyPanel()"><option value="">すべて</option><option>朝食</option><option>昼食</option><option>夕食</option><option>間食</option></select></div>
+            <div class="field"><label>コピー先</label><select id="copyTarget"><option>朝食</option><option>昼食</option><option>夕食</option><option>間食</option></select></div>
           </div>
           <div id="copyPanel"></div>
         </div>
@@ -273,8 +337,12 @@
         </div>
       </div>
       <div id="goalBars" class="card"></div>
-      <div class="sl">カロリー推移</div>
-      <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="calChart"></canvas></div></div>
+      <div class="chart-tab-row">
+        <button class="chart-tab active" onclick="setChartMode('raw',this)">補正前</button>
+        <button class="chart-tab" onclick="setChartMode('adjusted',this)">補正後</button>
+        <button class="chart-tab" onclick="setChartMode('balance',this)">収支</button>
+      </div>
+      <div class="card" style="padding:10px"><div class="chart-wrap" style="height:160px"><canvas id="calChart"></canvas></div></div>
       <div class="sl">PFC推移</div>
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
     </div>
@@ -289,23 +357,10 @@
         <div class="card">
           <div class="sl">基本栄養素</div>
           <div class="row"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="csFoodName" placeholder="自家製プロテインバー など"></div><div class="field"><label>基準量(g)</label><input type="number" id="csPer" value="100" min="1"></div></div>
-          <div class="macro-row">
-            <div class="field"><label>kcal</label><input type="number" id="csCal" placeholder="0" step="0.1"></div>
-            <div class="field"><label>P(g)</label><input type="number" id="csP" placeholder="0" step="0.1"></div>
-            <div class="field"><label>F(g)</label><input type="number" id="csF" placeholder="0" step="0.1"></div>
-            <div class="field"><label>C(g)</label><input type="number" id="csC" placeholder="0" step="0.1"></div>
-          </div>
+          <div class="macro-row"><div class="field"><label>kcal</label><input type="number" id="csCal" placeholder="0" step="0.1"></div><div class="field"><label>P(g)</label><input type="number" id="csP" placeholder="0" step="0.1"></div><div class="field"><label>F(g)</label><input type="number" id="csF" placeholder="0" step="0.1"></div><div class="field"><label>C(g)</label><input type="number" id="csC" placeholder="0" step="0.1"></div></div>
           <div class="sl" style="margin-top:6px">ミクロ栄養素（任意）</div>
-          <div class="macro-row">
-            <div class="field"><label>食物繊維(g)</label><input type="number" id="csFib" placeholder="0" step="0.1"></div>
-            <div class="field"><label>鉄(mg)</label><input type="number" id="csFe" placeholder="0" step="0.1"></div>
-            <div class="field"><label>Ca(mg)</label><input type="number" id="csCa" placeholder="0" step="0.1"></div>
-          </div>
-          <div class="macro-row">
-            <div class="field"><label>VitC(mg)</label><input type="number" id="csVc" placeholder="0" step="0.1"></div>
-            <div class="field"><label>VitD(μg)</label><input type="number" id="csVd" placeholder="0" step="0.1"></div>
-            <div class="field"><label>塩分(g)</label><input type="number" id="csSalt" placeholder="0" step="0.01"></div>
-          </div>
+          <div class="macro-row"><div class="field"><label>食物繊維(g)</label><input type="number" id="csFib" placeholder="0" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="csFe" placeholder="0" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="csCa" placeholder="0" step="0.1"></div></div>
+          <div class="macro-row"><div class="field"><label>VitC(mg)</label><input type="number" id="csVc" placeholder="0" step="0.1"></div><div class="field"><label>VitD(μg)</label><input type="number" id="csVd" placeholder="0" step="0.1"></div><div class="field"><label>塩分(g)</label><input type="number" id="csSalt" placeholder="0" step="0.01"></div></div>
           <button class="btn btn-primary btn-block" onclick="saveCustomFood()">登録する</button>
           <div id="csSaveMsg" class="status-msg"></div>
         </div>
@@ -316,11 +371,7 @@
           <div class="sl">複合食品名</div>
           <div class="field" style="margin-bottom:10px"><input type="text" id="comboName" placeholder="例：自家製プロテインオートミール"></div>
           <div class="sl">食材を検索して追加</div>
-          <div class="search-wrap">
-            <input type="text" id="comboSearch" placeholder="食材を検索…" oninput="onComboSearch(this.value)" autocomplete="off">
-            <div class="search-icon-box" id="comboSearchIcon"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div>
-            <div class="spin-box" id="comboSpinner"><div class="spinner"></div></div>
-          </div>
+          <div class="search-wrap"><input type="text" id="comboSearch" placeholder="食材を検索…" oninput="onComboSearch(this.value)" autocomplete="off"><div class="search-icon-box" id="comboSearchIcon"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div><div class="spin-box" id="comboSpinner"><div class="spinner"></div></div></div>
           <div class="results-box" id="comboResultsBox"></div>
           <div class="sl">追加済み食材</div>
           <div id="comboIngredients"></div>
@@ -336,59 +387,94 @@
     <div class="panel" id="panel-csv">
       <div class="card">
         <div class="sl">CSVエクスポート</div>
-        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">記録データをCSV形式でダウンロード。カロリー・PFC・ミクロ栄養素を含みます。</p>
-        <div class="row" style="margin-bottom:10px">
-          <div class="field"><label>開始日</label><input type="date" id="csvFrom"></div>
-          <div class="field"><label>終了日</label><input type="date" id="csvTo"></div>
-        </div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">カロリー・PFC・ミクロ栄養素を含む全データをダウンロード</p>
+        <div class="row" style="margin-bottom:10px"><div class="field"><label>開始日</label><input type="date" id="csvFrom"></div><div class="field"><label>終了日</label><input type="date" id="csvTo"></div></div>
         <button class="btn btn-primary btn-block" onclick="exportCSV()">📥 CSVダウンロード</button>
       </div>
       <div class="card">
         <div class="sl">CSVインポート</div>
-        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">エクスポートしたCSVを貼り付けてインポート。既存データに追記されます。</p>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">エクスポートしたCSVを貼り付けてインポート（既存データに追記）</p>
         <textarea class="csv-area" id="csvImportArea" placeholder="CSVデータをここに貼り付けてください…"></textarea>
-        <div style="display:flex;gap:8px;margin-top:8px">
-          <button class="btn btn-success" onclick="importCSV()" style="flex:1">📤 インポート実行</button>
-          <button class="btn" onclick="document.getElementById('csvImportArea').value=''">クリア</button>
-        </div>
+        <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-success" onclick="importCSV()" style="flex:1">📤 インポート実行</button><button class="btn" onclick="document.getElementById('csvImportArea').value=''">クリア</button></div>
         <div id="csvImportMsg" class="status-msg"></div>
       </div>
       <div class="card">
         <div class="sl">フォーマット</div>
-        <p style="font-size:11px;color:var(--text-sub);line-height:1.7">date, meal, name, amount, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt<br>例: 2025-01-01, 朝食, 卵, 100, 151, 12.3, 10.3, 0.3, 0, 1.8, 51, 0, 3.8, 0.3</p>
+        <p style="font-size:11px;color:var(--text-sub);line-height:1.7">date, meal, name, amount, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt</p>
       </div>
     </div>
 
-    <!-- Garmin -->
+    <!-- 設定 -->
+    <div class="panel" id="panel-profile">
+      <div class="card">
+        <div class="sl">基本情報</div>
+        <div class="row"><div class="field"><label>性別</label><select id="pSex" onchange="saveProfile()"><option value="male">男性</option><option value="female">女性</option></select></div><div class="field"><label>年齢</label><input type="number" id="pAge" value="30" min="10" max="99" onchange="saveProfile()"></div></div>
+        <div class="row"><div class="field"><label>身長 (cm)</label><input type="number" id="pHeight" value="170" min="100" max="220" step="0.1" onchange="saveProfile()"></div><div class="field"><label>体重 (kg)</label><input type="number" id="pWeight" value="65" min="20" max="200" step="0.1" onchange="saveProfile()"></div></div>
+        <div class="row"><div class="field"><label>体脂肪率 (%) — 任意</label><input type="number" id="pBF" placeholder="例: 20" min="3" max="60" step="0.1" onchange="saveProfile()"></div></div>
+      </div>
+      <div class="card">
+        <div class="sl">活動レベル（基本設定）</div>
+        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">Garmin連携時は歩数・運動データを優先</p>
+        <div class="toggle-group" id="activityToggle">
+          <button class="toggle-btn active" data-val="1.2" onclick="setActivity(this)">座位中心</button>
+          <button class="toggle-btn" data-val="1.375" onclick="setActivity(this)">軽い運動</button>
+          <button class="toggle-btn" data-val="1.55" onclick="setActivity(this)">中程度運動</button>
+          <button class="toggle-btn" data-val="1.725" onclick="setActivity(this)">活発な運動</button>
+          <button class="toggle-btn" data-val="1.9" onclick="setActivity(this)">非常に活発</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sl">気温設定（代謝補正）</div>
+        <div class="row"><div class="field"><label>現在の気温 (℃)</label><input type="number" id="pTemp" value="22" min="-20" max="45" step="1" onchange="saveProfile()"></div></div>
+        <div class="info-box">
+          <strong>10℃未満</strong>：+5〜7%（寒冷環境による産熱亢進）<br>
+          <strong>30℃以上</strong>：+2〜3%（暑熱環境による代謝亢進）<br>
+          <strong>10〜30℃</strong>：補正なし（快適温度帯）
+        </div>
+      </div>
+      <div class="card">
+        <div class="sl">計算結果プレビュー</div>
+        <div id="bmrPreview"></div>
+      </div>
+    </div>
+
+    <!-- Google Health -->
     <div class="panel" id="panel-garmin">
       <div class="garmin-card">
         <div>
-          <div class="gc-title">⌚ Garmin Connect 連携</div>
-          <div class="gc-sub">歩数・消費カロリーを自動取得</div>
+          <div style="font-size:14px;font-weight:600">🏥 Google Health 連携</div>
+          <div style="font-size:11px;opacity:.75;margin-top:2px">歩数・消費カロリー・心拍数を自動取得</div>
         </div>
-        <button class="garmin-connect-btn" id="garminConnectBtn" onclick="connectGarmin()">連携する</button>
+        <button class="garmin-connect-btn" id="garminConnectBtn" onclick="connectGoogleHealth()">連携する</button>
       </div>
       <div class="card">
         <div class="sl">仕組み</div>
         <p style="font-size:13px;color:var(--text-sub);line-height:1.7">
-          Garmin Health APIはRESTアーキテクチャでJSONを提供します。
-          OAuth 1.0a（3-legged）で認証し、Garmin Connectにデバイスデータが同期された後、
-          APIから歩数・消費カロリー・心拍数などを取得します。<br><br>
-          <strong style="color:var(--text)">⚠️ 注意</strong>：Garmin Connect Developer Programは現在新規登録停止中です。
-          既存アカウントのみ引き続き利用可能です。
+          Google Health API（health.googleapis.com/v4/）はRESTアーキテクチャでJSONを提供します。
+          OAuth 2.0で認証し、日次データから歩数・消費カロリー・安静時心拍数・体重を取得します。
+          取得したデータは記録タブのTDEE計算に自動反映されます。
         </p>
       </div>
       <div class="card">
         <div class="sl">取得できるデータ</div>
         <div style="display:flex;flex-direction:column;gap:8px;font-size:13px">
-          <div>👣 1日の総歩数・距離</div>
-          <div>🔥 活動消費カロリー・安静時代謝（BMR）</div>
-          <div>❤️ 平均・最大心拍数</div>
-          <div>😴 睡眠データ（深い・浅い・REM・覚醒）</div>
-          <div>🏃 アクティビティ種別・時間</div>
+          <div>👣 1日の総歩数</div>
+          <div>🔥 活動消費カロリー・総消費カロリー</div>
+          <div>❤️ 安静時心拍数</div>
+          <div>⚖️ 体重</div>
         </div>
       </div>
-      <div class="card" id="garminStatusCard">
+      <div class="card">
+        <div class="sl">Google Cloud Console 設定手順</div>
+        <ol style="font-size:12px;color:var(--text-sub);line-height:1.9;padding-left:16px">
+          <li>Google Cloud Console でプロジェクトを作成</li>
+          <li>「Google Health API」を有効化</li>
+          <li>OAuth 2.0 クライアントID を作成（Webアプリ）</li>
+          <li>リダイレクトURI に <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">https://あなたのサイト.netlify.app/.netlify/functions/google-health-auth-callback</code> を追加</li>
+          <li>Netlify 環境変数に <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">GOOGLE_HEALTH_CLIENT_ID</code> と <code style="font-size:10px;background:var(--bg);padding:1px 4px;border-radius:3px">GOOGLE_HEALTH_CLIENT_SECRET</code> を設定</li>
+        </ol>
+      </div>
+      <div class="card">
         <div class="sl">接続状態</div>
         <div id="garminStatus" style="font-size:13px;color:var(--text-sub)">未接続</div>
       </div>
@@ -397,24 +483,22 @@
 
   <nav id="nav">
     <button class="nav-btn active" onclick="switchTab('record')" id="nav-record">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-      記録
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>記録
     </button>
     <button class="nav-btn" onclick="switchTab('stats')" id="nav-stats">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-      グラフ
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>グラフ
     </button>
     <button class="nav-btn" onclick="switchTab('custom')" id="nav-custom">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 010 14.14M4.93 4.93a10 10 0 000 14.14"/></svg>
-      食品登録
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>食品登録
     </button>
     <button class="nav-btn" onclick="switchTab('csv')" id="nav-csv">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-      CSV
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>CSV
+    </button>
+    <button class="nav-btn" onclick="switchTab('profile')" id="nav-profile">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>設定
     </button>
     <button class="nav-btn" onclick="switchTab('garmin')" id="nav-garmin">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      Garmin
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Garmin
     </button>
   </nav>
 </div>

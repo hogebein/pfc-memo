@@ -1,8 +1,6 @@
 {
   "name": "pfc-memo",
   "version": "1.0.0",
-  "description": "カロリー・PFC管理PWA with Garmin連携",
-  "dependencies": {
-    "oauth": "^0.10.0"
-  }
+  "description": "カロリー・PFC管理PWA with Google Health API連携",
+  "dependencies": {}
 }

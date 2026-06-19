@@ -139,15 +139,15 @@ let searchTimer = null, comboTimer = null, apiAbort = null;
 let comboIngredients = [], editingId = null, activeAddMeal = null;
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
 let currentDate = toDateStr(new Date());
-let garminToken = null, garminData = {};
+let ghToken = null, ghData = {}; // Google Health API
 let deferredPrompt = null;
 
 try { entries = JSON.parse(localStorage.getItem('pfcEntries') || '[]'); } catch(e) {}
 try { customFoods = JSON.parse(localStorage.getItem('pfcCustomFoods') || '[]'); } catch(e) {}
 try { comboFoods = JSON.parse(localStorage.getItem('pfcComboFoods') || '[]'); } catch(e) {}
 try { userWeight = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
-try { garminToken = localStorage.getItem('garminToken') || null; } catch(e) {}
-try { garminData = JSON.parse(localStorage.getItem('garminData') || '{}'); } catch(e) {}
+try { ghToken = localStorage.getItem('ghToken') || null; } catch(e) {}
+try { ghData = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
 
 function toDateStr(d) { return d.toISOString().split('T')[0]; }
 function fmtDate(s) { const d = new Date(s+'T00:00:00'); return d.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'}); }
@@ -157,7 +157,7 @@ function r2(n) { return Math.round(n*100)/100; }
 function ri(n) { return Math.round(n); }
 function save() { try { localStorage.setItem('pfcEntries', JSON.stringify(entries)); } catch(e) {} }
 function saveCustom() { try { localStorage.setItem('pfcCustomFoods', JSON.stringify(customFoods)); localStorage.setItem('pfcComboFoods', JSON.stringify(comboFoods)); } catch(e) {} }
-function saveGarminData() { try { localStorage.setItem('garminData', JSON.stringify(garminData)); } catch(e) {} }
+function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} }
 
 // ── PWA ──
 window.addEventListener('beforeinstallprompt', e => {
@@ -658,49 +658,74 @@ function renderComboFoodList() {
   cont.innerHTML=comboFoods.map(f=>`<div class="custom-item"><div><div style="font-weight:500">${f.name}</div><div style="font-size:10px;color:var(--text-sub)">100gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div><div style="font-size:10px;color:var(--text-sub)">${(f.ingredients||[]).map(i=>`${i.name}(${i.amount}g)`).join('、')}</div></div><button class="btn btn-sm btn-danger" onclick="deleteComboFood(${f.id})">✕</button></div>`).join('');
 }
 
-// ── Garmin ──
-// Garmin Health API は OAuth 1.0a (3-legged) を使用
-// RESTアーキテクチャでJSONを返す: https://apis.garmin.com/wellness-api/rest/
-// 認証フロー: request_token → ユーザー認可 → access_token
-// データは7日間のみ保持（Backfill APIで過去データも取得可能）
-async function connectGarmin() {
+// ── Google Health API ──
+// REST API (health.googleapis.com/v4/) + OAuth 2.0
+// スコープ: activity_and_fitness, health_metrics_and_measurements, sleep
+// 取得: 歩数・消費カロリー・安静時心拍数・体重
+
+async function connectGoogleHealth() {
   try {
-    const res = await fetch('/.netlify/functions/garmin-auth-start');
+    const res = await fetch('/.netlify/functions/google-health-auth-start');
     if (!res.ok) throw new Error('auth start failed');
     const { authUrl } = await res.json();
     window.location.href = authUrl;
   } catch(e) {
-    alert('Garmin連携の開始に失敗しました。\nNetlifyの環境変数（GARMIN_CLIENT_ID / GARMIN_CLIENT_SECRET）を確認してください。\n\n※Garmin Developer Programは現在新規登録停止中です。');
+    alert('Google Health連携の開始に失敗しました。\nNetlifyの環境変数（GOOGLE_HEALTH_CLIENT_ID）を確認してください。');
   }
 }
-(function checkGarminCallback() {
+
+(function checkGoogleHealthCallback() {
   const params = new URLSearchParams(window.location.search);
-  const token = params.get('garmin_token');
-  if (token) {
-    garminToken = token;
-    localStorage.setItem('garminToken', token);
+  const token = params.get('gh_token');
+  const err   = params.get('gh_error');
+  if (err) {
+    console.warn('Google Health auth error:', err);
     history.replaceState({}, '', window.location.pathname);
-    renderGarminStatus();
-    syncGarmin();
+    return;
+  }
+  if (token) {
+    ghToken = token;
+    localStorage.setItem('ghToken', token);
+    history.replaceState({}, '', window.location.pathname);
+    renderGhStatus();
+    syncGoogleHealth();
   }
 })();
-async function syncGarmin() {
-  if (!garminToken) return;
+
+async function syncGoogleHealth() {
+  if (!ghToken) return;
   try {
-    const res = await fetch(`/.netlify/functions/garmin-daily?date=${currentDate}&token=${encodeURIComponent(garminToken)}`);
+    const res = await fetch(
+      `/.netlify/functions/google-health-daily?date=${currentDate}&token=${encodeURIComponent(ghToken)}`
+    );
     if (!res.ok) throw new Error('sync failed');
     const data = await res.json();
-    garminData[currentDate] = data;
-    saveGarminData();
+    if (data.updatedToken && data.updatedToken !== ghToken) {
+      ghToken = data.updatedToken;
+      localStorage.setItem('ghToken', ghToken);
+    }
+    ghData[currentDate] = data;
+    saveGhData();
     document.getElementById('garminSyncBtn').style.display = 'flex';
-  } catch(e) { console.warn('Garmin sync:', e); }
+    renderRecord();
+  } catch(e) { console.warn('Google Health sync:', e); }
 }
-function renderGarminStatus() {
-  const btn = document.getElementById('garminConnectBtn');
+
+function renderGhStatus() {
+  const btn    = document.getElementById('garminConnectBtn');
   const status = document.getElementById('garminStatus');
-  if (garminToken) {
+  if (ghToken) {
     btn.textContent = '再接続';
-    status.innerHTML = `<span style="color:var(--green);font-weight:600">✓ 接続済み</span><br><span style="font-size:11px;margin-top:4px;display:block">最終同期: ${Object.keys(garminData).sort().pop() || '未同期'}</span>`;
+    const lastDate = Object.keys(ghData).sort().pop();
+    const d = lastDate ? ghData[lastDate] : null;
+    status.innerHTML =
+      `<span style="color:var(--green);font-weight:600">✓ 接続済み</span>` +
+      (d ? `<br><span style="font-size:11px;margin-top:4px;display:block">
+        最終同期: ${lastDate}　歩数: ${(d.steps||0).toLocaleString()}歩　
+        消費: ${d.activeCalories||0} kcal
+        ${d.restingHeartRate ? `　心拍: ${d.restingHeartRate} bpm` : ''}
+        ${d.weight ? `　体重: ${d.weight} kg` : ''}
+      </span>` : '');
     document.getElementById('garminSyncBtn').style.display = 'flex';
   } else {
     btn.textContent = '連携する';
@@ -710,7 +735,7 @@ function renderGarminStatus() {
 
 // ── Tab switch ──
 function switchTab(t) {
-  ['record','stats','custom','csv','garmin'].forEach(id => {
+  ['record','stats','custom','csv','profile','garmin'].forEach(id => {
     document.getElementById('panel-'+id).classList.toggle('active', id===t);
     document.getElementById('nav-'+id).classList.toggle('active', id===t);
   });
@@ -722,7 +747,8 @@ function switchTab(t) {
     document.getElementById('csvFrom').value=month;
     document.getElementById('csvTo').value=today;
   }
-  if (t==='garmin') renderGarminStatus();
+  if (t==='profile') initProfile();
+  if (t==='garmin')  renderGhStatus();
 }
 
 document.addEventListener('click', e => {
