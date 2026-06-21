@@ -231,7 +231,7 @@
       <div style="font-size:16px;font-weight:600">PFCメモ</div>
       <div class="hdate" id="headerDate"></div>
     </div>
-    <button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGarmin()">⌚ 同期</button>
+    <div style="display:flex;align-items:center;gap:8px"><button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGoogleHealth()">📊 同期</button><div id="authArea"></div></div>
   </div>
 
   <!-- カレンダーポップオーバー -->
@@ -504,6 +504,32 @@
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+  // ── Firebase 設定 ──
+  // Netlify 環境変数から注入、または直接ここに記述してください。
+  // 未設定の場合はローカル保存モードで動作します。
+  //
+  // 設定方法：
+  //   Netlify > Site settings > Environment variables に以下を追加し、
+  //   netlify.toml の [build] セクションに環境変数を注入する方法か、
+  //   または直接この値を書き換えてください。
+  //
+  // FIREBASE_API_KEY, FIREBASE_AUTH_DOMAIN, FIREBASE_PROJECT_ID,
+  // FIREBASE_STORAGE_BUCKET, FIREBASE_MESSAGING_SENDER_ID, FIREBASE_APP_ID
+  //
+  window.FIREBASE_CONFIG = {
+    apiKey:            "YOUR_API_KEY",
+    authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId:         "YOUR_PROJECT_ID",
+    storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId:             "YOUR_APP_ID",
+  };
+  // 未設定の場合は無効化
+  if (window.FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {
+    window.FIREBASE_CONFIG = null;
+  }
+</script>
 <script src="app.js"></script>
 </body>
 </html>

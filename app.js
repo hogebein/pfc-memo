@@ -132,22 +132,32 @@ LOCAL_DB.forEach(f => {
 });
 
 // ── State ──
-let entries = [], customFoods = [], comboFoods = [];
-let userWeight = 65, statsPeriod = 'today';
+let entries = [], customFoods = [], comboFoods = [], exercises = [];
+let userWeight = 65, statsPeriod = 'today', chartMode = 'raw';
 let calChart = null, pfcChart = null;
 let searchTimer = null, comboTimer = null, apiAbort = null;
-let comboIngredients = [], editingId = null, activeAddMeal = null;
+let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen = false;
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
 let currentDate = toDateStr(new Date());
 let ghToken = null, ghData = {}; // Google Health API
 let deferredPrompt = null;
+let profile = { sex:'male', age:30, height:170, weight:65, bf:null, activityFactor:1.2, temp:22 };
 
-try { entries = JSON.parse(localStorage.getItem('pfcEntries') || '[]'); } catch(e) {}
-try { customFoods = JSON.parse(localStorage.getItem('pfcCustomFoods') || '[]'); } catch(e) {}
-try { comboFoods = JSON.parse(localStorage.getItem('pfcComboFoods') || '[]'); } catch(e) {}
-try { userWeight = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
-try { ghToken = localStorage.getItem('ghToken') || null; } catch(e) {}
-try { ghData = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
+// Firebase state
+let fbUser = null;   // 現在ログイン中のユーザー
+let fbDb  = null;    // Firestore インスタンス
+let fbAuth = null;   // Auth インスタンス
+let fbSyncing = false;
+
+// localStorage からローカルキャッシュ読み込み（オフライン時のフォールバック）
+try { entries     = JSON.parse(localStorage.getItem('pfcEntries')    || '[]'); } catch(e) {}
+try { customFoods = JSON.parse(localStorage.getItem('pfcCustomFoods')|| '[]'); } catch(e) {}
+try { comboFoods  = JSON.parse(localStorage.getItem('pfcComboFoods') || '[]'); } catch(e) {}
+try { exercises   = JSON.parse(localStorage.getItem('pfcExercises')  || '[]'); } catch(e) {}
+try { userWeight  = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
+try { ghToken     = localStorage.getItem('ghToken') || null; } catch(e) {}
+try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
+try { const p = JSON.parse(localStorage.getItem('pfcProfile') || 'null'); if(p) profile = {...profile, ...p}; } catch(e) {}
 
 function toDateStr(d) { return d.toISOString().split('T')[0]; }
 function fmtDate(s) { const d = new Date(s+'T00:00:00'); return d.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'}); }
@@ -155,9 +165,55 @@ function isToday(s) { return s === toDateStr(new Date()); }
 function r1(n) { return Math.round(n*10)/10; }
 function r2(n) { return Math.round(n*100)/100; }
 function ri(n) { return Math.round(n); }
-function save() { try { localStorage.setItem('pfcEntries', JSON.stringify(entries)); } catch(e) {} }
-function saveCustom() { try { localStorage.setItem('pfcCustomFoods', JSON.stringify(customFoods)); localStorage.setItem('pfcComboFoods', JSON.stringify(comboFoods)); } catch(e) {} }
+
+// ローカル保存（常に実行 — オフライン時のキャッシュ）
+function saveLocal() {
+  try { localStorage.setItem('pfcEntries',     JSON.stringify(entries));     } catch(e) {}
+  try { localStorage.setItem('pfcExercises',   JSON.stringify(exercises));   } catch(e) {}
+  try { localStorage.setItem('pfcCustomFoods', JSON.stringify(customFoods)); } catch(e) {}
+  try { localStorage.setItem('pfcComboFoods',  JSON.stringify(comboFoods));  } catch(e) {}
+}
+
+// Firestore への保存（ログイン済みの場合）
+// 全データを1ドキュメントにまとめて保存（シンプル設計）
+async function saveToCloud() {
+  if (!fbDb || !fbUser) return;
+  try {
+    const { doc, setDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    await setDoc(doc(fbDb, 'users', fbUser.uid), {
+      entries,
+      exercises,
+      customFoods,
+      comboFoods,
+      profile,
+      updatedAt: new Date().toISOString(),
+    });
+  } catch(e) { console.warn('Cloud save failed:', e); }
+}
+
+// ローカル＋クラウドへ同時保存
+function save() { saveLocal(); saveToCloud(); }
+function saveCustom() { saveLocal(); saveToCloud(); }
+function saveExercises() { saveLocal(); saveToCloud(); }
 function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} }
+function saveProfile() {
+  profile.sex    = document.getElementById('pSex').value;
+  profile.age    = parseInt(document.getElementById('pAge').value)    || 30;
+  profile.height = parseFloat(document.getElementById('pHeight').value) || 170;
+  profile.weight = parseFloat(document.getElementById('pWeight').value) || 65;
+  const bf = parseFloat(document.getElementById('pBF').value);
+  profile.bf   = isNaN(bf) ? null : bf;
+  profile.temp = parseFloat(document.getElementById('pTemp').value) || 22;
+  try { localStorage.setItem('pfcProfile', JSON.stringify(profile)); } catch(e) {}
+  saveToCloud();
+  renderBmrPreview();
+}
+function setActivity(el) {
+  document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  profile.activityFactor = parseFloat(el.dataset.val);
+  saveProfile();
+}
 
 // ── PWA ──
 window.addEventListener('beforeinstallprompt', e => {
@@ -733,6 +789,106 @@ function renderGhStatus() {
   }
 }
 
+// ── Firebase 初期化・認証・同期 ──
+// Firebase設定は index.html の <script> で window.FIREBASE_CONFIG として注入
+async function initFirebase() {
+  try {
+    const cfg = window.FIREBASE_CONFIG;
+    if (!cfg || !cfg.apiKey) return; // 未設定時はローカルのみ
+
+    const { initializeApp }    = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
+    const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+                                = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
+    const { getFirestore }     = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+
+    const app = initializeApp(cfg);
+    fbAuth = getAuth(app);
+    fbDb   = getFirestore(app);
+
+    // 認証状態の監視
+    onAuthStateChanged(fbAuth, async user => {
+      fbUser = user;
+      renderAuthUI();
+      if (user) {
+        await pullFromCloud(); // ログイン時にクラウドからデータを取得
+        renderRecord();
+        renderCalendar();
+      }
+    });
+
+    // Googleログインボタン
+    window._fbSignIn = async () => {
+      try {
+        const provider = new GoogleAuthProvider();
+        await signInWithPopup(fbAuth, provider);
+      } catch(e) { console.error('Sign in failed:', e); alert('ログインに失敗しました: ' + e.message); }
+    };
+
+    // ログアウトボタン
+    window._fbSignOut = async () => {
+      await signOut(fbAuth);
+      renderAuthUI();
+    };
+
+  } catch(e) {
+    console.warn('Firebase init failed:', e);
+  }
+}
+
+// Firestoreからデータを取得してローカルにマージ
+async function pullFromCloud() {
+  if (!fbDb || !fbUser || fbSyncing) return;
+  fbSyncing = true;
+  try {
+    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const snap = await getDoc(doc(fbDb, 'users', fbUser.uid));
+    if (snap.exists()) {
+      const data = snap.data();
+      // クラウドデータで上書き（最新が優先）
+      if (data.entries)     { entries     = data.entries;     saveLocal(); }
+      if (data.exercises)   { exercises   = data.exercises;   saveLocal(); }
+      if (data.customFoods) { customFoods = data.customFoods; saveLocal(); }
+      if (data.comboFoods)  { comboFoods  = data.comboFoods;  saveLocal(); }
+      if (data.profile)     { profile = { ...profile, ...data.profile }; localStorage.setItem('pfcProfile', JSON.stringify(profile)); }
+    } else {
+      // 初回ログイン：ローカルデータをクラウドにアップロード
+      await saveToCloud();
+    }
+  } catch(e) {
+    console.warn('Cloud pull failed:', e);
+  } finally {
+    fbSyncing = false;
+  }
+}
+
+// 認証UIを描画（ヘッダーのユーザー情報 & ログインボタン）
+function renderAuthUI() {
+  const el = document.getElementById('authArea');
+  if (!el) return;
+  if (fbUser) {
+    const photo = fbUser.photoURL
+      ? `<img src="${fbUser.photoURL}" style="width:28px;height:28px;border-radius:50%;border:2px solid rgba(255,255,255,.5)" alt="">`
+      : `<span style="font-size:18px">👤</span>`;
+    el.innerHTML = `
+      <div style="display:flex;align-items:center;gap:8px">
+        ${photo}
+        <div>
+          <div style="font-size:11px;font-weight:600;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${fbUser.displayName||fbUser.email}</div>
+          <div style="font-size:9px;opacity:.7">クラウド同期中</div>
+        </div>
+        <button onclick="_fbSignOut()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:6px;padding:4px 8px;font-size:10px;cursor:pointer">ログアウト</button>
+      </div>`;
+  } else if (window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey) {
+    el.innerHTML = `
+      <button onclick="_fbSignIn()" style="display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.9);border:none;color:#333;border-radius:8px;padding:6px 10px;font-size:11px;cursor:pointer;font-weight:500">
+        <svg width="14" height="14" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+        Googleでログイン
+      </button>`;
+  } else {
+    el.innerHTML = `<span style="font-size:10px;opacity:.6">ローカル保存モード</span>`;
+  }
+}
+
 // ── Tab switch ──
 function switchTab(t) {
   ['record','stats','custom','csv','profile','garmin'].forEach(id => {
@@ -762,4 +918,8 @@ document.addEventListener('click', e => {
 });
 
 // ── Init ──
-updateDateHeader(); renderCalendar(); renderRecord();
+updateDateHeader();
+renderCalendar();
+renderRecord();
+renderAuthUI();
+initFirebase(); // Firebase設定がある場合に認証・同期を開始
