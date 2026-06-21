@@ -821,7 +821,22 @@ async function initFirebase() {
       try {
         const provider = new GoogleAuthProvider();
         await signInWithPopup(fbAuth, provider);
-      } catch(e) { console.error('Sign in failed:', e); alert('ログインに失敗しました: ' + e.message); }
+      } catch(e) {
+        console.error('Sign in failed:', e);
+        if (e.code === 'auth/unauthorized-domain') {
+          alert(
+            'ログインエラー: このドメインがFirebaseに承認されていません。\n\n' +
+            '【解決方法】\n' +
+            'Firebase Console > Authentication > Settings >\n' +
+            '「承認済みドメイン」に以下を追加してください：\n\n' +
+            window.location.hostname
+          );
+        } else if (e.code === 'auth/popup-blocked') {
+          alert('ポップアップがブロックされました。ブラウザのポップアップ許可設定を確認してください。');
+        } else {
+          alert('ログインに失敗しました: ' + (e.message || e.code));
+        }
+      }
     };
 
     // ログアウトボタン
