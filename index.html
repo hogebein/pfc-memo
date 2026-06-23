@@ -560,13 +560,13 @@
   //   追加しないと auth/unauthorized-domain エラーが発生します。
   //
   // 取得場所：Firebase Console > プロジェクト設定 > マイアプリ > SDK設定と構成
-  window.FIREBASE_CONFIG =  {
-    apiKey: "AIzaSyDwJc9yBwI971fGWJc6tV68Ak5BBb_bSvg",
-    authDomain: "pfc-memo.firebaseapp.com",
-    projectId: "pfc-memo",
-    storageBucket: "pfc-memo.firebasestorage.app",
-    messagingSenderId: "26748277447",
-    appId: "1:26748277447:web:13fbd2a9abef3cd7d5e4e2"
+  window.FIREBASE_CONFIG = {
+    apiKey:            "YOUR_API_KEY",
+    authDomain:        "YOUR_PROJECT_ID.firebaseapp.com",
+    projectId:         "YOUR_PROJECT_ID",
+    storageBucket:     "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId:             "YOUR_APP_ID",
   };
   // 未設定の場合は無効化（ローカル保存モードで動作）
   if (window.FIREBASE_CONFIG.apiKey === 'YOUR_API_KEY') {

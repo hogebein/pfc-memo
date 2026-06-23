@@ -1452,7 +1452,7 @@ ${fullCtx}
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const res = await fetch('/.netlify/functions/ai-chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1463,7 +1463,10 @@ ${fullCtx}
       }),
     });
 
-    const data   = await res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || `サーバーエラー (${res.status})`);
+    }
     const rawText = (data.content || []).map(b => b.text || '').join('');
 
     // JSONブロック抽出

@@ -97,6 +97,38 @@ Netlify ダッシュボード → Site settings → Environment variables：
 
 ---
 
+## STEP 3.5 — AI アシスタント設定
+
+AIタブでClaude AIによる食事記録の自動登録・操作を利用するには、Anthropic APIキーが必要です。
+
+### 3.5-1. APIキーを取得
+
+1. https://console.anthropic.com にアクセス（アカウント作成が必要）
+2. 左メニュー「API Keys」→「Create Key」
+3. 表示された `sk-ant-...` から始まるキーをコピー（再表示不可なので必ず控える）
+
+> 💡 **料金について**
+> 新規登録時に無料クレジットが付与されます。
+> `claude-sonnet-4-6` モデルの料金は入力100万トークンあたり $3・出力100万トークンあたり $15。
+> 1回の会話は概ね数円以下です。使用量は https://console.anthropic.com/usage で確認できます。
+
+### 3.5-2. Netlify 環境変数に設定
+
+Netlify ダッシュボード → Site configuration → Environment variables → 「Add a variable」：
+
+| 変数名 | 値 |
+|---|---|
+| `ANTHROPIC_API_KEY` | `sk-ant-` から始まるAPIキー |
+
+設定後、「Trigger deploy」→「Clear cache and deploy site」で再デプロイ。
+
+### 3.5-3. 動作確認
+
+デプロイ完了後、AIタブを開いて話しかけてみてください。
+`ANTHROPIC_API_KEY が設定されていません` と表示される場合は環境変数の設定と再デプロイを確認してください。
+
+---
+
 ## STEP 4 — Firebase クラウド同期設定（オプション）
 
 クラウド同期を有効にすることで、PC・スマホ問わず同じデータにアクセスできます。
