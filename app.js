@@ -268,12 +268,17 @@ function updateDateHeader() {
 }
 function changeDate(d) {
   const dt = new Date(currentDate+'T00:00:00'); dt.setDate(dt.getDate()+d);
-  currentDate = toDateStr(dt); activeAddMeal = null; editingId = null;
+  currentDate = toDateStr(dt); activeAddMeal = null; editingId = null; exPanelOpen = false;
+  const panel = document.getElementById('exerciseAddPanel'); if(panel) panel.style.display='none';
+  const btn   = document.getElementById('exAddBtn');          if(btn)   btn.textContent='＋ 追加';
   updateDateHeader(); renderRecord(); renderCalendar();
 }
 function goToday() {
   currentDate = toDateStr(new Date()); calViewYear = new Date().getFullYear(); calViewMonth = new Date().getMonth();
-  activeAddMeal = null; editingId = null; updateDateHeader(); renderRecord(); renderCalendar();
+  activeAddMeal = null; editingId = null; exPanelOpen = false;
+  const panel = document.getElementById('exerciseAddPanel'); if(panel) panel.style.display='none';
+  const btn   = document.getElementById('exAddBtn');          if(btn)   btn.textContent='＋ 追加';
+  updateDateHeader(); renderRecord(); renderCalendar();
 }
 function jumpToDate(d) {
   currentDate = d; calViewYear = parseInt(d.split('-')[0]); calViewMonth = parseInt(d.split('-')[1])-1;
@@ -405,6 +410,7 @@ function renderRecord() {
   });
   document.getElementById('mealBlocks').innerHTML = html;
   if (activeAddMeal) setTimeout(() => { const el = document.getElementById('addSearch_'+activeAddMeal); if(el) el.focus(); }, 30);
+  renderExerciseItems();
 }
 
 // ── Search ──
@@ -504,6 +510,125 @@ function saveEdit(id) {
   save(); editingId=null; renderRecord(); renderCalendar();
 }
 function deleteEntry(id){entries=entries.filter(e=>e.id!==id);if(editingId===id)editingId=null;save();renderRecord();renderCalendar()}
+
+// ── Exercise ──
+const EXERCISE_TYPES = {
+  '3.5': 'ウォーキング',
+  '7.0': 'ジョギング',
+  '8.0': 'ランニング',
+  '6.0': 'サイクリング',
+  '8.0s': '水泳',
+  '4.5': '筋トレ',
+  '3.0': 'ヨガ・ストレッチ',
+  '6.0b': 'バドミントン',
+  '7.0t': 'テニス',
+  '0': 'その他',
+};
+
+function toggleExercisePanel() {
+  exPanelOpen = !exPanelOpen;
+  const panel = document.getElementById('exerciseAddPanel');
+  const btn   = document.getElementById('exAddBtn');
+  if (panel) panel.style.display = exPanelOpen ? 'block' : 'none';
+  if (btn)   btn.textContent      = exPanelOpen ? '✕ 閉じる' : '＋ 追加';
+  if (exPanelOpen) onExTypeChange();
+}
+
+function onExTypeChange() {
+  const sel = document.getElementById('exType');
+  const manualRow = document.getElementById('exManualRow');
+  if (!sel || !manualRow) return;
+  manualRow.style.display = sel.value === '0' ? 'flex' : 'none';
+}
+
+function addExercise() {
+  const sel  = document.getElementById('exType');
+  const mins = parseFloat(document.getElementById('exMinutes').value) || 0;
+  const msg  = document.getElementById('exMsg');
+
+  if (!sel) return;
+  const mets = parseFloat(sel.value);
+  const isManual = sel.value === '0';
+
+  let burnedCal = 0;
+  let exName    = '';
+
+  if (isManual) {
+    burnedCal = parseFloat(document.getElementById('exManualCal').value) || 0;
+    exName    = (document.getElementById('exManualName').value || '').trim() || 'その他';
+  } else {
+    if (mins <= 0) {
+      if (msg) { msg.className='status-msg status-err'; msg.textContent='時間を入力してください'; }
+      return;
+    }
+    // 消費カロリー = METs × 体重(kg) × 時間(h)
+    const weight = profile.weight || userWeight || 65;
+    burnedCal = r1(mets * weight * (mins / 60));
+    // select の表示テキストから種目名を取得
+    exName = sel.options[sel.selectedIndex].text.replace(/（.*）/, '').trim();
+  }
+
+  if (burnedCal <= 0) {
+    if (msg) { msg.className='status-msg status-err'; msg.textContent='消費カロリーを入力してください'; }
+    return;
+  }
+
+  exercises.push({
+    id: Date.now(),
+    date: currentDate,
+    name: exName,
+    minutes: mins,
+    cal: burnedCal,
+  });
+  saveExercises();
+  renderExerciseItems();
+
+  // フォームリセット
+  document.getElementById('exMinutes').value = '30';
+  const manualCal  = document.getElementById('exManualCal');
+  const manualName = document.getElementById('exManualName');
+  if (manualCal)  manualCal.value  = '';
+  if (manualName) manualName.value = '';
+
+  if (msg) {
+    msg.className = 'status-msg status-ok';
+    msg.textContent = `「${exName}」を追加しました（${burnedCal} kcal）`;
+    setTimeout(() => { if (msg) msg.textContent = ''; }, 2000);
+  }
+}
+
+function deleteExercise(id) {
+  exercises = exercises.filter(e => e.id !== id);
+  saveExercises();
+  renderExerciseItems();
+}
+
+function renderExerciseItems() {
+  const dayEx  = exercises.filter(e => e.date === currentDate);
+  const items  = document.getElementById('exerciseItems');
+  const sub    = document.getElementById('exerciseSub');
+  const totalCal = dayEx.reduce((a, e) => a + (e.cal || 0), 0);
+
+  if (sub) sub.textContent = dayEx.length ? `${ri(totalCal)} kcal 消費` : '未記録';
+
+  if (!items) return;
+  if (!dayEx.length) { items.innerHTML = ''; return; }
+
+  items.innerHTML = `<div class="meal-items">${
+    dayEx.map(e =>
+      `<div class="log-item">
+        <div>
+          <div class="li-name">${e.name}</div>
+          <div class="li-detail">${e.minutes ? e.minutes + '分' : ''}　消費 ${ri(e.cal)} kcal</div>
+        </div>
+        <div class="li-right">
+          <div class="li-cal" style="color:#e91e63">${ri(e.cal)}</div>
+          <button class="btn btn-sm btn-danger" onclick="deleteExercise(${e.id})" style="padding:2px 6px">✕</button>
+        </div>
+      </div>`
+    ).join('')
+  }</div>`;
+}
 
 // ── Copy ──
 function renderCopyPanel() {
@@ -906,7 +1031,7 @@ function renderAuthUI() {
 
 // ── Tab switch ──
 function switchTab(t) {
-  ['record','stats','custom','csv','profile','garmin'].forEach(id => {
+  ['record','stats','custom','csv','profile','garmin','ai'].forEach(id => {
     document.getElementById('panel-'+id).classList.toggle('active', id===t);
     document.getElementById('nav-'+id).classList.toggle('active', id===t);
   });
@@ -920,6 +1045,461 @@ function switchTab(t) {
   }
   if (t==='profile') initProfile();
   if (t==='garmin')  renderGhStatus();
+  if (t==='ai') initAiChat();
+}
+
+// ── AI Chat ──
+let aiHistory = [];
+let aiInitDone = false;
+
+// ── AI バックアップ（最大10世代） ──
+const AI_BACKUP_MAX = 10;
+let aiBackups = []; // [{label, entries, timestamp}, ...]
+
+function takeAiBackup(label) {
+  aiBackups.push({
+    label,
+    entries: JSON.parse(JSON.stringify(entries)),
+    timestamp: new Date().toISOString(),
+  });
+  if (aiBackups.length > AI_BACKUP_MAX) aiBackups.shift();
+  renderAiBackupList();
+}
+
+function restoreAiBackup(idx) {
+  const bk = aiBackups[idx];
+  if (!bk) return;
+  entries = JSON.parse(JSON.stringify(bk.entries));
+  save(); renderRecord(); renderCalendar();
+  appendAiMessage('ai', `♻️ バックアップを復元しました\n「${bk.label}」（${fmtBackupTime(bk.timestamp)}）`);
+  renderAiBackupList();
+}
+
+function deleteAiBackup(idx) {
+  aiBackups.splice(idx, 1);
+  renderAiBackupList();
+}
+
+function fmtBackupTime(iso) {
+  const d = new Date(iso);
+  return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+function renderAiBackupList() {
+  const cont = document.getElementById('aiBackupList');
+  if (!cont) return;
+  if (!aiBackups.length) {
+    cont.innerHTML = '<div style="font-size:11px;color:var(--text-sub);padding:6px 0">バックアップはまだありません</div>';
+    return;
+  }
+  cont.innerHTML = [...aiBackups].reverse().map((bk, ri) => {
+    const idx = aiBackups.length - 1 - ri;
+    return `<div style="display:flex;align-items:center;gap:6px;padding:5px 0;border-bottom:1px solid var(--border)">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${bk.label}</div>
+        <div style="font-size:10px;color:var(--text-sub)">${fmtBackupTime(bk.timestamp)}　${bk.entries.length}件</div>
+      </div>
+      <button onclick="restoreAiBackup(${idx})" style="background:#e8f0fe;color:#3266ad;border:none;border-radius:7px;padding:4px 9px;font-size:11px;cursor:pointer;white-space:nowrap">復元</button>
+      <button onclick="deleteAiBackup(${idx})" style="background:none;border:none;color:var(--text-sub);font-size:14px;cursor:pointer;padding:2px 4px">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function initAiChat() {
+  if (aiInitDone) return;
+  aiInitDone = true;
+  renderAiBackupList();
+  appendAiMessage('ai',
+    'こんにちは！食事記録のアシスタントです🍽️\n\n' +
+    '【できること】\n' +
+    '・「朝食に卵とご飯を食べた」→ 自動で栄養計算＆登録\n' +
+    '・「今週の昼食を全部サラダチキンで登録して」→ 複数日まとめて操作\n' +
+    '・「昨日の夕食を削除して」→ 記録の削除\n' +
+    '・「今週の記録を教えて」→ 記録の読み取り＆集計\n\n' +
+    '操作前に自動でバックアップを保存します。\n' +
+    '誤操作した場合は下のバックアップ一覧から復元できます。\n\n' +
+    '⚠️ 栄養データはAI推定値です。目安としてご利用ください。'
+  );
+}
+
+function appendAiMessage(role, text) {
+  const box = document.getElementById('aiChatBox');
+  if (!box) return;
+  const isAi = role === 'ai';
+  const div = document.createElement('div');
+  div.style.cssText = `
+    max-width: 88%;
+    align-self: ${isAi ? 'flex-start' : 'flex-end'};
+    background: ${isAi ? 'var(--surface)' : 'var(--accent)'};
+    color: ${isAi ? 'var(--text)' : '#fff'};
+    border-radius: ${isAi ? '4px 14px 14px 14px' : '14px 4px 14px 14px'};
+    padding: 9px 12px;
+    font-size: 13px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    border: ${isAi ? '1px solid var(--border)' : 'none'};
+  `;
+  div.textContent = text;
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+function appendAiThinking() {
+  const box = document.getElementById('aiChatBox');
+  if (!box) return null;
+  const div = document.createElement('div');
+  div.style.cssText = `
+    align-self: flex-start;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 4px 14px 14px 14px;
+    padding: 9px 14px;
+    font-size: 18px;
+    letter-spacing: 4px;
+  `;
+  div.textContent = '●○○';
+  let frame = 0;
+  div._timer = setInterval(() => {
+    const dots = ['●○○','●●○','●●●','○●●','○○●','○○○'];
+    div.textContent = dots[frame++ % dots.length];
+  }, 300);
+  box.appendChild(div);
+  box.scrollTop = box.scrollHeight;
+  return div;
+}
+
+// 日付ユーティリティ
+function getWeekDates(baseDate) {
+  // baseDate の週（月〜日）の日付リストを返す
+  const d = new Date(baseDate + 'T00:00:00');
+  const day = d.getDay(); // 0=日
+  const monday = new Date(d); monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+  return Array.from({length: 7}, (_, i) => {
+    const dd = new Date(monday); dd.setDate(monday.getDate() + i); return toDateStr(dd);
+  });
+}
+function getLastNDates(n, base) {
+  const ref = new Date((base || currentDate) + 'T00:00:00');
+  return Array.from({length: n}, (_, i) => {
+    const d = new Date(ref); d.setDate(ref.getDate() - (n - 1 - i)); return toDateStr(d);
+  });
+}
+function dateLabel(ds) {
+  const d = new Date(ds + 'T00:00:00');
+  const dow = ['日','月','火','水','木','金','土'][d.getDay()];
+  return `${d.getMonth()+1}/${d.getDate()}(${dow})`;
+}
+
+// 全記録のサマリーをAIに渡す文字列を生成
+function buildFullContext() {
+  const lines = [];
+
+  // プロフィール
+  const sexLabel = profile.sex === 'male' ? '男性' : '女性';
+  const actLabel = ({1.2:'座位中心',1.375:'軽い運動',1.55:'中程度',1.725:'激しい運動',1.9:'非常に激しい'})[String(profile.activityFactor)] || String(profile.activityFactor);
+  lines.push('【プロフィール】');
+  lines.push(`  性別: ${sexLabel} / 年齢: ${profile.age}歳 / 身長: ${profile.height}cm / 体重: ${profile.weight}kg`);
+  if (profile.bf != null) lines.push(`  体脂肪率: ${profile.bf}%`);
+  lines.push(`  活動レベル: ${actLabel} / 室温: ${profile.temp}℃`);
+
+  // 目標値
+  const g = goals();
+  lines.push('【1日の目標値】');
+  lines.push(`  カロリー: ${g.cal}kcal / タンパク質: ${g.p}g / 脂質: ${g.f}g / 炭水化物: ${g.c}g`);
+  lines.push(`  食物繊維: 21g / 鉄: 7mg / カルシウム: 700mg / VitC: 100mg / VitD: 8.5μg / 塩分上限: 7.5g`);
+
+  // カスタム食品DB
+  if (customFoods.length) {
+    lines.push('【カスタム食品DB】');
+    customFoods.forEach(f => {
+      lines.push(`  ${f.name} (${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber ? ' 繊'+f.fiber : ''})`);
+    });
+  }
+
+  // 食事記録（全件）
+  lines.push('【食事記録（全期間）】');
+  if (!entries.length) {
+    lines.push('  記録なし');
+  } else {
+    const grouped = {};
+    entries.forEach(e => {
+      if (!grouped[e.date]) grouped[e.date] = {};
+      if (!grouped[e.date][e.meal]) grouped[e.date][e.meal] = [];
+      grouped[e.date][e.meal].push(
+        `${e.name}(${e.amount}g,${Math.round(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)},id:${e.id})`
+      );
+    });
+    Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, meals]) => {
+      const daySum = sumEntries(entries.filter(e => e.date === date));
+      lines.push(`  ${dateLabel(date)} ${date} [計${Math.round(daySum.cal)}kcal P${r1(daySum.p)} F${r1(daySum.f)} C${r1(daySum.c)}]`);
+      Object.entries(meals).forEach(([meal, foods]) => {
+        lines.push(`    ${meal}: ${foods.join('、')}`);
+      });
+    });
+  }
+
+  // 運動記録（全件）
+  lines.push('【運動記録（全期間）】');
+  if (!exercises.length) {
+    lines.push('  記録なし');
+  } else {
+    const exGrouped = {};
+    exercises.forEach(e => {
+      if (!exGrouped[e.date]) exGrouped[e.date] = [];
+      exGrouped[e.date].push(`${e.name}(${e.minutes ? e.minutes+'分,' : ''}消費${Math.round(e.cal)}kcal,id:${e.id})`);
+    });
+    Object.entries(exGrouped).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, exs]) => {
+      lines.push(`  ${dateLabel(date)} ${date}: ${exs.join('、')}`);
+    });
+  }
+
+  return lines.join('\n');
+}
+
+// コマンド実行エンジン
+function executeAiCommands(commands, backupLabel) {
+  // 変更前にバックアップを保存
+  takeAiBackup(backupLabel || 'AI操作');
+  const log = [];
+  let changed = false;
+
+  commands.forEach(cmd => {
+    // ── ADD ──
+    if (cmd.type === 'add') {
+      const dates = cmd.dates || [cmd.date || currentDate];
+      const meal  = ['朝食','昼食','夕食','間食'].includes(cmd.meal) ? cmd.meal : '間食';
+      dates.forEach(date => {
+        (cmd.items || [cmd]).forEach(item => {
+          if (!item.name) return;
+          entries.push({
+            id: Date.now() + Math.random(),
+            date, meal,
+            name:    item.name,
+            amount:  parseFloat(item.amount)  || 100,
+            cal:     parseFloat(item.cal)     || 0,
+            p:       parseFloat(item.p)       || 0,
+            f:       parseFloat(item.f)       || 0,
+            c:       parseFloat(item.c)       || 0,
+            fiber:   parseFloat(item.fiber)   || 0,
+            iron:    parseFloat(item.iron)    || 0,
+            calcium: parseFloat(item.calcium) || 0,
+            vitc:    parseFloat(item.vitc)    || 0,
+            vitd:    parseFloat(item.vitd)    || 0,
+            salt:    parseFloat(item.salt)    || 0,
+          });
+        });
+        log.push(`✅ ${dateLabel(date)} ${meal}に登録`);
+      });
+      changed = true;
+    }
+
+    // ── DELETE_BY_ID ──
+    else if (cmd.type === 'delete_by_id') {
+      const ids = Array.isArray(cmd.ids) ? cmd.ids : [cmd.id];
+      const before = entries.length;
+      entries = entries.filter(e => !ids.includes(e.id));
+      log.push(`🗑️ ${before - entries.length}件削除`);
+      changed = true;
+    }
+
+    // ── DELETE_BY_DATE_MEAL ──
+    else if (cmd.type === 'delete_by_date_meal') {
+      const dates = cmd.dates || [cmd.date];
+      const meal  = cmd.meal || null;
+      const before = entries.length;
+      entries = entries.filter(e => {
+        if (!dates.includes(e.date)) return true;
+        if (meal && e.meal !== meal) return true;
+        return false;
+      });
+      log.push(`🗑️ ${before - entries.length}件削除（${dates.map(dateLabel).join('、')} ${meal||'全食事'}）`);
+      changed = true;
+    }
+
+    // ── REPLACE ──（指定日時のmealを全削除→新規追加）
+    else if (cmd.type === 'replace') {
+      const dates = cmd.dates || [cmd.date || currentDate];
+      const meal  = ['朝食','昼食','夕食','間食'].includes(cmd.meal) ? cmd.meal : '間食';
+      dates.forEach(date => {
+        const before = entries.length;
+        entries = entries.filter(e => !(e.date === date && e.meal === meal));
+        const removed = before - entries.length;
+        (cmd.items || []).forEach(item => {
+          if (!item.name) return;
+          entries.push({
+            id: Date.now() + Math.random(),
+            date, meal,
+            name:    item.name,
+            amount:  parseFloat(item.amount)  || 100,
+            cal:     parseFloat(item.cal)     || 0,
+            p:       parseFloat(item.p)       || 0,
+            f:       parseFloat(item.f)       || 0,
+            c:       parseFloat(item.c)       || 0,
+            fiber:   parseFloat(item.fiber)   || 0,
+            iron:    parseFloat(item.iron)    || 0,
+            calcium: parseFloat(item.calcium) || 0,
+            vitc:    parseFloat(item.vitc)    || 0,
+            vitd:    parseFloat(item.vitd)    || 0,
+            salt:    parseFloat(item.salt)    || 0,
+          });
+        });
+        log.push(`🔄 ${dateLabel(date)} ${meal}を置き換え（旧${removed}件→新${cmd.items.length}件）`);
+      });
+      changed = true;
+    }
+  });
+
+  if (changed) { save(); renderRecord(); renderCalendar(); }
+  return log;
+}
+
+async function sendAiMessage() {
+  const inp = document.getElementById('aiInput');
+  const btn = document.getElementById('aiSendBtn');
+  const text = inp ? inp.value.trim() : '';
+  if (!text) return;
+
+  inp.value = '';
+  inp.disabled = true;
+  btn.disabled = true;
+
+  appendAiMessage('user', text);
+  aiHistory.push({ role: 'user', content: text });
+
+  const thinking = appendAiThinking();
+
+  // コンテキスト構築（送信のたびに最新データを全件渡す）
+  const today = currentDate;
+  const weekDates = getWeekDates(today);
+  const dbSample  = LOCAL_DB.slice(0, 60).map(f => f.name).join('、');
+  const fullCtx = buildFullContext();
+
+  const systemPrompt = `あなたは日本語の栄養管理アプリの操作AIです。
+ユーザーの指示を解釈し、必要に応じて記録の追加・削除・置き換えを行います。
+以下は送信時点の最新内部データです。質問・操作・アドバイスの判断に必ず活用してください。
+
+【現在日時】今日: ${today}（${dateLabel(today)}）
+【今週の日付】${weekDates.map(d => `${dateLabel(d)} ${d}`).join(' / ')}
+
+${fullCtx}
+
+【標準食品DB例】${dbSample} など
+
+【食事タイミング】朝食 / 昼食 / 夕食 / 間食
+
+━━━━━━━━━━━━━━━━━━━━━━
+【操作コマンド仕様】
+操作が必要な場合は必ず末尾に \`\`\`json ブロックを出力してください。
+
+コマンド種別:
+
+1. add — 記録を追加
+{
+  "commands": [{
+    "type": "add",
+    "dates": ["2025-06-16", "2025-06-17"],
+    "meal": "昼食",
+    "items": [{"name": "食品名", "amount": 100, "cal": 168, "p": 2.5, "f": 0.3, "c": 37.1, "fiber": 0.3, "iron": 0.1, "calcium": 3, "vitc": 0, "vitd": 0, "salt": 0}]
+  }],
+  "backup_label": "朝食追加",
+  "message": "ユーザーへの返答"
+}
+
+2. delete_by_id — IDを指定して削除
+{
+  "commands": [{"type": "delete_by_id", "ids": [1234567890]}],
+  "backup_label": "夕食削除",
+  "message": "削除しました"
+}
+
+3. delete_by_date_meal — 日付×食事タイミングで一括削除
+{
+  "commands": [{"type": "delete_by_date_meal", "dates": ["2025-06-16"], "meal": "昼食"}],
+  "backup_label": "昼食一括削除",
+  "message": "削除しました"
+}
+
+4. replace — 指定日時の記録を全削除して新しい内容で置き換え
+{
+  "commands": [{"type": "replace", "dates": ["2025-06-16", "2025-06-17"], "meal": "昼食", "items": [...]}],
+  "backup_label": "今週昼食を置き換え",
+  "message": "置き換えました"
+}
+
+【backup_labelルール】
+- 操作内容を10文字以内で端的に表す日本語ラベルを必ず付ける
+- 例）「朝食に卵追加」「昨日夕食削除」「今週昼食を置換」
+
+【重要ルール】
+- "今週"は ${weekDates[0]}〜${weekDates[6]} の7日間
+- "昨日"は ${getLastNDates(2)[0]}、"一昨日"は ${getLastNDates(3)[0]}
+- 栄養素は日本食品標準成分表の標準値を推定して必ず入れる
+- 量が不明なら一般的な1人前を推定
+- 複数日にまたがる操作はdatesに全日付を列挙する
+- 記録の読み取り・質問のみの場合はcommands不要、messageだけ返す
+
+【対応範囲外の操作について】
+以下はこのアプリで対応できない操作です。該当する場合は操作を行わず、
+できない理由と代替手段をmessageのみで返してください（JSONブロック不要）:
+- 体重・プロフィール情報の変更（→「設定」タブで手動変更を案内）
+- カスタム食品・複合食品の登録・削除（→「食品登録」タブで手動操作を案内）
+- グラフや統計の操作（表示のみで変更不可）
+- 15日以上前の記録（コンテキスト外のため参照・操作不可）
+- 運動記録の追加・削除（→「記録」タブの運動ブロックで手動操作を案内）
+- アプリの設定変更・外部サービス連携操作
+━━━━━━━━━━━━━━━━━━━━━━`;
+
+  try {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 1500,
+        system: systemPrompt,
+        messages: aiHistory,
+      }),
+    });
+
+    const data   = await res.json();
+    const rawText = (data.content || []).map(b => b.text || '').join('');
+
+    // JSONブロック抽出
+    const jsonMatch = rawText.match(/```json\s*([\s\S]*?)```/);
+    let parsed      = null;
+    let displayText = rawText;
+
+    if (jsonMatch) {
+      try {
+        parsed = JSON.parse(jsonMatch[1].trim());
+        displayText = parsed.message || rawText.replace(/```json[\s\S]*?```/g, '').trim();
+      } catch(e) {}
+    }
+
+    if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
+    aiHistory.push({ role: 'assistant', content: rawText });
+
+    // コマンド実行
+    if (parsed && Array.isArray(parsed.commands) && parsed.commands.length > 0) {
+      const backupLabel = parsed.backup_label || 'AI操作';
+      const opLog = executeAiCommands(parsed.commands, backupLabel);
+      const replyText = (displayText ? displayText + '\n\n' : '') + opLog.join('\n');
+      appendAiMessage('ai', replyText);
+    } else {
+      appendAiMessage('ai', displayText || '応答を取得できませんでした。');
+    }
+
+  } catch(err) {
+    if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
+    appendAiMessage('ai', '通信エラーが発生しました。\n' + (err.message || err));
+    aiHistory.pop();
+  }
+
+  inp.disabled = false;
+  btn.disabled = false;
+  inp.focus();
 }
 
 document.addEventListener('click', e => {
@@ -936,5 +1516,6 @@ document.addEventListener('click', e => {
 updateDateHeader();
 renderCalendar();
 renderRecord();
+renderExerciseItems();
 renderAuthUI();
 initFirebase(); // Firebase設定がある場合に認証・同期を開始

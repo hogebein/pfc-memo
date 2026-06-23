@@ -479,6 +479,52 @@
         <div id="garminStatus" style="font-size:13px;color:var(--text-sub)">未接続</div>
       </div>
     </div>
+    <!-- AI アシスタント -->
+    <div class="panel" id="panel-ai">
+      <div class="card" style="padding:12px 14px 10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+          <span style="font-size:20px">🤖</span>
+          <div>
+            <div style="font-size:14px;font-weight:600">AI食品アシスタント</div>
+            <div style="font-size:11px;color:var(--text-sub)">話しかけると食品を自動登録します</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- チャット画面 -->
+      <div id="aiChatBox" style="
+        height: 52vh;
+        overflow-y: auto;
+        background: var(--bg);
+        border-radius: var(--radius);
+        padding: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 10px;
+      "></div>
+
+      <!-- 入力欄 -->
+      <div style="display:flex;gap:8px;align-items:flex-end">
+        <textarea id="aiInput" rows="2" placeholder="例）朝食に卵2個とトースト1枚を食べました"
+          style="flex:1;resize:none;border:1px solid var(--border);border-radius:10px;padding:8px 10px;font-size:13px;background:var(--surface);color:var(--text);font-family:inherit;line-height:1.4"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendAiMessage()}"></textarea>
+        <button onclick="sendAiMessage()" id="aiSendBtn"
+          style="background:var(--accent);color:#fff;border:none;border-radius:10px;padding:10px 14px;font-size:18px;cursor:pointer;height:44px;display:flex;align-items:center">➤</button>
+      </div>
+      <div style="font-size:10px;color:var(--text-sub);margin-top:5px;text-align:center">
+        Shift+Enterで改行 / Enterで送信
+      </div>
+
+      <!-- バックアップ一覧 -->
+      <details style="margin-top:12px">
+        <summary style="font-size:12px;font-weight:600;color:var(--text-sub);cursor:pointer;user-select:none;list-style:none;display:flex;align-items:center;gap:5px">
+          <span>♻️ バックアップ・復元</span>
+          <span style="font-size:10px;font-weight:400">（AI操作前に自動保存・最大10件）</span>
+        </summary>
+        <div id="aiBackupList" style="margin-top:8px;padding:4px 0"></div>
+      </details>
+    </div>
   </div>
 
   <nav id="nav">
@@ -500,6 +546,9 @@
     <button class="nav-btn" onclick="switchTab('garmin')" id="nav-garmin">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>Garmin
     </button>
+    <button class="nav-btn" onclick="switchTab('ai')" id="nav-ai">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a8 8 0 0 1 8 8c0 3-1.5 5.5-4 7l-1 3H9l-1-3C5.5 15.5 4 13 4 10a8 8 0 0 1 8-8z"/><line x1="9" y1="17" x2="15" y2="17"/></svg>AI
+    </button>
   </nav>
 </div>
 
@@ -511,7 +560,7 @@
   //   追加しないと auth/unauthorized-domain エラーが発生します。
   //
   // 取得場所：Firebase Console > プロジェクト設定 > マイアプリ > SDK設定と構成
-  window.FIREBASE_CONFIG = {
+  window.FIREBASE_CONFIG =  {
     apiKey: "AIzaSyDwJc9yBwI971fGWJc6tV68Ak5BBb_bSvg",
     authDomain: "pfc-memo.firebaseapp.com",
     projectId: "pfc-memo",
