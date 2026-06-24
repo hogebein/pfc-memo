@@ -208,11 +208,109 @@ function saveProfile() {
   saveToCloud();
   renderBmrPreview();
 }
+function setGoalMode(mode) {
+  profile.goalMode = mode;
+  document.querySelectorAll('.goal-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  const customPanel = document.getElementById('customGoalPanel');
+  if (customPanel) customPanel.style.display = mode === 'custom' ? 'block' : 'none';
+  if (mode !== 'custom') {
+    // プリセット時は自動計算値でプレビュー更新
+    const g = goals();
+    ['Cal','P','F','C'].forEach(k => {
+      const el = document.getElementById('pGoal'+k);
+      if (el) el.value = g[k.toLowerCase()];
+    });
+  }
+  saveGoalSettings();
+  renderBmrPreview();
+}
+function saveGoalSettings() {
+  const mode = profile.goalMode || 'normal';
+  if (mode === 'custom') {
+    profile.customGoal = {
+      cal: parseFloat(document.getElementById('pGoalCal').value) || calcTDEE(),
+      p:   parseFloat(document.getElementById('pGoalP').value)   || 100,
+      f:   parseFloat(document.getElementById('pGoalF').value)   || 60,
+      c:   parseFloat(document.getElementById('pGoalC').value)   || 200,
+    };
+  }
+  try { localStorage.setItem('pfcProfile', JSON.stringify(profile)); } catch(e) {}
+  saveToCloud();
+  renderBmrPreview();
+}
 function setActivity(el) {
   document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   profile.activityFactor = parseFloat(el.dataset.val);
   saveProfile();
+}
+
+function initGoalUI() {
+  const mode = profile.goalMode || 'normal';
+  document.querySelectorAll('.goal-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  const customPanel = document.getElementById('customGoalPanel');
+  if (customPanel) customPanel.style.display = mode === 'custom' ? 'block' : 'none';
+  const g = goals();
+  ['Cal','P','F','C'].forEach(k => {
+    const el = document.getElementById('pGoal'+k);
+    if (el) el.value = (profile.customGoal && mode === 'custom') ? profile.customGoal[k.toLowerCase()] : g[k.toLowerCase()];
+  });
+  updateGoalModeDesc(mode);
+  updateGoalPreview();
+}
+function updateGoalModeDesc(mode) {
+  ['normal','recomp','custom'].forEach(m => {
+    const el = document.querySelector('.goal-desc-'+m);
+    if (el) el.style.display = m === mode ? '' : 'none';
+  });
+}
+function updateGoalPreview() {
+  const g = goals();
+  const setEl = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+  setEl('goalPreviewCal', g.cal);
+  setEl('goalPreviewP',   g.p);
+  setEl('goalPreviewF',   g.f);
+  setEl('goalPreviewC',   g.c);
+}
+function initProfile() {
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val !== undefined) el.value = val; };
+  set('pSex',    profile.sex);
+  set('pAge',    profile.age);
+  set('pHeight', profile.height);
+  set('pWeight', profile.weight);
+  set('pBF',     profile.bf ?? '');
+  set('pTemp',   profile.temp);
+  document.querySelectorAll('.toggle-btn[data-val]').forEach(b => {
+    b.classList.toggle('active', parseFloat(b.dataset.val) === profile.activityFactor);
+  });
+  renderBmrPreview();
+}
+function renderBmrPreview() {
+  const el = document.getElementById('bmrPreview');
+  if (!el) return;
+  const tdee = calcTDEE();
+  const bmr  = Math.round(tdee / (profile.activityFactor || 1.2));
+  const g    = goals();
+  const modeLabel = { normal:'通常', recomp:'低脂質リコンプ', custom:'カスタム' }[profile.goalMode || 'normal'];
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
+      <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
+        <div style="color:var(--text-sub);font-size:10px">基礎代謝 (BMR)</div>
+        <div style="font-weight:700;font-size:16px">${bmr} <span style="font-size:10px;font-weight:400">kcal</span></div>
+      </div>
+      <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
+        <div style="color:var(--text-sub);font-size:10px">推定TDEE</div>
+        <div style="font-weight:700;font-size:16px">${tdee} <span style="font-size:10px;font-weight:400">kcal</span></div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">現在の目標（${modeLabel}プリセット）</div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center;font-size:11px">
+      <div style="background:var(--bg);border-radius:6px;padding:5px 2px"><div style="color:var(--text-sub);font-size:9px">kcal</div><div style="font-weight:600">${g.cal}</div></div>
+      <div style="background:#e3f0ff;border-radius:6px;padding:5px 2px"><div style="color:#3266ad;font-size:9px">P(g)</div><div style="font-weight:600">${g.p}</div></div>
+      <div style="background:#fff3e0;border-radius:6px;padding:5px 2px"><div style="color:#e8a838;font-size:9px">F(g)</div><div style="font-weight:600">${g.f}</div></div>
+      <div style="background:#e8f5e9;border-radius:6px;padding:5px 2px"><div style="color:#4caf50;font-size:9px">C(g)</div><div style="font-weight:600">${g.c}</div></div>
+    </div>`;
+  updateGoalPreview();
 }
 
 // ── PWA ──
@@ -246,9 +344,36 @@ function getAllFoods() {
     ...comboFoods.map(f => ({...f, _search: normalize(f.name), _src:'combo'})),
   ];
 }
+function calcTDEE() {
+  const w = profile.weight || userWeight || 65;
+  const h = profile.height || 170;
+  const age = profile.age || 30;
+  const isMale = profile.sex !== 'female';
+  const act = profile.activityFactor || 1.2;
+  const bmr = isMale
+    ? 10*w + 6.25*h - 5*age + 5
+    : 10*w + 6.25*h - 5*age - 161;
+  return Math.round(bmr * act);
+}
 function goals() {
-  const p = r1(userWeight*1.6), cal = 2000, f = r1(cal*0.25/9), c = r1((cal-p*4-f*9)/4);
-  return {cal, p, f, c};
+  // カスタム目標が有効な場合はそちらを優先
+  if (profile.goalMode === 'custom' && profile.customGoal) {
+    return { ...profile.customGoal };
+  }
+  const tdee = calcTDEE();
+  const w = profile.weight || userWeight || 65;
+  if (profile.goalMode === 'recomp') {
+    // 低脂質リコンププリセット: 通常タンパク・低脂質・カロリー維持
+    const p = r1(w * 1.6);
+    const f = r1(tdee * 0.15 / 9);
+    const c = r1((tdee - p*4 - f*9) / 4);
+    return { cal: tdee, p, f, c };
+  }
+  // 通常プリセット (デフォルト)
+  const p = r1(w * 1.6);
+  const f = r1(tdee * 0.25 / 9);
+  const c = r1((tdee - p*4 - f*9) / 4);
+  return { cal: tdee, p, f, c };
 }
 function sumEntries(list) {
   return list.reduce((a,e) => ({
@@ -323,6 +448,76 @@ function renderCalendar() {
 function renderRecord() {
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
+  const g = goals();
+  const exToday = exercises.filter(e => e.date === currentDate);
+  const exCal = exToday.reduce((a, e) => a + (e.cal || 0), 0);
+  const remain = g.cal - s.cal + exCal;
+  const remainColor = remain >= 0 ? 'var(--accent)' : '#c0392b';
+
+  // ── エネルギー収支カード ──
+  document.getElementById('balanceCard').innerHTML = `
+    <div class="card" style="padding:10px 14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <div style="text-align:center;flex:1">
+          <div style="font-size:10px;color:var(--text-sub)">目標</div>
+          <div style="font-size:18px;font-weight:700">${ri(g.cal)}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+        </div>
+        <div style="font-size:18px;color:var(--text-sub)">−</div>
+        <div style="text-align:center;flex:1">
+          <div style="font-size:10px;color:var(--text-sub)">摂取</div>
+          <div style="font-size:18px;font-weight:700">${ri(s.cal)}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+        </div>
+        ${exCal > 0 ? `
+        <div style="font-size:18px;color:var(--text-sub)">+</div>
+        <div style="text-align:center;flex:1">
+          <div style="font-size:10px;color:var(--text-sub)">運動消費</div>
+          <div style="font-size:18px;font-weight:700">${ri(exCal)}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+        </div>` : ''}
+        <div style="font-size:18px;color:var(--text-sub)">=</div>
+        <div style="text-align:center;flex:1">
+          <div style="font-size:10px;color:var(--text-sub)">${remain >= 0 ? 'あと' : '超過'}</div>
+          <div style="font-size:18px;font-weight:700;color:${remainColor}">${ri(Math.abs(remain))}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+        </div>
+      </div>
+      <div style="margin-top:8px;height:6px;border-radius:3px;background:var(--border);overflow:hidden">
+        <div style="height:100%;border-radius:3px;background:${s.cal > g.cal ? '#c0392b' : 'var(--accent)'};width:${Math.min(s.cal/g.cal*100,100)}%;transition:width .3s"></div>
+      </div>
+    </div>`;
+
+  // ── エネルギー内訳 ──
+  const bmr_disp = ri(g.cal / (profile.activityFactor || 1.2));
+  const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
+  const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
+  const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
+  document.getElementById('energyBreakdown').innerHTML = `
+    <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">
+      推定TDEE ${ri(g.cal)} kcal（BMR ${bmr_disp} kcal × 活動係数 ${profile.activityFactor || 1.2}）
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
+      <div style="background:#e3f0ff;border-radius:8px;padding:7px 4px">
+        <div style="font-size:10px;color:#3266ad;font-weight:600">タンパク質</div>
+        <div style="font-weight:700">${r1(s.p)}g</div>
+        <div style="font-size:10px;color:var(--text-sub)">${ri(s.p*4)} kcal (${pCalPct}%)</div>
+        <div style="font-size:10px;color:var(--text-sub)">目標 ${g.p}g</div>
+      </div>
+      <div style="background:#fff3e0;border-radius:8px;padding:7px 4px">
+        <div style="font-size:10px;color:#e8a838;font-weight:600">脂質</div>
+        <div style="font-weight:700">${r1(s.f)}g</div>
+        <div style="font-size:10px;color:var(--text-sub)">${ri(s.f*9)} kcal (${fCalPct}%)</div>
+        <div style="font-size:10px;color:var(--text-sub)">目標 ${g.f}g</div>
+      </div>
+      <div style="background:#e8f5e9;border-radius:8px;padding:7px 4px">
+        <div style="font-size:10px;color:#4caf50;font-weight:600">炭水化物</div>
+        <div style="font-weight:700">${r1(s.c)}g</div>
+        <div style="font-size:10px;color:var(--text-sub)">${ri(s.c*4)} kcal (${cCalPct}%)</div>
+        <div style="font-size:10px;color:var(--text-sub)">目標 ${g.c}g</div>
+      </div>
+    </div>`;
+
   document.getElementById('recMetrics').innerHTML = `
     <div class="mc"><div class="mc-label">カロリー</div><div class="mc-value">${ri(s.cal)}</div><div class="mc-unit">kcal</div></div>
     <div class="mc"><div class="mc-label">タンパク質</div><div class="mc-value">${r1(s.p)}</div><div class="mc-unit">g</div></div>
@@ -361,8 +556,11 @@ function renderRecord() {
       html += `<div class="meal-items">`;
       items.forEach(e => {
         if (editingId === e.id) {
+          // 編集フォーム用に100g基準値をstoreする
+          window._editBase = window._editBase || {};
+          window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
           html += `<div class="edit-form">
-            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="1"></div></div>
+            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="1" oninput="recalcEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01"></div></div>
@@ -499,7 +697,28 @@ function addEntry(meal) {
 }
 function toggleAddPanel(meal){activeAddMeal=activeAddMeal===meal?null:meal;editingId=null;renderRecord()}
 function startEdit(id){editingId=id;renderRecord()}
-function cancelEdit(){editingId=null;renderRecord()}
+function recalcEdit(id) {
+  const base = window._editBase && window._editBase[id];
+  if (!base) return;
+  const amt = parseFloat(document.getElementById('ea'+id).value) || 0;
+  if (amt <= 0) return;
+  const r = amt / (base.per || 100);
+  const set = (elId, val, dec) => {
+    const el = document.getElementById(elId+id);
+    if (el) el.value = dec === 2 ? r2(val*r) : r1(val*r);
+  };
+  set('ec', base.cal);
+  set('ep', base.p);
+  set('ef', base.f);
+  set('ecc', base.c);
+  set('efib', base.fiber);
+  set('efe', base.iron);
+  set('eca', base.calcium);
+  set('evc', base.vitc);
+  set('evd', base.vitd);
+  set('esl', base.salt, 2);
+}
+function cancelEdit(){if(window._editBase)window._editBase={};editingId=null;renderRecord()}
 function saveEdit(id) {
   const idx=entries.findIndex(e=>e.id===id); if(idx===-1) return;
   entries[idx]={...entries[idx],name:document.getElementById('en'+id).value.trim()||entries[idx].name,amount:parseFloat(document.getElementById('ea'+id).value)||entries[idx].amount,
@@ -821,22 +1040,112 @@ function renderComboIngredients() {
   const tot=comboIngredients.reduce((a,f)=>({cal:a.cal+f._cal,p:a.p+f._p,f:a.f+f._f,c:a.c+f._c,fiber:a.fiber+f._fiber,iron:a.iron+f._iron,calcium:a.calcium+f._calcium}),{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0});
   document.getElementById('comboTotal').textContent=`合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)} 繊${r1(tot.fiber)}g`;
 }
-function saveComboFood() {
-  const name=document.getElementById('comboName').value.trim(); const msg=document.getElementById('comboSaveMsg');
-  if(!name){msg.className='status-msg status-err';msg.textContent='複合食品名を入力してください';return}
-  if(!comboIngredients.length){msg.className='status-msg status-err';msg.textContent='食材を追加してください';return}
-  const tot=comboIngredients.reduce((a,f)=>({cal:a.cal+f._cal,p:a.p+f._p,f:a.f+f._f,c:a.c+f._c,fiber:a.fiber+f._fiber,iron:a.iron+f._iron,calcium:a.calcium+f._calcium,vitc:a.vitc+(f._vitc||0),vitd:a.vitd+(f._vitd||0),salt:a.salt+(f._salt||0)}),{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
-  const totalAmt=comboIngredients.reduce((a,f)=>a+f.amount,0);
-  const sc=v=>r1(v/totalAmt*100);
-  comboFoods.push({id:Date.now(),name,per:100,cal:sc(tot.cal),p:sc(tot.p),f:sc(tot.f),c:sc(tot.c),fiber:sc(tot.fiber),iron:sc(tot.iron),calcium:sc(tot.calcium),vitc:sc(tot.vitc),vitd:sc(tot.vitd),salt:r2(tot.salt/totalAmt*100),ingredients:comboIngredients.map(f=>({name:f.name,amount:f.amount})),_src:'combo'});
-  saveCustom(); msg.className='status-msg status-ok'; msg.textContent=`「${name}」を登録しました`;
-  comboIngredients=[]; document.getElementById('comboName').value=''; renderComboIngredients(); renderComboFoodList(); setTimeout(()=>{msg.textContent=''},2500);
+function editComboFood(id) {
+  const f = comboFoods.find(f => f.id === id);
+  if (!f) return;
+  // 編集対象をフォームに展開
+  document.getElementById('comboName').value = f.name;
+  // 食材リストを復元
+  comboIngredients = (f.ingredients || []).map(ing => {
+    const r = 100 / (ing.per || 100);
+    return {
+      ...ing,
+      per: ing.per || 100,
+      amount: ing.amount,
+      _cal:     r1((ing.cal     || 0) * r),
+      _p:       r1((ing.p       || 0) * r),
+      _f:       r1((ing.f       || 0) * r),
+      _c:       r1((ing.c       || 0) * r),
+      _fiber:   r1((ing.fiber   || 0) * r),
+      _iron:    r1((ing.iron    || 0) * r),
+      _calcium: r1((ing.calcium || 0) * r),
+      _vitc:    r1((ing.vitc    || 0) * r),
+      _vitd:    r1((ing.vitd    || 0) * r),
+      _salt:    r2((ing.salt    || 0) * r),
+    };
+  });
+  renderComboIngredients();
+  // 保存ボタンを「更新」モードにする
+  const btn = document.getElementById('comboSaveBtn');
+  const msg = document.getElementById('comboSaveMsg');
+  btn.textContent = '更新';
+  btn.dataset.editId = id;
+  msg.textContent = `「${f.name}」を編集中`;
+  msg.className = 'status-msg status-ok';
+  // フォームまでスクロール
+  document.getElementById('csComboPanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
-function deleteComboFood(id){comboFoods=comboFoods.filter(f=>f.id!==id);saveCustom();renderComboFoodList()}
+
+function saveComboFood() {
+  const name = document.getElementById('comboName').value.trim();
+  const msg  = document.getElementById('comboSaveMsg');
+  const btn  = document.getElementById('comboSaveBtn');
+  if (!name) { msg.className='status-msg status-err'; msg.textContent='複合食品名を入力してください'; return }
+  if (!comboIngredients.length) { msg.className='status-msg status-err'; msg.textContent='食材を追加してください'; return }
+
+  const tot = comboIngredients.reduce((a,f) => ({
+    cal: a.cal+f._cal, p: a.p+f._p, f: a.f+f._f, c: a.c+f._c,
+    fiber: a.fiber+f._fiber, iron: a.iron+f._iron, calcium: a.calcium+f._calcium,
+    vitc: a.vitc+(f._vitc||0), vitd: a.vitd+(f._vitd||0), salt: a.salt+(f._salt||0),
+  }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+  const totalAmt = comboIngredients.reduce((a,f) => a + f.amount, 0);
+  const sc = v => r1(v / totalAmt * 100);
+
+  const editId = btn.dataset.editId ? Number(btn.dataset.editId) : null;
+
+  const foodData = {
+    id: editId || Date.now(),
+    name, per: 100,
+    cal: sc(tot.cal), p: sc(tot.p), f: sc(tot.f), c: sc(tot.c),
+    fiber: sc(tot.fiber), iron: sc(tot.iron), calcium: sc(tot.calcium),
+    vitc: sc(tot.vitc), vitd: sc(tot.vitd), salt: r2(tot.salt / totalAmt * 100),
+    ingredients: comboIngredients.map(f => ({
+      name: f.name, amount: f.amount,
+      per: f.per || 100, cal: f.cal, p: f.p, f: f.f, c: f.c,
+      fiber: f.fiber||0, iron: f.iron||0, calcium: f.calcium||0,
+      vitc: f.vitc||0, vitd: f.vitd||0, salt: f.salt||0,
+    })),
+    _src: 'combo',
+  };
+
+  if (editId) {
+    comboFoods = comboFoods.map(f => f.id === editId ? foodData : f);
+    msg.textContent = `「${name}」を更新しました`;
+  } else {
+    comboFoods.push(foodData);
+    msg.textContent = `「${name}」を登録しました`;
+  }
+
+  // フォームリセット
+  btn.textContent = '登録';
+  delete btn.dataset.editId;
+  comboIngredients = [];
+  document.getElementById('comboName').value = '';
+  renderComboIngredients();
+  saveCustom();
+  msg.className = 'status-msg status-ok';
+  renderComboFoodList();
+  setTimeout(() => { msg.textContent = ''; }, 2500);
+}
+
 function renderComboFoodList() {
-  const cont=document.getElementById('comboFoodList');
-  if(!comboFoods.length){cont.innerHTML=`<div style="font-size:12px;color:var(--text-sub);padding:8px 0">まだ登録がありません</div>`;return}
-  cont.innerHTML=comboFoods.map(f=>`<div class="custom-item"><div><div style="font-weight:500">${f.name}</div><div style="font-size:10px;color:var(--text-sub)">100gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div><div style="font-size:10px;color:var(--text-sub)">${(f.ingredients||[]).map(i=>`${i.name}(${i.amount}g)`).join('、')}</div></div><button class="btn btn-sm btn-danger" onclick="deleteComboFood(${f.id})">✕</button></div>`).join('');
+  const cont = document.getElementById('comboFoodList');
+  if (!comboFoods.length) {
+    cont.innerHTML = `<div style="font-size:12px;color:var(--text-sub);padding:8px 0">まだ登録がありません</div>`;
+    return;
+  }
+  cont.innerHTML = comboFoods.map(f =>
+    `<div class="custom-item">
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500">${f.name}</div>
+        <div style="font-size:10px;color:var(--text-sub)">100gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div>
+        <div style="font-size:10px;color:var(--text-sub)">${(f.ingredients||[]).map(i=>`${i.name}(${i.amount}g)`).join('、')}</div>
+      </div>
+      <button class="btn btn-sm" onclick="editComboFood(${f.id})"
+        style="background:#e8f0fe;color:#3266ad;border:none;margin-right:4px;padding:3px 8px">編集</button>
+      <button class="btn btn-sm btn-danger" onclick="deleteComboFood(${f.id})">✕</button>
+    </div>`
+  ).join('');
 }
 
 // ── Google Health API ──
@@ -1043,7 +1352,7 @@ function switchTab(t) {
     document.getElementById('csvFrom').value=month;
     document.getElementById('csvTo').value=today;
   }
-  if (t==='profile') initProfile();
+  if (t==='profile') { initProfile(); initGoalUI(); }
   if (t==='garmin')  renderGhStatus();
   if (t==='ai') initAiChat();
 }
@@ -1496,7 +1805,11 @@ ${fullCtx}
 
   } catch(err) {
     if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
-    appendAiMessage('ai', '通信エラーが発生しました。\n' + (err.message || err));
+    const msg = err.message || String(err);
+    const hint = msg.includes('GEMINI_API_KEY')
+      ? msg
+      : `通信エラーが発生しました。\n${msg}`;
+    appendAiMessage('ai', hint);
     aiHistory.pop();
   }
 

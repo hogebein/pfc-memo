@@ -1,28 +1,28 @@
 // ai-chat.js
-// Anthropic API へのプロキシ
+// Google Gemini API へのプロキシ（無料枠あり・クレジットカード不要）
 // APIキーをサーバー側（環境変数）で保持し、ブラウザに露出させない
 //
 // エンドポイント: /.netlify/functions/ai-chat
 // メソッド: POST
-// ボディ: { model, max_tokens, system, messages }
+// ボディ: { system, messages: [{role, content}] }
+//
+// Gemini の無料枠（2025年時点）:
+//   gemini-2.5-flash : 10 RPM / 250 RPD
+//   gemini-2.5-flash-lite: 15 RPM / 1,000 RPD
+
+const GEMINI_MODEL = 'gemini-2.5-flash-lite'; // 無料枠が最も広いモデル
 
 exports.handler = async (event) => {
-  // CORS プリフライト対応
   if (event.httpMethod === 'OPTIONS') {
-    return {
-      statusCode: 204,
-      headers: corsHeaders(),
-      body: '',
-    };
+    return { statusCode: 204, headers: corsHeaders(), body: '' };
   }
-
   if (event.httpMethod !== 'POST') {
     return json(405, { error: 'Method Not Allowed' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    return json(500, { error: 'ANTHROPIC_API_KEY が設定されていません。Netlify の環境変数を確認してください。' });
+    return json(500, { error: 'GEMINI_API_KEY が設定されていません。Netlify の環境変数を確認してください。' });
   }
 
   let body;
@@ -32,43 +32,59 @@ exports.handler = async (event) => {
     return json(400, { error: 'Invalid JSON body' });
   }
 
-  // 必須フィールドの検証
   if (!body.messages || !Array.isArray(body.messages)) {
     return json(400, { error: 'messages フィールドが必要です' });
   }
 
-  // Anthropic API へ転送
+  // Anthropic形式 → Gemini形式 に変換
+  // system は Gemini では systemInstruction に分離
+  const systemInstruction = body.system
+    ? { parts: [{ text: body.system }] }
+    : undefined;
+
+  const contents = body.messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+  }));
+
+  const geminiBody = {
+    contents,
+    ...(systemInstruction ? { systemInstruction } : {}),
+    generationConfig: {
+      maxOutputTokens: 1500,
+      temperature: 0.7,
+    },
+  };
+
   try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type':      'application/json',
-        'x-api-key':         apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model:      body.model      || 'claude-sonnet-4-6',
-        max_tokens: body.max_tokens || 1500,
-        system:     body.system     || '',
-        messages:   body.messages,
-      }),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(geminiBody),
     });
 
     const data = await res.json();
 
     if (!res.ok) {
-      // Anthropic 側のエラーをそのまま返す
-      return json(res.status, { error: data.error?.message || 'Anthropic API エラー', detail: data });
+      const errMsg = data.error?.message || `Gemini API エラー (${res.status})`;
+      return json(res.status, { error: errMsg, detail: data });
     }
+
+    // Gemini レスポンス → Anthropic互換形式 に変換してアプリ側の解析を共通化
+    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
+    const compatible = {
+      content: [{ type: 'text', text }],
+    };
 
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders() },
-      body: JSON.stringify(data),
+      body: JSON.stringify(compatible),
     };
 
   } catch (err) {
-    return json(502, { error: `Anthropic API への接続に失敗しました: ${err.message}` });
+    return json(502, { error: `Gemini API への接続に失敗しました: ${err.message}` });
   }
 };
 
