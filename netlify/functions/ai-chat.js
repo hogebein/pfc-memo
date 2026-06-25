@@ -1,16 +1,12 @@
 // ai-chat.js
-// Google Gemini API へのプロキシ（無料枠あり・クレジットカード不要）
-// APIキーをサーバー側（環境変数）で保持し、ブラウザに露出させない
-//
-// エンドポイント: /.netlify/functions/ai-chat
-// メソッド: POST
-// ボディ: { system, messages: [{role, content}] }
+// Google Gemini API へのプロキシ
 //
 // Gemini の無料枠（2025年時点）:
-//   gemini-2.5-flash : 10 RPM / 250 RPD
-//   gemini-2.5-flash-lite: 15 RPM / 1,000 RPD
+//   gemini-2.5-flash : 10 RPM / 250 RPD / 入力100万トークン
+//   gemini-2.5-flash-lite: 15 RPM / 1,000 RPD / 入力100万トークン（プレビュー・不安定）
+// → 安定性を優先して gemini-2.5-flash を使用
 
-const GEMINI_MODEL = 'gemini-2.5-flash-lite'; // 無料枠が最も広いモデル
+const GEMINI_MODEL = 'gemini-2.5-flash';
 
 exports.handler = async (event) => {
   if (event.httpMethod === 'OPTIONS') {
@@ -36,8 +32,6 @@ exports.handler = async (event) => {
     return json(400, { error: 'messages フィールドが必要です' });
   }
 
-  // Anthropic形式 → Gemini形式 に変換
-  // system は Gemini では systemInstruction に分離
   const systemInstruction = body.system
     ? { parts: [{ text: body.system }] }
     : undefined;
@@ -51,7 +45,7 @@ exports.handler = async (event) => {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
     generationConfig: {
-      maxOutputTokens: 1500,
+      maxOutputTokens: 2048,
       temperature: 0.7,
     },
   };
@@ -67,20 +61,37 @@ exports.handler = async (event) => {
     const data = await res.json();
 
     if (!res.ok) {
-      const errMsg = data.error?.message || `Gemini API エラー (${res.status})`;
-      return json(res.status, { error: errMsg, detail: data });
+      // Gemini エラーを日本語で分かりやすく返す
+      const code    = data.error?.code    || res.status;
+      const message = data.error?.message || '';
+      let userMsg;
+      if (code === 429) {
+        userMsg = 'リクエストが多すぎます（レート制限）。しばらく待ってから再度お試しください。\n無料枠: gemini-2.5-flash は1日250回まで。';
+      } else if (code === 400 && message.includes('token')) {
+        userMsg = 'コンテキストが長すぎます。会話履歴をリセットしてお試しください。';
+      } else if (code === 403) {
+        userMsg = 'APIキーが無効か権限がありません。GEMINI_API_KEY を確認してください。';
+      } else if (code === 503 || code === 502) {
+        userMsg = 'Gemini APIが一時的に利用できません。しばらく待ってから再度お試しください。';
+      } else {
+        userMsg = `Gemini APIエラー (${code}): ${message}`;
+      }
+      return json(res.status, { error: userMsg });
     }
 
-    // Gemini レスポンス → Anthropic互換形式 に変換してアプリ側の解析を共通化
-    const text = data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || '';
-    const compatible = {
-      content: [{ type: 'text', text }],
-    };
+    // finish_reason チェック（SAFETY など）
+    const candidate = data.candidates?.[0];
+    if (candidate?.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+      return json(200, {
+        content: [{ type: 'text', text: `⚠️ 応答が中断されました（理由: ${candidate.finishReason}）。別の表現で試してください。` }],
+      });
+    }
 
+    const text = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json', ...corsHeaders() },
-      body: JSON.stringify(compatible),
+      body: JSON.stringify({ content: [{ type: 'text', text }] }),
     };
 
   } catch (err) {
@@ -95,7 +106,6 @@ function corsHeaders() {
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 }
-
 function json(status, obj) {
   return {
     statusCode: status,

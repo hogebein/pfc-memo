@@ -64,6 +64,8 @@
     .btn-success { background: var(--green); color: #fff; border-color: var(--green); }
     .btn-ghost { border-color: transparent; background: none; }
     .btn-block { width: 100%; margin-top: 4px; }
+    .seasoning-btn { font-size: 12px; padding: 6px 12px; border: 1px solid var(--border); border-radius: 20px; background: var(--bg); color: var(--text); cursor: pointer; transition: background .15s; }
+    .seasoning-btn:active { background: var(--accent); color: #fff; }
 
     /* date nav */
     .date-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
@@ -257,10 +259,48 @@
         </div>
         <button class="nav-arr" onclick="changeDate(1)">&#8250;</button>
         <button class="btn btn-sm" onclick="goToday()" id="todayBtn" style="display:none;font-size:11px;padding:5px 10px">今日へ</button>
+        <button class="btn btn-sm" onclick="openCopyDayModal()" style="font-size:11px;padding:5px 10px;background:var(--surface);border:1px solid var(--border)">📋 コピー</button>
+      </div>
+
+      <!-- 1日コピーモーダル -->
+      <div id="copyDayModal" style="display:none;position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.45);align-items:center;justify-content:center" onclick="if(event.target===this)closeCopyDayModal()">
+        <div style="background:var(--surface);border-radius:16px;padding:20px;width:min(360px,92vw);box-shadow:0 8px 32px rgba(0,0,0,.2)">
+          <div style="font-size:15px;font-weight:700;margin-bottom:4px">📋 1日の記録をコピー</div>
+          <div style="font-size:12px;color:var(--text-sub);margin-bottom:14px">コピー元の日付を選んで「今日へコピー」してください</div>
+          <div style="margin-bottom:10px">
+            <label style="font-size:12px;color:var(--text-sub)">コピー元の日付</label>
+            <input type="date" id="copyFromDate" oninput="updateCopyDayPreview()" style="width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:14px;background:var(--bg);color:var(--text);margin-top:4px">
+          </div>
+          <div id="copyDayPreview" style="font-size:12px;color:var(--text-sub);min-height:36px;background:var(--bg);border-radius:8px;padding:8px 10px;margin-bottom:12px"></div>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+              <input type="checkbox" id="copyOverwrite" style="width:16px;height:16px">
+              <label for="copyOverwrite">コピー先（<span id="copyDestLabel"></span>）の既存記録を上書き</label>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;font-size:12px">
+              <input type="checkbox" id="copyExercise" style="width:16px;height:16px">
+              <label for="copyExercise">運動記録もコピーする</label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:14px">
+            <button onclick="closeCopyDayModal()" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:none;color:var(--text);cursor:pointer">キャンセル</button>
+            <button onclick="executeCopyDay()" style="flex:2;padding:10px;background:var(--accent);color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer">📋 今日へコピー</button>
+          </div>
+          <div id="copyDayMsg" class="status-msg" style="margin-top:8px;text-align:center"></div>
+        </div>
       </div>
 
       <!-- エネルギー収支カード -->
       <div id="balanceCard"></div>
+
+      <!-- 実質栄養価（DIT・食物繊維NET補正） -->
+      <details id="netCalDetails" style="margin-bottom:6px">
+        <summary style="font-size:12px;color:var(--text-sub);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:5px">
+          <span>⚡ 実質カロリーを見る</span>
+          <span id="netCalBadge" style="font-size:11px;font-weight:600;color:var(--accent)"></span>
+        </summary>
+        <div id="netCard" style="margin-top:4px"></div>
+      </details>
 
       <!-- エネルギー内訳 -->
       <details id="energyDetails" style="margin-bottom:10px">
@@ -272,6 +312,29 @@
       <div class="pfc-bar"><div class="bar-p" id="recBarP"></div><div class="bar-f" id="recBarF"></div><div class="bar-c" id="recBarC"></div></div>
       <div class="micro-grid" id="microGrid"></div>
       <div id="mealBlocks"></div>
+
+      <!-- 調味料クイック登録 -->
+      <div class="card" style="padding:10px 12px;margin-bottom:8px">
+        <div style="font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:8px">🧂 調味料 クイック登録（小さじ1）</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          <button onclick="addSeasoning('醤油（濃口）小さじ1')" class="seasoning-btn">しょうゆ</button>
+          <button onclick="addSeasoning('味噌（米みそ）小さじ1')" class="seasoning-btn">味噌</button>
+          <button onclick="addSeasoning('鶏ガラスープの素小さじ1')" class="seasoning-btn">鶏ガラ</button>
+          <button onclick="addSeasoning('米油小さじ1')" class="seasoning-btn">米油</button>
+          <button onclick="addSeasoning('みりん小さじ1')" class="seasoning-btn">みりん</button>
+          <button onclick="addSeasoning('にんにく小さじ1')" class="seasoning-btn">にんにく</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+          <label style="font-size:11px;color:var(--text-sub);white-space:nowrap">登録先</label>
+          <select id="seasoningMeal" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);flex:1">
+            <option>朝食</option>
+            <option selected>昼食</option>
+            <option>夕食</option>
+            <option>間食</option>
+          </select>
+          <div id="seasoningMsg" style="font-size:11px;color:var(--accent);min-width:80px"></div>
+        </div>
+      </div>
 
       <!-- 運動ブロック -->
       <div class="exercise-block" id="exerciseBlock">
@@ -541,10 +604,11 @@
       <div class="card" style="padding:12px 14px 10px">
         <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
           <span style="font-size:20px">🤖</span>
-          <div>
+          <div style="flex:1">
             <div style="font-size:14px;font-weight:600">AI食品アシスタント</div>
             <div style="font-size:11px;color:var(--text-sub)">話しかけると食品を自動登録します</div>
           </div>
+          <button onclick="resetAiChat()" style="font-size:11px;background:none;border:1px solid var(--border);border-radius:7px;padding:4px 9px;color:var(--text-sub);cursor:pointer">会話リセット</button>
         </div>
       </div>
 

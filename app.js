@@ -24,6 +24,22 @@ const MEAL_META = {
 };
 const MEALS_ORDER = ['朝食','昼食','夕食','間食'];
 
+// ── タンパク質吸収率 ──
+// 肉類・魚類・卵類: ×0.95（消化性高）/ その他: ×0.85
+const P_ABS_HIGH = 0.95;
+const P_ABS_LOW  = 0.85;
+const P_ABS_HIGH_PATTERN = /鶏|豚|牛|羊|合いびき|ひき肉|ベーコン|ハム|ソーセージ|ウインナー|サラミ|いわし|さば|さんま|あじ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|えび|いか|ほたて|あさり|カニ|かに|ぶり|たい|鯛|たら|タラ|さわら|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|ヴィーナス|ささみ|チキン|ポーク|ビーフ|シーフード|seafood|chicken|pork|beef|fish|salmon|tuna|egg|shrimp/i;
+
+function calcAbsorbedProtein(list) {
+  // 食品ごとに吸収率を適用して合計
+  return list.reduce((sum, e) => {
+    const rate = P_ABS_HIGH_PATTERN.test(e.name) ? P_ABS_HIGH : P_ABS_LOW;
+    return sum + (e.p || 0) * rate;
+  }, 0);
+}
+
+
+
 // ── 内蔵DB ──
 const LOCAL_DB = [
   {name:'白米（炊飯）',yomi:'ハクマイ',tags:'ごはん こめ',en:'white rice cooked rice',cal:168,p:2.5,f:0.3,c:37.1,per:100,fiber:0.3,iron:0.1,calcium:3,vitc:0,vitd:0,salt:0},
@@ -124,7 +140,152 @@ const LOCAL_DB = [
   {name:'プロテイン（1杯）',yomi:'プロテイン',tags:'ホエイ カゼイン',en:'protein whey protein shake',cal:120,p:25.0,f:1.5,c:4.0,per:30,fiber:0.5,iron:1.0,calcium:150,vitc:0,vitd:0,salt:0.2},
   {name:'コーヒー（ブラック）',yomi:'コーヒー',tags:'',en:'coffee black coffee',cal:4,p:0.3,f:0,c:0.7,per:100,fiber:0,iron:0.1,calcium:2,vitc:0,vitd:0,salt:0},
   {name:'オレンジジュース',yomi:'オレンジジュース',tags:'みかん ジュース',en:'orange juice',cal:45,p:0.7,f:0.1,c:10.4,per:100,fiber:0.2,iron:0.1,calcium:8,vitc:42,vitd:0,salt:0},
-  {name:'スポーツドリンク',yomi:'スポーツドリンク',tags:'ポカリ アクエリアス',en:'sports drink energy drink',cal:21,p:0,f:0,c:5.1,per:100,fiber:0,iron:0,calcium:2,vitc:0,vitd:0,salt:0.1},
+  {name:'スポーツドリンク',yomi:'スポーツドリンク',tags:'ポカリ アクエリアス',en:'sports drink energy drink',cal:21,p:0,f:0,c:5.1,per:100,fiber:0,iron:0,calcium:2,vitc:0,vitd:0,salt:0.1}
+  // ── 麺類・ラーメン ──
+  {name:'インスタントラーメン（日清チキンラーメン）',yomi:'チキンラーメン',tags:'ラーメン インスタント 日清',en:'chicken ramen instant noodle',cal:453,p:10.5,f:17.5,c:63.5,per:85,fiber:2.2,iron:1.5,calcium:50,vitc:0,vitd:0,salt:5.5},
+  {name:'インスタントラーメン（マルちゃん正麺醤油）',yomi:'マルチャンセイメン',tags:'ラーメン インスタント 東洋水産 マルちゃん',en:'maruchan seimen soy sauce ramen',cal:468,p:11.5,f:17.8,c:65.2,per:100,fiber:2.0,iron:1.2,calcium:45,vitc:0,vitd:0,salt:5.8},
+  {name:'カップヌードル（日清）',yomi:'カップヌードル',tags:'カップラーメン インスタント 日清',en:'cup noodle nissin',cal:351,p:10.5,f:14.6,c:44.5,per:78,fiber:1.5,iron:1.0,calcium:120,vitc:0,vitd:0,salt:4.9},
+  {name:'カップヌードルシーフード（日清）',yomi:'カップヌードルシーフード',tags:'カップラーメン インスタント 日清 シーフード',en:'cup noodle seafood nissin',cal:322,p:9.0,f:11.5,c:46.0,per:75,fiber:1.4,iron:0.8,calcium:100,vitc:0,vitd:0,salt:4.5},
+  {name:'どん兵衛きつねうどん（日清）',yomi:'ドンベエ',tags:'カップうどん インスタント 日清',en:'donbei kitsune udon nissin',cal:362,p:9.0,f:6.5,c:68.5,per:96,fiber:2.0,iron:1.1,calcium:130,vitc:0,vitd:0,salt:5.9},
+  {name:'赤いきつね（東洋水産）',yomi:'アカイキツネ',tags:'カップうどん マルちゃん インスタント',en:'akai kitsune udon maruchan',cal:446,p:12.0,f:6.3,c:84.5,per:103,fiber:2.5,iron:1.3,calcium:150,vitc:0,vitd:0,salt:6.0},
+  {name:'緑のたぬき（東洋水産）',yomi:'ミドリノタヌキ',tags:'カップそば マルちゃん インスタント',en:'midori no tanuki soba maruchan',cal:440,p:12.5,f:7.0,c:83.0,per:101,fiber:2.8,iron:1.5,calcium:130,vitc:0,vitd:0,salt:5.6},
+  {name:'チャルメラ醤油ラーメン（明星）',yomi:'チャルメラ',tags:'インスタントラーメン 明星',en:'charumera shoyu ramen myojo',cal:440,p:10.0,f:16.5,c:63.0,per:90,fiber:1.8,iron:1.2,calcium:80,vitc:0,vitd:0,salt:5.3},
+  {name:'サッポロ一番塩ラーメン（サンヨー食品）',yomi:'サッポロイチバンシオ',tags:'インスタントラーメン サッポロ',en:'sapporo ichiban shio ramen',cal:451,p:10.2,f:17.2,c:63.8,per:90,fiber:1.8,iron:1.0,calcium:85,vitc:0,vitd:0,salt:5.5},
+  {name:'サッポロ一番みそラーメン（サンヨー食品）',yomi:'サッポロイチバンミソ',tags:'インスタントラーメン サッポロ みそ',en:'sapporo ichiban miso ramen',cal:463,p:10.8,f:18.0,c:64.5,per:90,fiber:2.0,iron:1.1,calcium:90,vitc:0,vitd:0,salt:5.8},
+  {name:'ラ王醤油（日清）',yomi:'ラオウショウユ',tags:'インスタントラーメン 日清 ラ王',en:'ra-ou shoyu ramen nissin',cal:452,p:12.5,f:16.0,c:64.5,per:95,fiber:2.0,iron:1.2,calcium:90,vitc:0,vitd:0,salt:5.5},
+  {name:'うまかっちゃん（ハウス食品）',yomi:'ウマカッチャン',tags:'インスタントラーメン ハウス 豚骨 九州',en:'umakachan hakata tonkotsu ramen house',cal:448,p:10.5,f:18.0,c:60.5,per:90,fiber:1.5,iron:0.8,calcium:70,vitc:0,vitd:0,salt:5.2},
+
+  // ── コンビニ・外食 ──
+  {name:'おにぎり 鮭（セブン・ローソン・ファミマ）',yomi:'オニギリサケ',tags:'おにぎり コンビニ 鮭 しゃけ',en:'onigiri salmon rice ball',cal:192,p:5.3,f:1.8,c:38.5,per:105,fiber:0.5,iron:0.3,calcium:10,vitc:1,vitd:5,salt:1.1},
+  {name:'おにぎり ツナマヨ（コンビニ）',yomi:'オニギリツナマヨ',tags:'おにぎり コンビニ ツナ マヨ',en:'onigiri tuna mayo rice ball',cal:232,p:5.5,f:6.0,c:38.5,per:113,fiber:0.5,iron:0.2,calcium:8,vitc:0,vitd:1,salt:1.4},
+  {name:'おにぎり 梅（コンビニ）',yomi:'オニギリウメ',tags:'おにぎり コンビニ 梅',en:'onigiri ume plum rice ball',cal:177,p:3.5,f:0.5,c:38.5,per:103,fiber:0.5,iron:0.2,calcium:6,vitc:0,vitd:0,salt:1.3},
+  {name:'サンドイッチ ミックス（コンビニ）',yomi:'サンドイッチ',tags:'サンド コンビニ',en:'sandwich mix convenience store',cal:255,p:10.5,f:10.5,c:30.5,per:150,fiber:1.8,iron:0.8,calcium:65,vitc:3,vitd:0.2,salt:1.8},
+  {name:'チキン南蛮弁当（コンビニ）',yomi:'チキンナンバンベントウ',tags:'弁当 コンビニ チキン',en:'chicken nanban bento lunch box',cal:710,p:28.0,f:22.0,c:97.0,per:430,fiber:3.5,iron:1.5,calcium:70,vitc:5,vitd:0.5,salt:3.5},
+  {name:'のり弁当（コンビニ）',yomi:'ノリベントウ',tags:'弁当 コンビニ のり',en:'nori bento lunch box',cal:680,p:18.0,f:20.0,c:100.0,per:400,fiber:2.5,iron:1.2,calcium:80,vitc:2,vitd:1,salt:3.2},
+  {name:'幕の内弁当（コンビニ）',yomi:'マクノウチベントウ',tags:'弁当 コンビニ',en:'makunouchi bento lunch box',cal:620,p:22.0,f:18.0,c:87.0,per:450,fiber:3.0,iron:1.5,calcium:90,vitc:5,vitd:0.5,salt:3.5},
+  {name:'ファミマ ファミチキ',yomi:'ファミチキ',tags:'ファミリーマート チキン 揚げ物 コンビニ',en:'famichiki fried chicken familymart',cal:245,p:14.5,f:14.5,c:14.5,per:95,fiber:0.3,iron:0.5,calcium:8,vitc:0,vitd:0.1,salt:1.2},
+  {name:'セブン ブラックサンダー（有楽製菓）',yomi:'ブラックサンダー',tags:'チョコ お菓子',en:'black thunder chocolate bar',cal:170,p:1.8,f:7.5,c:24.5,per:44,fiber:0.8,iron:0.5,calcium:25,vitc:0,vitd:0,salt:0.2},
+
+  // ── 牛丼・丼もの ──
+  {name:'牛丼 並盛（吉野家）',yomi:'ギュウドンナミモリヨシノヤ',tags:'吉野家 牛丼 どんぶり 外食',en:'yoshinoya gyudon beef bowl regular',cal:666,p:26.0,f:22.0,c:87.0,per:360,fiber:2.0,iron:2.5,calcium:70,vitc:3,vitd:0.2,salt:2.5},
+  {name:'牛丼 並盛（すき家）',yomi:'ギュウドンナミモリスキヤ',tags:'すき家 牛丼 どんぶり 外食',en:'sukiya gyudon beef bowl regular',cal:699,p:25.0,f:22.5,c:92.0,per:380,fiber:2.0,iron:2.5,calcium:75,vitc:3,vitd:0.2,salt:2.8},
+  {name:'牛丼 並盛（松屋）',yomi:'ギュウドンナミモリマツヤ',tags:'松屋 牛丼 どんぶり 外食',en:'matsuya gyudon beef bowl regular',cal:658,p:27.0,f:19.5,c:88.0,per:360,fiber:2.5,iron:2.8,calcium:80,vitc:3,vitd:0.2,salt:2.6},
+  {name:'親子丼',yomi:'オヤコドン',tags:'どんぶり 卵 鶏',en:'oyakodon chicken egg bowl',cal:650,p:28.0,f:15.0,c:92.0,per:400,fiber:1.5,iron:1.8,calcium:80,vitc:5,vitd:1.0,salt:3.0},
+  {name:'カツ丼',yomi:'カツドン',tags:'どんぶり とんかつ 豚',en:'katsudon pork cutlet bowl',cal:850,p:30.0,f:30.0,c:105.0,per:500,fiber:2.0,iron:2.0,calcium:80,vitc:3,vitd:0.5,salt:3.5},
+  {name:'天丼',yomi:'テンドン',tags:'どんぶり 天ぷら えび',en:'tendon tempura bowl',cal:720,p:20.0,f:18.0,c:108.0,per:420,fiber:2.0,iron:1.5,calcium:80,vitc:3,vitd:1.5,salt:3.2},
+
+  // ── ファストフード ──
+  {name:'ビッグマック（マクドナルド）',yomi:'ビッグマック',tags:'マクドナルド マック バーガー ハンバーガー',en:'big mac mcdonalds hamburger',cal:525,p:27.0,f:27.5,c:45.0,per:214,fiber:2.5,iron:4.0,calcium:230,vitc:3,vitd:0.3,salt:2.5},
+  {name:'マックフライポテト M（マクドナルド）',yomi:'マックフライポテト',tags:'マクドナルド マック ポテト フライドポテト',en:'mcdonalds french fries medium',cal:410,p:4.5,f:19.5,c:54.0,per:135,fiber:4.0,iron:0.8,calcium:15,vitc:12,vitd:0,salt:1.0},
+  {name:'チーズバーガー（マクドナルド）',yomi:'チーズバーガー',tags:'マクドナルド マック バーガー',en:'cheeseburger mcdonalds',cal:305,p:16.5,f:12.0,c:33.0,per:116,fiber:1.5,iron:2.5,calcium:170,vitc:1,vitd:0.2,salt:1.8},
+  {name:'てりやきマックバーガー（マクドナルド）',yomi:'テリヤキマックバーガー',tags:'マクドナルド マック てりやき',en:'teriyaki burger mcdonalds',cal:494,p:18.5,f:22.0,c:56.0,per:194,fiber:2.0,iron:2.0,calcium:100,vitc:1,vitd:0.2,salt:2.5},
+  {name:'ワッパー（バーガーキング）',yomi:'ワッパー',tags:'バーガーキング ハンバーガー バーガー',en:'whopper burger king hamburger',cal:617,p:29.0,f:33.0,c:55.0,per:260,fiber:2.5,iron:4.5,calcium:120,vitc:5,vitd:0.3,salt:1.8},
+  {name:'ゾンビメガ盛りバーガー（モスバーガー）',yomi:'モスバーガー',tags:'モス バーガー',en:'mos burger',cal:420,p:20.0,f:18.5,c:43.5,per:185,fiber:2.0,iron:2.5,calcium:100,vitc:5,vitd:0.2,salt:2.0},
+  {name:'チキンフィレオ（マクドナルド）',yomi:'チキンフィレオ',tags:'マクドナルド マック チキン フィレオ',en:'mcchicken fillet o fish mcdonalds',cal:466,p:23.5,f:17.5,c:53.0,per:192,fiber:1.5,iron:1.5,calcium:80,vitc:2,vitd:0.2,salt:2.5},
+  {name:'フィレオフィッシュ（マクドナルド）',yomi:'フィレオフィッシュ',tags:'マクドナルド マック フィッシュ',en:'filet o fish mcdonalds',cal:329,p:14.5,f:14.0,c:36.5,per:145,fiber:1.5,iron:1.0,calcium:120,vitc:0,vitd:0.5,salt:1.5},
+  {name:'カーネルオリジナルチキン（KFC）',yomi:'ケンタッキー',tags:'KFC ケンタッキーフライドチキン フライドチキン',en:'kfc fried chicken original',cal:237,p:17.3,f:14.0,c:11.5,per:126,fiber:0.3,iron:0.7,calcium:15,vitc:0,vitd:0.2,salt:1.6},
+
+  // ── 寿司・和食 ──
+  {name:'にぎり寿司 まぐろ（1貫）',yomi:'ニギリマグロ',tags:'すし 寿司 まぐろ',en:'sushi nigiri tuna',cal:47,p:4.0,f:0.3,c:7.0,per:30,fiber:0.1,iron:0.2,calcium:2,vitc:0,vitd:0.5,salt:0.3},
+  {name:'にぎり寿司 サーモン（1貫）',yomi:'ニギリサーモン',tags:'すし 寿司 サーモン 鮭',en:'sushi nigiri salmon',cal:54,p:3.5,f:1.8,c:7.0,per:30,fiber:0.1,iron:0.1,calcium:3,vitc:0.5,vitd:2,salt:0.3},
+  {name:'にぎり寿司 えび（1貫）',yomi:'ニギリエビ',tags:'すし 寿司 えび 海老',en:'sushi nigiri shrimp',cal:41,p:3.5,f:0.1,c:6.8,per:30,fiber:0.1,iron:0.1,calcium:5,vitc:0,vitd:0,salt:0.3},
+  {name:'にぎり寿司 いくら（1貫）',yomi:'ニギリイクラ',tags:'すし 寿司 いくら',en:'sushi nigiri salmon roe ikura',cal:54,p:4.5,f:1.5,c:6.5,per:30,fiber:0,iron:0.3,calcium:8,vitc:0,vitd:3,salt:0.5},
+  {name:'にぎり寿司 うに（1貫）',yomi:'ニギリウニ',tags:'すし 寿司 うに',en:'sushi nigiri sea urchin uni',cal:48,p:3.5,f:0.8,c:7.0,per:30,fiber:0,iron:0.3,calcium:6,vitc:1,vitd:0,salt:0.4},
+  {name:'にぎり寿司 玉子（1貫）',yomi:'ニギリタマゴ',tags:'すし 寿司 たまご 卵',en:'sushi nigiri egg tamagoyaki',cal:55,p:3.0,f:1.8,c:7.0,per:30,fiber:0,iron:0.3,calcium:10,vitc:0,vitd:0.3,salt:0.5},
+  {name:'巻き寿司 鉄火巻（6切）',yomi:'テッカマキ',tags:'すし 寿司 まきずし まぐろ',en:'sushi tekka maki tuna roll',cal:240,p:12.0,f:1.5,c:46.0,per:150,fiber:0.8,iron:1.0,calcium:20,vitc:0,vitd:2,salt:1.5},
+  {name:'巻き寿司 かっぱ巻（6切）',yomi:'カッパマキ',tags:'すし 寿司 まきずし きゅうり',en:'sushi kappa maki cucumber roll',cal:195,p:4.5,f:0.5,c:42.0,per:140,fiber:1.0,iron:0.4,calcium:15,vitc:2,vitd:0,salt:1.2},
+  {name:'ちらし寿司',yomi:'チラシズシ',tags:'すし 寿司 ちらし',en:'chirashi sushi scattered sushi',cal:580,p:22.0,f:10.5,c:95.0,per:350,fiber:2.0,iron:2.0,calcium:80,vitc:3,vitd:5,salt:2.8},
+  {name:'稲荷寿司（2個）',yomi:'イナリズシ',tags:'すし 寿司 いなり いなりずし',en:'inari sushi tofu pocket',cal:260,p:6.5,f:5.5,c:46.0,per:130,fiber:1.5,iron:1.0,calcium:60,vitc:0,vitd:0,salt:1.5},
+  {name:'天ぷら盛り合わせ（外食）',yomi:'テンプラモリアワセ',tags:'てんぷら 天ぷら 揚げ物',en:'tempura assorted',cal:480,p:16.0,f:25.0,c:48.0,per:250,fiber:2.5,iron:1.5,calcium:80,vitc:5,vitd:1,salt:1.5},
+  {name:'とんかつ定食',yomi:'トンカツテイショク',tags:'とんかつ 揚げ物 定食 豚',en:'tonkatsu set meal pork cutlet',cal:870,p:38.0,f:32.0,c:98.0,per:500,fiber:3.5,iron:2.5,calcium:100,vitc:5,vitd:0.5,salt:3.5},
+  {name:'ラーメン（醤油 外食）',yomi:'ラーメンショウユ',tags:'らーめん ラーメン 外食 醤油',en:'ramen shoyu restaurant',cal:490,p:20.0,f:12.0,c:74.0,per:700,fiber:3.0,iron:2.0,calcium:80,vitc:3,vitd:0.3,salt:5.5},
+  {name:'ラーメン（豚骨 外食）',yomi:'ラーメントンコツ',tags:'らーめん ラーメン 外食 豚骨',en:'ramen tonkotsu restaurant',cal:580,p:24.0,f:22.0,c:70.0,per:700,fiber:2.5,iron:2.0,calcium:120,vitc:2,vitd:0.3,salt:6.0},
+  {name:'ラーメン（味噌 外食）',yomi:'ラーメンミソ',tags:'らーめん ラーメン 外食 みそ 味噌',en:'ramen miso restaurant',cal:550,p:22.0,f:18.0,c:73.0,per:700,fiber:3.5,iron:2.5,calcium:100,vitc:5,vitd:0.3,salt:6.5},
+  {name:'つけ麺（外食）',yomi:'ツケメン',tags:'らーめん ラーメン 外食',en:'tsukemen dipping ramen',cal:720,p:30.0,f:18.0,c:107.0,per:550,fiber:4.0,iron:2.5,calcium:80,vitc:2,vitd:0.3,salt:5.0},
+
+  // ── カレー・パスタ・洋食 ──
+  {name:'カレーライス（家庭）',yomi:'カレーライス',tags:'カレー らいす',en:'curry rice japanese curry',cal:723,p:20.0,f:18.5,c:116.0,per:500,fiber:4.5,iron:2.5,calcium:80,vitc:10,vitd:0.2,salt:3.0},
+  {name:'ビーフカレー レトルト（ハウス バーモントカレー）',yomi:'バーモントカレー',tags:'カレー レトルト ハウス',en:'vermont curry house retort',cal:211,p:7.0,f:9.0,c:26.5,per:200,fiber:2.5,iron:1.5,calcium:30,vitc:3,vitd:0,salt:2.8},
+  {name:'スパゲッティ ナポリタン',yomi:'スパゲッティナポリタン',tags:'パスタ ナポリタン',en:'spaghetti napolitan pasta',cal:530,p:16.5,f:16.0,c:79.0,per:400,fiber:4.0,iron:2.0,calcium:55,vitc:20,vitd:0,salt:3.5},
+  {name:'スパゲッティ ボロネーゼ',yomi:'スパゲッティボロネーゼ',tags:'パスタ ミートソース',en:'spaghetti bolognese meat sauce',cal:610,p:26.0,f:21.0,c:76.0,per:420,fiber:4.0,iron:3.0,calcium:70,vitc:10,vitd:0.2,salt:3.0},
+  {name:'ピザ マルゲリータ（1枚）',yomi:'ピザマルゲリータ',tags:'ぴざ ピザ イタリアン',en:'pizza margherita',cal:760,p:32.0,f:26.0,c:100.0,per:400,fiber:4.0,iron:3.5,calcium:350,vitc:15,vitd:0.5,salt:4.0},
+  {name:'ハンバーグ 定食',yomi:'ハンバーグ',tags:'はんばーぐ 外食 定食',en:'hamburger steak teishoku set',cal:740,p:33.0,f:34.0,c:72.0,per:450,fiber:3.5,iron:3.5,calcium:100,vitc:8,vitd:0.3,salt:3.5},
+  {name:'エビフライ（3本）',yomi:'エビフライ',tags:'えびふらい 揚げ物 えび',en:'ebi fry fried shrimp',cal:290,p:18.5,f:15.0,c:22.0,per:165,fiber:1.0,iron:0.8,calcium:50,vitc:0,vitd:0,salt:1.5},
+  {name:'コロッケ（1個）',yomi:'コロッケ',tags:'ころっけ 揚げ物 じゃがいも',en:'korokke croquette potato',cal:200,p:5.5,f:11.0,c:21.5,per:100,fiber:1.5,iron:0.5,calcium:20,vitc:15,vitd:0,salt:0.8},
+
+  // ── 缶詰・加工品 ──
+  {name:'コーン缶（クリームスタイル）',yomi:'コーンカン',tags:'とうもろこし 缶詰 コーン',en:'canned corn cream style',cal:77,p:1.7,f:0.5,c:17.2,per:100,fiber:1.8,iron:0.3,calcium:4,vitc:5,vitd:0,salt:0.5},
+  {name:'コーン缶（ホールカーネル）',yomi:'コーンカンホール',tags:'とうもろこし 缶詰 コーン',en:'canned corn whole kernel',cal:82,p:2.3,f:0.8,c:16.5,per:100,fiber:2.2,iron:0.4,calcium:3,vitc:6,vitd:0,salt:0.3},
+  {name:'焼き鳥缶（タレ）',yomi:'ヤキトリカン',tags:'焼き鳥 缶詰 とり',en:'canned yakitori chicken teriyaki',cal:170,p:17.5,f:8.5,c:6.5,per:100,fiber:0,iron:0.8,calcium:10,vitc:0,vitd:0.2,salt:1.5},
+  {name:'やきとり缶（塩）',yomi:'ヤキトリカンシオ',tags:'焼き鳥 缶詰 とり 塩',en:'canned yakitori chicken salt',cal:155,p:18.5,f:8.0,c:1.5,per:100,fiber:0,iron:0.7,calcium:8,vitc:0,vitd:0.2,salt:1.2},
+  {name:'カニ缶（ズワイガニ）',yomi:'カニカン',tags:'かに 蟹 缶詰',en:'canned crab snow crab',cal:70,p:14.5,f:0.8,c:0.3,per:100,fiber:0,iron:0.5,calcium:75,vitc:0,vitd:0,salt:1.8},
+  {name:'あさり水煮缶',yomi:'アサリカン',tags:'あさり 貝 缶詰',en:'canned clam asari',cal:74,p:14.0,f:1.5,c:1.5,per:100,fiber:0,iron:25,calcium:90,vitc:3,vitd:0,salt:1.0},
+  {name:'ホタテ缶（水煮）',yomi:'ホタテカン',tags:'ほたて 貝 缶詰',en:'canned scallop',cal:88,p:19.5,f:0.8,c:1.5,per:100,fiber:0,iron:1.0,calcium:18,vitc:0,vitd:0,salt:0.9},
+  {name:'オイルサーディン缶（いわし油漬け）',yomi:'オイルサーディン',tags:'いわし 缶詰 オイル',en:'oil sardine canned',cal:350,p:17.0,f:30.0,c:0.3,per:100,fiber:0,iron:2.0,calcium:350,vitc:0,vitd:25,salt:0.8},
+  {name:'トマト缶（ホール）',yomi:'トマトカン',tags:'とまと 缶詰 イタリアン',en:'canned tomato whole',cal:24,p:1.2,f:0.2,c:4.5,per:100,fiber:1.2,iron:0.5,calcium:12,vitc:15,vitd:0,salt:0.3},
+  {name:'トマト缶（カット）',yomi:'トマトカンカット',tags:'とまと 缶詰',en:'canned diced tomato',cal:24,p:1.2,f:0.2,c:4.5,per:100,fiber:1.2,iron:0.5,calcium:12,vitc:15,vitd:0,salt:0.3},
+  {name:'大豆水煮缶',yomi:'ダイズスイニカン',tags:'だいず 大豆 缶詰 豆',en:'canned soybean water',cal:124,p:10.5,f:5.0,c:9.5,per:100,fiber:7.0,iron:2.5,calcium:75,vitc:0,vitd:0,salt:0.5},
+  {name:'ミックスビーンズ缶',yomi:'ミックスビーンズ',tags:'豆 缶詰 ミックス',en:'canned mixed beans',cal:133,p:8.5,f:1.5,c:22.0,per:100,fiber:9.5,iron:2.0,calcium:50,vitc:0,vitd:0,salt:0.5},
+
+  // ── 粉類・乾物 ──
+  {name:'薄力粉（小麦粉）',yomi:'ハクリキコ',tags:'こむぎこ 小麦粉 薄力 ケーキ',en:'cake flour soft wheat flour',cal:368,p:8.3,f:1.5,c:75.8,per:100,fiber:2.5,iron:0.6,calcium:20,vitc:0,vitd:0,salt:0},
+  {name:'強力粉（小麦粉）',yomi:'キョウリキコ',tags:'こむぎこ 小麦粉 強力 パン',en:'bread flour strong wheat flour',cal:365,p:11.8,f:1.5,c:71.7,per:100,fiber:2.7,iron:0.9,calcium:17,vitc:0,vitd:0,salt:0},
+  {name:'片栗粉',yomi:'カタクリコ',tags:'でんぷん 澱粉 とろみ',en:'katakuriko potato starch cornstarch',cal:338,p:0.1,f:0.1,c:81.6,per:100,fiber:0,iron:0.1,calcium:4,vitc:0,vitd:0,salt:0},
+  {name:'天ぷら粉',yomi:'テンプラコ',tags:'こむぎこ 小麦粉 てんぷら 天ぷら',en:'tempura flour batter mix',cal:352,p:8.0,f:1.5,c:72.0,per:100,fiber:2.0,iron:0.8,calcium:80,vitc:0,vitd:0,salt:0.5},
+  {name:'パン粉',yomi:'パンコ',tags:'ぱんこ ブレッドクラム',en:'panko bread crumbs',cal:373,p:13.5,f:4.5,c:73.0,per:100,fiber:2.8,iron:0.7,calcium:31,vitc:0,vitd:0,salt:1.0},
+  {name:'春雨（乾燥）',yomi:'ハルサメ',tags:'はるさめ',en:'harusame glass noodles dried',cal:345,p:0.2,f:0.4,c:85.2,per:100,fiber:1.4,iron:1.5,calcium:20,vitc:0,vitd:0,salt:0},
+  {name:'海苔（焼き）',yomi:'ノリ',tags:'のり 焼き海苔 海苔',en:'nori seaweed roasted',cal:188,p:41.4,f:3.7,c:44.3,per:100,fiber:31.2,iron:11.4,calcium:280,vitc:210,vitd:0,salt:1.3},
+  {name:'わかめ（乾燥）',yomi:'ワカメ',tags:'わかめ 海藻',en:'wakame seaweed dried',cal:186,p:16.1,f:5.6,c:39.0,per:100,fiber:32.7,iron:6.1,calcium:780,vitc:27,vitd:0,salt:8.3},
+  {name:'ひじき（乾燥）',yomi:'ヒジキ',tags:'ひじき 海藻',en:'hijiki seaweed dried',cal:180,p:10.6,f:3.2,c:52.0,per:100,fiber:51.8,iron:6.2,calcium:1000,vitc:0,vitd:0,salt:4.7},
+  {name:'かつおぶし',yomi:'カツオブシ',tags:'かつおぶし 鰹節 出汁 だし',en:'katsuobushi dried bonito flakes',cal:356,p:75.7,f:2.9,c:0.8,per:100,fiber:0,iron:9.0,calcium:57,vitc:0,vitd:17,salt:0.3},
+
+  // ── お菓子・デザート ──
+  {name:'ポテトチップス（カルビー うすしお）',yomi:'ポテトチップス',tags:'お菓子 スナック カルビー',en:'potato chips calbee lightly salted',cal:536,p:5.3,f:33.3,c:54.7,per:100,fiber:3.3,iron:0.8,calcium:18,vitc:40,vitd:0,salt:0.6},
+  {name:'コーンスナック（カルビーかっぱえびせん）',yomi:'カッパエビセン',tags:'お菓子 スナック カルビー えび',en:'kappa ebisen calbee shrimp snack',cal:488,p:10.5,f:18.5,c:68.5,per:100,fiber:1.3,iron:0.5,calcium:200,vitc:0,vitd:0,salt:1.8},
+  {name:'チョコレート（明治ミルクチョコ）',yomi:'ミルクチョコレート',tags:'お菓子 チョコ 明治',en:'milk chocolate meiji',cal:558,p:7.0,f:33.0,c:60.0,per:100,fiber:2.5,iron:2.4,calcium:200,vitc:0,vitd:0,salt:0.1},
+  {name:'ビスケット（森永マリー）',yomi:'ビスケット',tags:'お菓子 クッキー ビスケット 森永',en:'biscuit marie morinaga',cal:463,p:6.6,f:16.5,c:73.5,per:100,fiber:1.8,iron:0.7,calcium:50,vitc:0,vitd:0,salt:0.8},
+  {name:'おかき（亀田製菓）',yomi:'オカキ',tags:'お菓子 せんべい おかき 米',en:'okaki rice cracker kameda',cal:426,p:7.3,f:8.5,c:79.0,per:100,fiber:1.0,iron:0.5,calcium:15,vitc:0,vitd:0,salt:1.5},
+  {name:'プリン（江崎グリコ プッチンプリン）',yomi:'プッチンプリン',tags:'お菓子 デザート プリン グリコ',en:'pudding glico pucchin',cal:99,p:2.7,f:2.7,c:16.1,per:68,fiber:0,iron:0.1,calcium:60,vitc:0,vitd:0.3,salt:0.2},
+  {name:'カップアイスクリーム（明治エッセルスーパーカップ）',yomi:'スーパーカップ',tags:'アイス アイスクリーム 明治',en:'super cup ice cream meiji',cal:374,p:6.5,f:20.0,c:43.0,per:200,fiber:0,iron:0.1,calcium:175,vitc:1,vitd:0.3,salt:0.3},
+  {name:'どら焼き（1個）',yomi:'ドラヤキ',tags:'お菓子 和菓子 どら焼き あんこ',en:'dorayaki japanese pancake red bean',cal:271,p:5.5,f:4.0,c:54.0,per:100,fiber:2.5,iron:1.0,calcium:30,vitc:0,vitd:0.3,salt:0.4},
+
+  // ── 調味料・ソース ──
+  {name:'ウスターソース（ブルドッグ）',yomi:'ウスターソース',tags:'ソース 調味料 ブルドッグ',en:'worcestershire sauce',cal:117,p:1.0,f:0.1,c:27.8,per:100,fiber:0.5,iron:1.7,calcium:36,vitc:0,vitd:0,salt:8.4},
+  {name:'お好み焼きソース（オタフク）',yomi:'オコノミヤキソース',tags:'ソース 調味料 オタフク',en:'okonomiyaki sauce otafuku',cal:131,p:1.6,f:0.1,c:31.0,per:100,fiber:0.8,iron:0.8,calcium:28,vitc:2,vitd:0,salt:5.5},
+  {name:'焼肉のたれ（市販）',yomi:'ヤキニクノタレ',tags:'たれ 調味料 焼肉',en:'yakiniku sauce bbq sauce',cal:135,p:3.5,f:1.0,c:29.0,per:100,fiber:0.5,iron:0.8,calcium:30,vitc:2,vitd:0,salt:8.0},
+  {name:'ポン酢（市販）',yomi:'ポンズ',tags:'ぽんず 調味料 さっぱり',en:'ponzu sauce citrus soy',cal:44,p:2.8,f:0,c:8.0,per:100,fiber:0,iron:0.5,calcium:12,vitc:5,vitd:0,salt:7.0},
+  {name:'だし（顆粒 ほんだし）',yomi:'ホンダシ',tags:'ほんだし 出汁 だし 味の素',en:'hondashi instant dashi bonito',cal:227,p:28.5,f:2.5,c:23.5,per:100,fiber:0,iron:1.5,calcium:60,vitc:0,vitd:0,salt:41},
+  {name:'めんつゆ（ストレート）',yomi:'メンツユ',tags:'めんつゆ つゆ 調味料',en:'mentsuyu noodle soup base',cal:44,p:2.2,f:0,c:8.5,per:100,fiber:0,iron:0.5,calcium:8,vitc:0,vitd:0,salt:3.0},
+  {name:'ケチャップ（カゴメ）',yomi:'ケチャップ',tags:'トマトケチャップ 調味料 カゴメ',en:'ketchup tomato catsup kagome',cal:119,p:1.7,f:0.2,c:27.5,per:100,fiber:1.8,iron:0.7,calcium:18,vitc:12,vitd:0,salt:3.3},
+  {name:'マカロニサラダ（市販・惣菜）',yomi:'マカロニサラダ',tags:'サラダ 惣菜 パスタ',en:'macaroni salad deli',cal:198,p:3.5,f:13.5,c:17.0,per:100,fiber:0.8,iron:0.3,calcium:15,vitc:2,vitd:0,salt:1.2},
+  {name:'ポテトサラダ（市販・惣菜）',yomi:'ポテトサラダ',tags:'サラダ 惣菜 ポテト じゃがいも',en:'potato salad deli',cal:142,p:2.3,f:8.5,c:15.0,per:100,fiber:1.2,iron:0.3,calcium:12,vitc:18,vitd:0,salt:1.0},
+
+  // ── 飲み物 ──
+  {name:'コーラ（コカ・コーラ）',yomi:'コーラ',tags:'コーラ ジュース 炭酸 コカコーラ',en:'coca cola coke soda',cal:45,p:0,f:0,c:11.3,per:100,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'野菜ジュース（カゴメ）',yomi:'ヤサイジュース',tags:'野菜ジュース カゴメ ジュース',en:'vegetable juice kagome',cal:44,p:1.1,f:0.1,c:9.5,per:100,fiber:1.0,iron:0.3,calcium:12,vitc:50,vitd:0,salt:0.3},
+  {name:'豆乳（マルサン調製豆乳）',yomi:'チョウセイトウニュウ',tags:'とうにゅう 豆乳 大豆 マルサン',en:'soymilk adjusted soy milk marusan',cal:64,p:3.5,f:3.0,c:6.5,per:100,fiber:0.3,iron:0.5,calcium:30,vitc:0,vitd:0,salt:0.2},
+  {name:'麦茶（ストレート）',yomi:'ムギチャ',tags:'むぎちゃ 麦茶 茶',en:'mugicha barley tea',cal:1,p:0.1,f:0,c:0.3,per:100,fiber:0,iron:0,calcium:2,vitc:0,vitd:0,salt:0},
+  {name:'エナジードリンク（レッドブル 250ml）',yomi:'レッドブル',tags:'エナジードリンク カフェイン レッドブル',en:'red bull energy drink',cal:110,p:1.0,f:0,c:27.5,per:250,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0.2},
+
+  // ── 惣菜・加工食品 ──
+  {name:'餃子（冷凍 味の素）',yomi:'ギョウザ',tags:'ぎょうざ 餃子 冷凍 味の素',en:'gyoza frozen dumplings ajinomoto',cal:232,p:9.5,f:11.0,c:25.5,per:138,fiber:2.0,iron:1.0,calcium:25,vitc:3,vitd:0,salt:2.0},
+  {name:'シュウマイ（冷凍 崎陽軒）',yomi:'シュウマイ',tags:'しゅうまい 焼売 崎陽軒',en:'shumai steamed dumpling kiyoken',cal:205,p:10.5,f:8.5,c:22.0,per:120,fiber:1.0,iron:0.8,calcium:30,vitc:2,vitd:0,salt:1.5},
+  {name:'唐揚げ（鶏もも）',yomi:'カラアゲ',tags:'からあげ 唐揚げ とり 揚げ物',en:'karaage fried chicken thigh',cal:250,p:18.0,f:16.5,c:8.5,per:130,fiber:0.3,iron:0.6,calcium:10,vitc:3,vitd:0.3,salt:1.5},
+  {name:'メンチカツ',yomi:'メンチカツ',tags:'めんちかつ 揚げ物 ひき肉',en:'menchi katsu fried minced meat cutlet',cal:270,p:12.5,f:17.5,c:17.0,per:130,fiber:1.5,iron:1.5,calcium:25,vitc:3,vitd:0,salt:1.3},
+  {name:'春巻き（1本）',yomi:'ハルマキ',tags:'はるまき 春巻 揚げ物',en:'harumaki spring roll fried',cal:180,p:5.5,f:9.5,c:18.5,per:80,fiber:1.0,iron:0.6,calcium:15,vitc:3,vitd:0,salt:0.8},
+  {name:'ハンバーグ（冷凍 びっくりドンキー風）',yomi:'ハンバーグ',tags:'はんばーぐ 冷凍 惣菜',en:'hamburger steak frozen',cal:220,p:12.5,f:15.5,c:8.5,per:130,fiber:0.8,iron:1.5,calcium:25,vitc:1,vitd:0.1,salt:1.2},
+  {name:'たこ焼き（6個）',yomi:'タコヤキ',tags:'たこやき たこ 大阪',en:'takoyaki octopus ball',cal:310,p:11.5,f:14.0,c:34.5,per:180,fiber:1.0,iron:0.8,calcium:50,vitc:1,vitd:0.5,salt:2.5},
+  {name:'お好み焼き（1枚）',yomi:'オコノミヤキ',tags:'おこのみやき 大阪 関西',en:'okonomiyaki japanese pancake',cal:540,p:22.0,f:22.0,c:62.0,per:350,fiber:3.0,iron:2.0,calcium:120,vitc:10,vitd:0.5,salt:3.5},
+  {name:'焼きそば（1人前）',yomi:'ヤキソバ',tags:'やきそば 焼きそば 麺',en:'yakisoba stir fried noodles',cal:510,p:15.5,f:16.0,c:76.0,per:350,fiber:3.5,iron:1.5,calcium:50,vitc:15,vitd:0,salt:3.5},
+  {name:'チャーハン（1人前）',yomi:'チャーハン',tags:'ちゃーはん 炒飯 ライス',en:'chahan fried rice',cal:560,p:16.0,f:18.5,c:83.0,per:350,fiber:1.5,iron:1.0,calcium:25,vitc:3,vitd:0.2,salt:3.0},
+
+  // ── フレッシュ野菜・サラダ ──
+  {name:'グリーンサラダ（外食）',yomi:'グリーンサラダ',tags:'サラダ 野菜 外食',en:'green salad restaurant',cal:25,p:1.5,f:0.3,c:5.0,per:100,fiber:2.0,iron:0.5,calcium:40,vitc:20,vitd:0,salt:0.3},
+  {name:'シーザーサラダ（ドレッシング付き）',yomi:'シーザーサラダ',tags:'サラダ 外食',en:'caesar salad with dressing',cal:180,p:5.5,f:14.0,c:10.0,per:200,fiber:2.5,iron:0.8,calcium:120,vitc:15,vitd:0.2,salt:1.5},
+  {name:'ドレッシング フレンチ（カロリーハーフ）',yomi:'フレンチドレッシング',tags:'ドレッシング サラダ',en:'french dressing low calorie',cal:100,p:0.5,f:8.0,c:6.5,per:100,fiber:0,iron:0.1,calcium:5,vitc:1,vitd:0,salt:1.5},
+  {name:'ゆで卵（1個）',yomi:'ユデタマゴ',tags:'たまご 卵 ゆでたまご',en:'boiled egg hard boiled',cal:91,p:7.7,f:6.2,c:0.3,per:60,fiber:0,iron:1.1,calcium:31,vitc:0,vitd:2.3,salt:0.2},
+  {name:'目玉焼き（1個）',yomi:'メダマヤキ',tags:'たまご 卵 目玉焼き',en:'fried egg sunny side up',cal:102,p:7.5,f:7.8,c:0.1,per:60,fiber:0,iron:1.1,calcium:28,vitc:0,vitd:2.3,salt:0.4},
+  {name:'スクランブルエッグ（2個）',yomi:'スクランブルエッグ',tags:'たまご 卵 スクランブル',en:'scrambled eggs',cal:192,p:14.5,f:14.5,c:1.0,per:120,fiber:0,iron:2.2,calcium:56,vitc:0,vitd:4.6,salt:0.8},
 ];
 LOCAL_DB.forEach(f => {
   f._search = normalize(f.name)+' '+normalize(f.yomi||'')+' '+normalize(f.tags||'')+' '+(f.en||'').toLowerCase();
@@ -444,8 +605,88 @@ function renderCalendar() {
   document.getElementById('calGrid').innerHTML = html;
 }
 
-// ── Record ──
-function renderRecord() {
+// ── 実質栄養価計算 ──
+// DIT（食事誘発性熱産生）: P=25-30%, C=6-8%, F=2-4%
+// 食物繊維NET補正: 食物繊維は消化吸収されないため実質カロリー = fiber * 2kcal/g（大腸発酵分）として扱い
+//                  通常計算されている炭水化物 * 4kcal から fiber * 4kcal を引いて fiber * 2kcal を足す
+//                  → 実質 fiber * 2kcal の節約
+function calcNetCalories(s) {
+  // ① DIT補正（安静時代謝で消費されるエネルギー）
+  const ditP = s.p * 4 * 0.27;   // タンパク質: 27%消費
+  const ditC = s.c * 4 * 0.07;   // 炭水化物: 7%消費
+  const ditF = s.f * 9 * 0.03;   // 脂質: 3%消費
+  const ditTotal = ditP + ditC + ditF;
+
+  // ② 食物繊維NETカロリー補正
+  // 食物繊維は不溶性は0kcal、可溶性は約2kcal/gで大腸で発酵
+  // 標準成分表では炭水化物に含めて4kcal/gで計算されているため差分を補正
+  const fiberAdj = (s.fiber || 0) * 2; // 4kcal→2kcalへの補正分（差引き2kcal節約/g）
+
+  const grossCal  = s.cal;
+  const netCal    = Math.round(grossCal - ditTotal - fiberAdj);
+  const reduction = Math.round(ditTotal + fiberAdj);
+
+  return {
+    grossCal,
+    netCal,
+    ditTotal: Math.round(ditTotal),
+    ditP:     Math.round(ditP),
+    ditC:     Math.round(ditC),
+    ditF:     Math.round(ditF),
+    fiberAdj: Math.round(fiberAdj),
+    reduction,
+  };
+}
+
+function renderNetCard(s) {
+  const badge = document.getElementById('netCalBadge');
+  const card  = document.getElementById('netCard');
+  if (!card) return;
+
+  if (s.cal <= 0) {
+    if (badge) badge.textContent = '';
+    card.innerHTML = '';
+    return;
+  }
+
+  const n = calcNetCalories(s);
+  if (badge) badge.textContent = `→ 実質 ${n.netCal} kcal`;
+
+  card.innerHTML = `
+    <div class="card" style="padding:10px 12px;font-size:12px">
+      <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <span style="color:var(--text-sub)">表示カロリー</span>
+        <span style="font-size:16px;font-weight:700">${n.grossCal}</span>
+        <span style="color:var(--text-sub)">kcal</span>
+        <span style="color:var(--text-sub)">→</span>
+        <span style="color:var(--text-sub)">実質カロリー</span>
+        <span style="font-size:20px;font-weight:700;color:var(--accent)">${n.netCal}</span>
+        <span style="color:var(--text-sub)">kcal</span>
+        <span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600">▼ ${n.reduction} kcal 節約</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">
+        <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
+          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">DIT（食事誘発性熱産生）</div>
+          <div style="font-weight:700;font-size:14px">▼ ${n.ditTotal} kcal</div>
+          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
+            P: ▼${n.ditP} / C: ▼${n.ditC} / F: ▼${n.ditF}
+          </div>
+        </div>
+        <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
+          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">食物繊維NET補正</div>
+          <div style="font-weight:700;font-size:14px">▼ ${n.fiberAdj} kcal</div>
+          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
+            繊維 ${r1(s.fiber||0)}g × 2 kcal節約/g
+          </div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--text-sub);line-height:1.6;border-top:1px solid var(--border);padding-top:6px">
+        DIT: P×27% / C×7% / F×3% を消化に消費と推定。食物繊維は腸内発酵で約2kcal/g（表示値4kcal/gとの差を補正）。あくまで推定値です。
+      </div>
+    </div>`;
+}
+
+
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
   const g = goals();
@@ -453,6 +694,12 @@ function renderRecord() {
   const exCal = exToday.reduce((a, e) => a + (e.cal || 0), 0);
   const remain = g.cal - s.cal + exCal;
   const remainColor = remain >= 0 ? 'var(--accent)' : '#c0392b';
+
+  // タンパク質吸収補正
+  const absP = r1(calcAbsorbedProtein(list));
+
+  // ── 実質栄養価 ──
+  renderNetCard(s);
 
   // ── エネルギー収支カード ──
   document.getElementById('balanceCard').innerHTML = `
@@ -501,6 +748,7 @@ function renderRecord() {
       <div style="background:#e3f0ff;border-radius:8px;padding:7px 4px">
         <div style="font-size:10px;color:#3266ad;font-weight:600">タンパク質</div>
         <div style="font-weight:700">${r1(s.p)}g</div>
+        <div style="font-size:10px;color:var(--accent);font-weight:600">吸収量 ${absP}g</div>
         <div style="font-size:10px;color:var(--text-sub)">${ri(s.p*4)} kcal (${pCalPct}%)</div>
         <div style="font-size:10px;color:var(--text-sub)">目標 ${g.p}g</div>
       </div>
@@ -520,7 +768,7 @@ function renderRecord() {
 
   document.getElementById('recMetrics').innerHTML = `
     <div class="mc"><div class="mc-label">カロリー</div><div class="mc-value">${ri(s.cal)}</div><div class="mc-unit">kcal</div></div>
-    <div class="mc"><div class="mc-label">タンパク質</div><div class="mc-value">${r1(s.p)}</div><div class="mc-unit">g</div></div>
+    <div class="mc" style="position:relative"><div class="mc-label">タンパク質</div><div class="mc-value">${r1(s.p)}</div><div class="mc-unit">g</div><div style="font-size:9px;color:var(--accent);font-weight:600;margin-top:1px">吸収 ${absP}g</div></div>
     <div class="mc"><div class="mc-label">脂質</div><div class="mc-value">${r1(s.f)}</div><div class="mc-unit">g</div></div>
     <div class="mc"><div class="mc-label">炭水化物</div><div class="mc-value">${r1(s.c)}</div><div class="mc-unit">g</div></div>`;
   const pcal=s.p*4, fcal=s.f*9, ccal=s.c*4, tot=pcal+fcal+ccal||1;
@@ -585,7 +833,8 @@ function renderRecord() {
           <div class="spin-box" id="addSpinner_${meal}"><div class="spinner"></div></div>
         </div>
         <div class="results-box" id="addResultsBox_${meal}"></div>
-        <div class="row" style="margin-bottom:6px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="addName_${meal}" placeholder="食品名"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="addAmt_${meal}" value="100" min="1" oninput="recalcAdd('${meal}')"></div></div>
+        <div class="row" style="margin-bottom:6px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="addName_${meal}" placeholder="食品名"></div><div class="field" style="flex:1.2"><label>量(g) <button type="button" onclick="showAmtQuickPicker('${meal}')" style="font-size:10px;padding:1px 5px;border:1px solid var(--border);border-radius:4px;background:var(--bg);color:var(--text-sub);cursor:pointer;vertical-align:middle">▾</button></label><input type="number" id="addAmt_${meal}" value="100" min="1" oninput="recalcAdd('${meal}')"></div></div>
+        <div id="amtQuickPick_${meal}" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>
         <div class="macro-row">
           <div class="field"><label>kcal</label><input type="number" id="addCal_${meal}" placeholder="0" step="0.1"></div>
           <div class="field"><label>P(g)</label><input type="number" id="addP_${meal}" placeholder="0" step="0.1"></div>
@@ -671,7 +920,163 @@ function selectAddResult(i, src, meal) {
   document.getElementById('addAmt_'+meal).value=f.per;
   fillAddMacros(f,f.per,meal); box.style.display='none'; document.getElementById('addSearch_'+meal).value='';
 }
-function fillAddMacros(f, amt, meal) {
+// ── 調味料クイック登録 ──
+// 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
+const SEASONING_MASTER = {
+  '醤油（濃口）小さじ1':   { name:'醤油（濃口）小さじ1',  amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0, vitd:0, salt:0.9 },
+  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）小さじ1', amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0, vitd:0, salt:0.7 },
+  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素小さじ1',amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0, vitd:0, salt:1.3 },
+  '米油小さじ1':           { name:'米油小さじ1',          amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0, vitd:0, salt:0   },
+  'みりん小さじ1':         { name:'みりん小さじ1',        amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0, vitd:0, salt:0   },
+  'にんにく小さじ1':       { name:'にんにく小さじ1',      amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6,vitd:0, salt:0   },
+};
+
+let _seasoningMsgTimer = null;
+function addSeasoning(key) {
+  const s = SEASONING_MASTER[key];
+  if (!s) return;
+  const meal = document.getElementById('seasoningMeal')?.value || '昼食';
+  entries.push({
+    id: Date.now() + Math.random(),
+    date: currentDate,
+    meal,
+    name:    s.name,
+    amount:  s.amount,
+    cal:     s.cal,
+    p:       s.p,
+    f:       s.f,
+    c:       s.c,
+    fiber:   s.fiber,
+    iron:    s.iron,
+    calcium: s.calcium,
+    vitc:    s.vitc,
+    vitd:    s.vitd,
+    salt:    s.salt,
+  });
+  save();
+  renderRecord();
+  // メッセージ表示
+  const msg = document.getElementById('seasoningMsg');
+  if (msg) {
+    msg.textContent = `✅ ${s.name}を${meal}に追加`;
+    clearTimeout(_seasoningMsgTimer);
+    _seasoningMsgTimer = setTimeout(() => { msg.textContent = ''; }, 2000);
+  }
+}
+
+
+function openCopyDayModal() {
+  const modal = document.getElementById('copyDayModal');
+  if (!modal) return;
+  // デフォルト: 昨日
+  const yesterday = new Date(currentDate + 'T00:00:00');
+  yesterday.setDate(yesterday.getDate() - 1);
+  const input = document.getElementById('copyFromDate');
+  if (input) input.value = toDateStr(yesterday);
+  const destLabel = document.getElementById('copyDestLabel');
+  if (destLabel) destLabel.textContent = dateLabel(currentDate);
+  modal.style.display = 'flex';
+  updateCopyDayPreview();
+}
+function closeCopyDayModal() {
+  const modal = document.getElementById('copyDayModal');
+  if (modal) modal.style.display = 'none';
+  const msg = document.getElementById('copyDayMsg');
+  if (msg) msg.textContent = '';
+}
+function updateCopyDayPreview() {
+  const input = document.getElementById('copyFromDate');
+  const preview = document.getElementById('copyDayPreview');
+  if (!input || !preview) return;
+  const fromDate = input.value;
+  if (!fromDate) { preview.textContent = '日付を選択してください'; return; }
+  const fromEntries = entries.filter(e => e.date === fromDate);
+  const fromEx      = exercises.filter(e => e.date === fromDate);
+  if (!fromEntries.length && !fromEx.length) {
+    preview.textContent = `${dateLabel(fromDate)} の記録はありません`;
+    return;
+  }
+  const s = sumEntries(fromEntries);
+  const mealCounts = MEALS_ORDER.map(m => {
+    const cnt = fromEntries.filter(e => e.meal === m).length;
+    return cnt ? `${m}${cnt}品` : null;
+  }).filter(Boolean).join(' / ');
+  preview.innerHTML = `
+    <div style="font-weight:600;margin-bottom:3px">${dateLabel(fromDate)}</div>
+    <div>${mealCounts || '食事なし'}　合計 ${ri(s.cal)} kcal</div>
+    ${fromEx.length ? `<div>運動: ${fromEx.map(e=>e.name).join('、')} (消費${ri(fromEx.reduce((a,e)=>a+(e.cal||0),0))}kcal)</div>` : ''}
+  `;
+}
+function executeCopyDay() {
+  const input     = document.getElementById('copyFromDate');
+  const overwrite = document.getElementById('copyOverwrite')?.checked;
+  const copyEx    = document.getElementById('copyExercise')?.checked;
+  const msg       = document.getElementById('copyDayMsg');
+  const fromDate  = input?.value;
+  if (!fromDate) { if(msg){msg.className='status-msg status-err';msg.textContent='コピー元の日付を選んでください';} return; }
+  if (fromDate === currentDate) { if(msg){msg.className='status-msg status-err';msg.textContent='コピー元とコピー先が同じ日付です';} return; }
+
+  const fromEntries = entries.filter(e => e.date === fromDate);
+  const fromEx      = exercises.filter(e => e.date === fromDate);
+  if (!fromEntries.length && !fromEx.length) {
+    if(msg){msg.className='status-msg status-err';msg.textContent='コピー元に記録がありません';}
+    return;
+  }
+
+  // バックアップ
+  takeAiBackup(`${dateLabel(fromDate)}→${dateLabel(currentDate)}コピー前`);
+
+  // 食事コピー
+  if (overwrite) entries = entries.filter(e => e.date !== currentDate);
+  const now = Date.now();
+  fromEntries.forEach((e, i) => {
+    entries.push({ ...e, id: now + i, date: currentDate });
+  });
+
+  // 運動コピー
+  if (copyEx) {
+    if (overwrite) exercises = exercises.filter(e => e.date !== currentDate);
+    fromEx.forEach((e, i) => {
+      exercises.push({ ...e, id: now + 10000 + i, date: currentDate });
+    });
+  }
+
+  save();
+  saveExercises();
+  renderRecord();
+  renderCalendar();
+  renderExerciseItems();
+
+  const copied = fromEntries.length + (copyEx ? fromEx.length : 0);
+  if(msg){msg.className='status-msg status-ok';msg.textContent=`✅ ${copied}件をコピーしました`;}
+  setTimeout(() => closeCopyDayModal(), 1200);
+}
+
+// ── 食品登録 量クイック選択 ──
+function showAmtQuickPicker(meal) {
+  const base = window._addBase?.[meal];
+  const cont = document.getElementById('amtQuickPick_'+meal);
+  if (!cont) return;
+  // per値（標準量）を軸に選択肢を生成
+  const per  = base?.per || 100;
+  const candidates = new Set([per]);
+  // 50g刻みの前後 + 100g単位
+  [50, 100, 150, 200, 250, 300].forEach(v => candidates.add(v));
+  if (per !== 100) [Math.round(per*0.5), Math.round(per*2)].forEach(v => v>0 && candidates.add(v));
+  const sorted = [...candidates].filter(v=>v>0).sort((a,b)=>a-b);
+  cont.innerHTML = sorted.map(v =>
+    `<button onclick="setAddAmt('${meal}',${v})" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:${v===per?'var(--accent)':'var(--bg)'};color:${v===per?'#fff':'var(--text)'};cursor:pointer;white-space:nowrap">${v}g${v===per?' ★':''}</button>`
+  ).join('');
+  cont.style.display = cont.style.display === 'none' ? 'flex' : 'none';
+}
+function setAddAmt(meal, val) {
+  const el = document.getElementById('addAmt_'+meal);
+  if (el) { el.value = val; recalcAdd(meal); }
+  const cont = document.getElementById('amtQuickPick_'+meal);
+  if (cont) cont.style.display = 'none';
+}
+
+
   const r=amt/(f.per||100);
   const set=(id,val)=>{const el=document.getElementById(id+'_'+meal);if(el)el.value=r1(val*r)};
   set('addCal',f.cal);set('addP',f.p);set('addF',f.f);set('addC',f.c);
@@ -891,8 +1296,20 @@ function goalBar(label, actual, target, unit, color, reverse=false) {
 }
 function renderStats() {
   const g=goals(), avg=getAvg(statsPeriod), s=avg||{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0};
+  // 統計期間の吸収タンパク質（平均）
+  const statsDays = (() => {
+    const now = new Date(); const days = statsPeriod==='today'?1:statsPeriod==='7d'?7:statsPeriod==='30d'?30:90;
+    const dates = Array.from({length:days},(_,i)=>{const d=new Date(now);d.setDate(d.getDate()-i);return toDateStr(d);});
+    return dates;
+  })();
+  const statsAbsP = statsDays.length > 0
+    ? r1(statsDays.reduce((sum,date) => {
+        const dayList = entries.filter(e=>e.date===date);
+        return sum + calcAbsorbedProtein(dayList);
+      }, 0) / (avg?.days || 1))
+    : 0;
   const lbl=statsPeriod==='today'?'今日':statsPeriod==='7d'?`週平均(${avg?avg.days:'0'}日)`:statsPeriod==='30d'?`月平均(${avg?avg.days:'0'}日)`:`3ヶ月平均(${avg?avg.days:'0'}日)`;
-  const score=avg?Math.round(Math.min(s.cal/g.cal,1)*25+Math.min(s.p/g.p,1)*35+Math.min(s.f/g.f,1)*20+Math.min(s.c/g.c,1)*20):0;
+  const score=avg?Math.round(Math.min(s.cal/g.cal,1)*25+Math.min(statsAbsP/g.p,1)*35+Math.min(s.f/g.f,1)*20+Math.min(s.c/g.c,1)*20):0;
   document.getElementById('goalBars').innerHTML = avg ? `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <span style="font-size:11px;color:var(--text-sub)">${lbl}</span>
@@ -900,7 +1317,7 @@ function renderStats() {
     </div>
     <div style="margin-bottom:10px;font-size:11px;color:var(--text-sub)">体重 <input type="number" value="${userWeight}" min="30" max="200" step="0.5" oninput="userWeight=parseFloat(this.value)||65;localStorage.setItem('pfcWeight',userWeight);renderStats()" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)"> kg → タンパク質目標 ${g.p}g</div>
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:8px">PFC・カロリー</div>
-    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質',r1(s.p),g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
+    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin:12px 0 8px">ビタミン・ミネラル・食物繊維</div>
     ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
   ` : `<div style="text-align:center;padding:2rem;color:var(--text-sub);font-size:13px">この期間の記録がありません</div>`;
@@ -1414,6 +1831,12 @@ function renderAiBackupList() {
   }).join('');
 }
 
+function resetAiChat() {
+  aiHistory = [];
+  const box = document.getElementById('aiChatBox');
+  if (box) box.innerHTML = '';
+  appendAiMessage('ai', '会話をリセットしました。新たな質問や操作をどうぞ。');
+}
 function initAiChat() {
   if (aiInitDone) return;
   aiInitDone = true;
@@ -1504,64 +1927,83 @@ function dateLabel(ds) {
 // 全記録のサマリーをAIに渡す文字列を生成
 function buildFullContext() {
   const lines = [];
+  const TODAY = currentDate;
+  const RECENT_DAYS = 14; // 詳細表示する直近日数
 
-  // プロフィール
+  // ── プロフィール ──
   const sexLabel = profile.sex === 'male' ? '男性' : '女性';
   const actLabel = ({1.2:'座位中心',1.375:'軽い運動',1.55:'中程度',1.725:'激しい運動',1.9:'非常に激しい'})[String(profile.activityFactor)] || String(profile.activityFactor);
   lines.push('【プロフィール】');
-  lines.push(`  性別: ${sexLabel} / 年齢: ${profile.age}歳 / 身長: ${profile.height}cm / 体重: ${profile.weight}kg`);
-  if (profile.bf != null) lines.push(`  体脂肪率: ${profile.bf}%`);
-  lines.push(`  活動レベル: ${actLabel} / 室温: ${profile.temp}℃`);
+  lines.push(`性別:${sexLabel} 年齢:${profile.age} 身長:${profile.height}cm 体重:${profile.weight}kg 活動:${actLabel}`);
 
-  // 目標値
+  // ── 目標値 ──
   const g = goals();
-  lines.push('【1日の目標値】');
-  lines.push(`  カロリー: ${g.cal}kcal / タンパク質: ${g.p}g / 脂質: ${g.f}g / 炭水化物: ${g.c}g`);
-  lines.push(`  食物繊維: 21g / 鉄: 7mg / カルシウム: 700mg / VitC: 100mg / VitD: 8.5μg / 塩分上限: 7.5g`);
+  lines.push(`【目標】cal:${g.cal} P:${g.p} F:${g.f} C:${g.c}`);
 
-  // カスタム食品DB
+  // ── カスタム食品DB（名前のみ・トークン節約） ──
   if (customFoods.length) {
-    lines.push('【カスタム食品DB】');
-    customFoods.forEach(f => {
-      lines.push(`  ${f.name} (${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber ? ' 繊'+f.fiber : ''})`);
-    });
+    lines.push('【カスタム食品】' + customFoods.map(f => f.name).join('、'));
   }
 
-  // 食事記録（全件）
-  lines.push('【食事記録（全期間）】');
-  if (!entries.length) {
-    lines.push('  記録なし');
-  } else {
-    const grouped = {};
-    entries.forEach(e => {
-      if (!grouped[e.date]) grouped[e.date] = {};
-      if (!grouped[e.date][e.meal]) grouped[e.date][e.meal] = [];
-      grouped[e.date][e.meal].push(
-        `${e.name}(${e.amount}g,${Math.round(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)},id:${e.id})`
-      );
-    });
-    Object.entries(grouped).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, meals]) => {
-      const daySum = sumEntries(entries.filter(e => e.date === date));
-      lines.push(`  ${dateLabel(date)} ${date} [計${Math.round(daySum.cal)}kcal P${r1(daySum.p)} F${r1(daySum.f)} C${r1(daySum.c)}]`);
-      Object.entries(meals).forEach(([meal, foods]) => {
-        lines.push(`    ${meal}: ${foods.join('、')}`);
+  // ── 食事記録 ──
+  // 直近14日：食品レベルの詳細（id付き）
+  // それ以前：日次サマリーのみ
+  const recentCutoff = (() => {
+    const d = new Date(TODAY + 'T00:00:00');
+    d.setDate(d.getDate() - RECENT_DAYS + 1);
+    return toDateStr(d);
+  })();
+
+  const grouped = {};
+  entries.forEach(e => {
+    if (!grouped[e.date]) grouped[e.date] = {};
+    if (!grouped[e.date][e.meal]) grouped[e.date][e.meal] = [];
+    grouped[e.date][e.meal].push(e);
+  });
+
+  const allDates = Object.keys(grouped).sort();
+  const recentDates = allDates.filter(d => d >= recentCutoff);
+  const oldDates    = allDates.filter(d => d <  recentCutoff);
+
+  if (recentDates.length) {
+    lines.push(`【食事記録 直近${RECENT_DAYS}日（詳細）】`);
+    recentDates.forEach(date => {
+      const dayEntries = entries.filter(e => e.date === date);
+      const s = sumEntries(dayEntries);
+      lines.push(`${dateLabel(date)} [${Math.round(s.cal)}kcal P${r1(s.p)} F${r1(s.f)} C${r1(s.c)}]`);
+      Object.entries(grouped[date]).forEach(([meal, foods]) => {
+        lines.push(`  ${meal}: ${foods.map(e => `${e.name}(${e.amount}g,${Math.round(e.cal)}kcal,id:${e.id})`).join('、')}`);
       });
     });
   }
 
-  // 運動記録（全件）
-  lines.push('【運動記録（全期間）】');
-  if (!exercises.length) {
-    lines.push('  記録なし');
-  } else {
-    const exGrouped = {};
-    exercises.forEach(e => {
-      if (!exGrouped[e.date]) exGrouped[e.date] = [];
-      exGrouped[e.date].push(`${e.name}(${e.minutes ? e.minutes+'分,' : ''}消費${Math.round(e.cal)}kcal,id:${e.id})`);
+  if (oldDates.length) {
+    lines.push('【食事記録 過去分（日次サマリー）】');
+    oldDates.forEach(date => {
+      const dayEntries = entries.filter(e => e.date === date);
+      const s = sumEntries(dayEntries);
+      lines.push(`${date} ${Math.round(s.cal)}kcal P${r1(s.p)} F${r1(s.f)} C${r1(s.c)}`);
     });
-    Object.entries(exGrouped).sort(([a],[b]) => a.localeCompare(b)).forEach(([date, exs]) => {
-      lines.push(`  ${dateLabel(date)} ${date}: ${exs.join('、')}`);
-    });
+  }
+
+  if (!entries.length) lines.push('【食事記録】なし');
+
+  // ── 運動記録 ──
+  if (exercises.length) {
+    const recentEx = exercises.filter(e => e.date >= recentCutoff);
+    const oldEx    = exercises.filter(e => e.date <  recentCutoff);
+    if (recentEx.length) {
+      lines.push('【運動記録 直近】');
+      const exGrouped = {};
+      recentEx.forEach(e => { (exGrouped[e.date] = exGrouped[e.date]||[]).push(e); });
+      Object.entries(exGrouped).sort().forEach(([d, exs]) => {
+        lines.push(`${dateLabel(d)}: ${exs.map(e=>`${e.name}(${e.minutes||'?'}分,消費${Math.round(e.cal)}kcal,id:${e.id})`).join('、')}`);
+      });
+    }
+    if (oldEx.length) {
+      const totalOldCal = Math.round(oldEx.reduce((a,e)=>a+(e.cal||0),0));
+      lines.push(`【運動記録 過去分】${oldEx.length}件 合計消費${totalOldCal}kcal`);
+    }
   }
 
   return lines.join('\n');
@@ -1791,7 +2233,11 @@ ${fullCtx}
     }
 
     if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
-    aiHistory.push({ role: 'assistant', content: rawText });
+    // JSONブロックを除いた短縮版を履歴に保存（トークン節約）
+    const historyContent = rawText.replace(/```json[\s\S]*?```/g, '[操作コマンド実行済み]').trim();
+    aiHistory.push({ role: 'assistant', content: historyContent });
+    // 会話履歴が長くなりすぎたら古いものを削除（直近10往復まで）
+    if (aiHistory.length > 20) aiHistory = aiHistory.slice(aiHistory.length - 20);
 
     // コマンド実行
     if (parsed && Array.isArray(parsed.commands) && parsed.commands.length > 0) {
