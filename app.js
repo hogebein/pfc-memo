@@ -286,6 +286,31 @@ const LOCAL_DB = [
   {name:'ゆで卵（1個）',yomi:'ユデタマゴ',tags:'たまご 卵 ゆでたまご',en:'boiled egg hard boiled',cal:91,p:7.7,f:6.2,c:0.3,per:60,fiber:0,iron:1.1,calcium:31,vitc:0,vitd:2.3,salt:0.2},
   {name:'目玉焼き（1個）',yomi:'メダマヤキ',tags:'たまご 卵 目玉焼き',en:'fried egg sunny side up',cal:102,p:7.5,f:7.8,c:0.1,per:60,fiber:0,iron:1.1,calcium:28,vitc:0,vitd:2.3,salt:0.4},
   {name:'スクランブルエッグ（2個）',yomi:'スクランブルエッグ',tags:'たまご 卵 スクランブル',en:'scrambled eggs',cal:192,p:14.5,f:14.5,c:1.0,per:120,fiber:0,iron:2.2,calcium:56,vitc:0,vitd:4.6,salt:0.8},
+  // ── ビール・ハイボール・ワイン ──
+  {name:'ビール缶（350ml）',yomi:'ビール',tags:'びーる アルコール 酒 缶',en:'beer can 350ml',cal:140,p:1.1,f:0,c:10.9,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0},
+  {name:'ビール缶（500ml）',yomi:'ビール',tags:'びーる アルコール 酒 缶',en:'beer can 500ml',cal:200,p:1.5,f:0,c:15.5,per:500,fiber:0,iron:0.1,calcium:15,vitc:0,vitd:0,salt:0},
+  {name:'アサヒスーパードライ 350ml缶',yomi:'アサヒスーパードライ',tags:'ビール アサヒ スーパードライ アルコール',en:'asahi super dry beer 350ml',cal:147,p:1.4,f:0,c:10.9,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0},
+  {name:'キリン一番搾り 350ml缶',yomi:'イチバンシボリ',tags:'ビール キリン 一番搾り アルコール',en:'kirin ichiban shibori beer 350ml',cal:140,p:1.4,f:0,c:10.5,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0},
+  {name:'サッポロ黒ラベル 350ml缶',yomi:'クロラベル',tags:'ビール サッポロ 黒ラベル アルコール',en:'sapporo black label beer 350ml',cal:140,p:1.4,f:0,c:10.2,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0},
+  {name:'ヱビスビール 350ml缶',yomi:'エビスビール',tags:'ビール サッポロ ヱビス エビス アルコール',en:'yebisu beer 350ml',cal:154,p:1.8,f:0,c:11.6,per:350,fiber:0,iron:0.1,calcium:14,vitc:0,vitd:0,salt:0},
+  {name:'ザ・プレミアムモルツ 350ml缶',yomi:'プレミアムモルツ',tags:'ビール サントリー プレモル アルコール',en:'premium malts beer 350ml suntory',cal:147,p:1.4,f:0,c:11.0,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0},
+  {name:'発泡酒 350ml缶',yomi:'ハッポウシュ',tags:'ビール 発泡酒 アルコール',en:'happoshu low malt beer 350ml',cal:154,p:0.4,f:0,c:12.6,per:350,fiber:0,iron:0,calcium:7,vitc:0,vitd:0,salt:0},
+  {name:'第三のビール 350ml缶',yomi:'ダイサンビール',tags:'ビール 第三 新ジャンル アルコール',en:'third category beer 350ml',cal:126,p:0.7,f:0,c:10.2,per:350,fiber:0,iron:0,calcium:7,vitc:0,vitd:0,salt:0},
+  {name:'ハイボール缶（サントリー角 350ml）',yomi:'ハイボール カク',tags:'ハイボール ウイスキー サントリー 角 アルコール',en:'highball kaku suntory 350ml can',cal:154,p:0,f:0,c:10.5,per:350,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'ハイボール缶（サントリー角 500ml）',yomi:'ハイボール カク',tags:'ハイボール ウイスキー サントリー 角 アルコール',en:'highball kaku suntory 500ml can',cal:220,p:0,f:0,c:15.0,per:500,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'ハイボール缶（トリス 350ml）',yomi:'トリスハイボール',tags:'ハイボール トリス サントリー アルコール',en:'tris highball suntory 350ml',cal:133,p:0,f:0,c:7.7,per:350,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'ハイボール缶（-196℃ レモン 350ml）',yomi:'マイナス196',tags:'チューハイ ハイボール サントリー レモン アルコール',en:'suntory minus196 lemon 350ml',cal:154,p:0,f:0,c:11.9,per:350,fiber:0,iron:0,calcium:0,vitc:9,vitd:0,salt:0},
+  {name:'ハイボール（外食 グラス約200ml）',yomi:'ハイボール',tags:'ハイボール ウイスキー 外食 アルコール',en:'highball whisky glass restaurant',cal:88,p:0,f:0,c:6.0,per:200,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'チューハイ レモン缶（350ml）',yomi:'チューハイ',tags:'チューハイ レモン アルコール サワー',en:'chuhai lemon can 350ml',cal:140,p:0,f:0,c:10.9,per:350,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'ストロングゼロ（350ml）',yomi:'ストロングゼロ',tags:'チューハイ ストロング サントリー アルコール',en:'strong zero suntory 350ml',cal:98,p:0,f:0,c:0.5,per:350,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'赤ワイン（グラス125ml）',yomi:'アカワイン',tags:'ワイン 赤 アルコール',en:'red wine glass 125ml',cal:91,p:0.1,f:0,c:1.7,per:125,fiber:0,iron:0.4,calcium:6,vitc:0,vitd:0,salt:0},
+  {name:'白ワイン（グラス125ml）',yomi:'シロワイン',tags:'ワイン 白 アルコール',en:'white wine glass 125ml',cal:91,p:0.1,f:0,c:2.5,per:125,fiber:0,iron:0.3,calcium:9,vitc:0,vitd:0,salt:0},
+  {name:'スパークリングワイン（グラス125ml）',yomi:'スパークリング シャンパン',tags:'ワイン シャンパン スパークリング アルコール',en:'sparkling wine champagne 125ml',cal:94,p:0.3,f:0,c:3.5,per:125,fiber:0,iron:0.4,calcium:10,vitc:0,vitd:0,salt:0},
+  {name:'赤ワイン（ボトル750ml）',yomi:'アカワインボトル',tags:'ワイン 赤 ボトル アルコール',en:'red wine bottle 750ml',cal:548,p:0.8,f:0,c:10.2,per:750,fiber:0,iron:2.4,calcium:36,vitc:0,vitd:0,salt:0},
+  {name:'白ワイン（ボトル750ml）',yomi:'シロワインボトル',tags:'ワイン 白 ボトル アルコール',en:'white wine bottle 750ml',cal:548,p:0.8,f:0,c:15.0,per:750,fiber:0,iron:1.8,calcium:54,vitc:0,vitd:0,salt:0},
+  {name:'日本酒（1合180ml）',yomi:'ニホンシュ',tags:'にほんしゅ 日本酒 酒 アルコール',en:'sake rice wine 180ml',cal:185,p:0.7,f:0,c:8.2,per:180,fiber:0,iron:0,calcium:4,vitc:0,vitd:0,salt:0},
+  {name:'焼酎（ロック 60ml）',yomi:'ショウチュウ',tags:'しょうちゅう 焼酎 酒 アルコール',en:'shochu spirits 60ml',cal:85,p:0,f:0,c:0,per:60,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'梅酒（グラス100ml）',yomi:'ウメシュ',tags:'うめしゅ 梅酒 酒 アルコール',en:'umeshu plum wine 100ml',cal:155,p:0.1,f:0,c:20.7,per:100,fiber:0,iron:0.1,calcium:5,vitc:1,vitd:0,salt:0},
 ];
 LOCAL_DB.forEach(f => {
   f._search = normalize(f.name)+' '+normalize(f.yomi||'')+' '+normalize(f.tags||'')+' '+(f.en||'').toLowerCase();
@@ -2103,9 +2128,44 @@ function executeAiCommands(commands, backupLabel) {
       });
       changed = true;
     }
-  });
+    // ── ADD_CUSTOM_FOOD ──（カスタム食品DBへの登録）
+    else if (cmd.type === 'add_custom_food') {
+      const foods = Array.isArray(cmd.foods) ? cmd.foods : [cmd];
+      foods.forEach(food => {
+        if (!food.name) return;
+        const per = parseFloat(food.per) || 100;
+        customFoods.push({
+          id:      Date.now() + Math.random(),
+          name:    food.name,
+          per,
+          cal:     parseFloat(food.cal)     || 0,
+          p:       parseFloat(food.p)       || 0,
+          f:       parseFloat(food.f)       || 0,
+          c:       parseFloat(food.c)       || 0,
+          fiber:   parseFloat(food.fiber)   || 0,
+          iron:    parseFloat(food.iron)    || 0,
+          calcium: parseFloat(food.calcium) || 0,
+          vitc:    parseFloat(food.vitc)    || 0,
+          vitd:    parseFloat(food.vitd)    || 0,
+          salt:    parseFloat(food.salt)    || 0,
+          _src:    'ai',
+        });
+        log.push(`📦 カスタム食品「${food.name}」を登録（${per}gあたり ${Math.round(food.cal)}kcal）`);
+      });
+      saveCustom();
+      changed = true;
+    }
 
-  if (changed) { save(); renderRecord(); renderCalendar(); }
+    // ── DELETE_CUSTOM_FOOD ──（カスタム食品DBからの削除）
+    else if (cmd.type === 'delete_custom_food') {
+      const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
+      const before = customFoods.length;
+      customFoods = customFoods.filter(f => !names.includes(f.name));
+      saveCustom();
+      log.push(`🗑️ カスタム食品 ${before - customFoods.length}件削除`);
+      changed = true;
+    }
+  });
   return log;
 }
 
@@ -2194,15 +2254,42 @@ ${fullCtx}
 - 複数日にまたがる操作はdatesに全日付を列挙する
 - 記録の読み取り・質問のみの場合はcommands不要、messageだけ返す
 
+5. add_custom_food — カスタム食品DBに食品を登録（記録への追加とは別）
+{
+  "commands": [{
+    "type": "add_custom_food",
+    "foods": [{
+      "name": "サントリー角ハイボール缶350ml",
+      "per": 350,
+      "cal": 154, "p": 0, "f": 0, "c": 10.5,
+      "fiber": 0, "iron": 0, "calcium": 0, "vitc": 0, "vitd": 0, "salt": 0
+    }]
+  }],
+  "backup_label": "カスタム食品登録",
+  "message": "カスタム食品DBに登録しました。次回から食品検索で見つかります。"
+}
+
+6. delete_custom_food — カスタム食品DBから削除
+{
+  "commands": [{"type": "delete_custom_food", "names": ["食品名"]}],
+  "backup_label": "カスタム食品削除",
+  "message": "削除しました"
+}
+
 【対応範囲外の操作について】
 以下はこのアプリで対応できない操作です。該当する場合は操作を行わず、
 できない理由と代替手段をmessageのみで返してください（JSONブロック不要）:
 - 体重・プロフィール情報の変更（→「設定」タブで手動変更を案内）
-- カスタム食品・複合食品の登録・削除（→「食品登録」タブで手動操作を案内）
 - グラフや統計の操作（表示のみで変更不可）
 - 15日以上前の記録（コンテキスト外のため参照・操作不可）
 - 運動記録の追加・削除（→「記録」タブの運動ブロックで手動操作を案内）
 - アプリの設定変更・外部サービス連携操作
+
+【カスタム食品登録のルール】
+- 「〇〇を食品DBに登録して」「〇〇を食品として保存して」などの依頼は add_custom_food を使用
+- per は商品1個・1食分・100g など最も使いやすい単位を選ぶ
+- 栄養成分表示がある場合はその数値を使用、なければ標準的な値を推定
+- 登録後は「記録タブの食品検索から追加できます」と案内する
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
   try {
