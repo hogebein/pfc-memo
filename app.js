@@ -140,7 +140,7 @@ const LOCAL_DB = [
   {name:'プロテイン（1杯）',yomi:'プロテイン',tags:'ホエイ カゼイン',en:'protein whey protein shake',cal:120,p:25.0,f:1.5,c:4.0,per:30,fiber:0.5,iron:1.0,calcium:150,vitc:0,vitd:0,salt:0.2},
   {name:'コーヒー（ブラック）',yomi:'コーヒー',tags:'',en:'coffee black coffee',cal:4,p:0.3,f:0,c:0.7,per:100,fiber:0,iron:0.1,calcium:2,vitc:0,vitd:0,salt:0},
   {name:'オレンジジュース',yomi:'オレンジジュース',tags:'みかん ジュース',en:'orange juice',cal:45,p:0.7,f:0.1,c:10.4,per:100,fiber:0.2,iron:0.1,calcium:8,vitc:42,vitd:0,salt:0},
-  {name:'スポーツドリンク',yomi:'スポーツドリンク',tags:'ポカリ アクエリアス',en:'sports drink energy drink',cal:21,p:0,f:0,c:5.1,per:100,fiber:0,iron:0,calcium:2,vitc:0,vitd:0,salt:0.1}
+  {name:'スポーツドリンク',yomi:'スポーツドリンク',tags:'ポカリ アクエリアス',en:'sports drink energy drink',cal:21,p:0,f:0,c:5.1,per:100,fiber:0,iron:0,calcium:2,vitc:0,vitd:0,salt:0.1},
   // ── 麺類・ラーメン ──
   {name:'インスタントラーメン（日清チキンラーメン）',yomi:'チキンラーメン',tags:'ラーメン インスタント 日清',en:'chicken ramen instant noodle',cal:453,p:10.5,f:17.5,c:63.5,per:85,fiber:2.2,iron:1.5,calcium:50,vitc:0,vitd:0,salt:5.5},
   {name:'インスタントラーメン（マルちゃん正麺醤油）',yomi:'マルチャンセイメン',tags:'ラーメン インスタント 東洋水産 マルちゃん',en:'maruchan seimen soy sauce ramen',cal:468,p:11.5,f:17.8,c:65.2,per:100,fiber:2.0,iron:1.2,calcium:45,vitc:0,vitd:0,salt:5.8},
@@ -687,6 +687,8 @@ function renderNetCard(s) {
 }
 
 
+// ── Record ──
+function renderRecord() {
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
   const g = goals();
@@ -1077,6 +1079,7 @@ function setAddAmt(meal, val) {
 }
 
 
+function fillAddMacros(f, amt, meal) {
   const r=amt/(f.per||100);
   const set=(id,val)=>{const el=document.getElementById(id+'_'+meal);if(el)el.value=r1(val*r)};
   set('addCal',f.cal);set('addP',f.p);set('addF',f.f);set('addC',f.c);
