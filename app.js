@@ -712,6 +712,27 @@ function renderNetCard(s) {
 }
 
 
+// ── Toast & Ripple ──
+function showToast(msg, duration = 2000) {
+  let el = document.getElementById('toast');
+  if (!el) { el = document.createElement('div'); el.id = 'toast'; document.body.appendChild(el); }
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._timer);
+  el._timer = setTimeout(() => el.classList.remove('show'), duration);
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn, .meal-add-btn, .nav-btn, .seasoning-btn, .toggle-btn, .period-tab, .chart-tab, .ri');
+  if (!btn) return;
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple';
+  const rect = btn.getBoundingClientRect();
+  const size = Math.max(rect.width, rect.height) * 2;
+  ripple.style.cssText = `width:${size}px;height:${size}px;left:${e.clientX-rect.left-size/2}px;top:${e.clientY-rect.top-size/2}px`;
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 600);
+}, true);
+
 // ── Record ──
 function renderRecord() {
   const list = getDayEntries(currentDate);
@@ -982,13 +1003,7 @@ function addSeasoning(key) {
   });
   save();
   renderRecord();
-  // メッセージ表示
-  const msg = document.getElementById('seasoningMsg');
-  if (msg) {
-    msg.textContent = `✅ ${s.name}を${meal}に追加`;
-    clearTimeout(_seasoningMsgTimer);
-    _seasoningMsgTimer = setTimeout(() => { msg.textContent = ''; }, 2000);
-  }
+  showToast(`✅ ${s.name}を${meal}に追加`);
 }
 
 
