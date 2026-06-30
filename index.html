@@ -542,53 +542,59 @@
         </div>
       </div>
 
-      <!-- エネルギー収支カード -->
+      <!-- ① 収支カード（コンパクト1行） -->
       <div id="balanceCard"></div>
 
-      <!-- 実質栄養価（DIT・食物繊維NET補正） -->
-      <details id="netCalDetails" style="margin-bottom:6px">
-        <summary style="font-size:12px;color:var(--text-sub);cursor:pointer;padding:4px 0;list-style:none;display:flex;align-items:center;gap:5px">
-          <span>⚡ 実質カロリーを見る</span>
-          <span id="netCalBadge" style="font-size:11px;font-weight:600;color:var(--accent)"></span>
-        </summary>
-        <div id="netCard" style="margin-top:4px"></div>
-      </details>
-
-      <!-- エネルギー内訳 -->
-      <details id="energyDetails" style="margin-bottom:10px">
-        <summary>エネルギー内訳を見る</summary>
-        <div class="card" style="padding:10px;margin-top:8px" id="energyBreakdown"></div>
-      </details>
-
+      <!-- ② PFCバー + メトリクス -->
       <div class="metric-grid" id="recMetrics"></div>
       <div class="pfc-bar"><div class="bar-p" id="recBarP"></div><div class="bar-f" id="recBarF"></div><div class="bar-c" id="recBarC"></div></div>
-      <div class="micro-grid" id="microGrid"></div>
+
+      <!-- ③ 詳細は折りたたみ -->
+      <details id="detailsDrawer" style="margin-bottom:8px">
+        <summary>詳細を見る</summary>
+        <div style="padding-top:8px;display:flex;flex-direction:column;gap:8px">
+          <!-- 実質カロリー -->
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text-sub);letter-spacing:.06em;margin-bottom:4px">⚡ 実質カロリー <span id="netCalBadge" style="font-size:11px;font-weight:600;color:var(--accent)"></span></div>
+            <div id="netCard"></div>
+          </div>
+          <!-- エネルギー内訳 -->
+          <div id="energyBreakdown"></div>
+          <!-- ミクロ栄養素 -->
+          <div>
+            <div style="font-size:10px;font-weight:700;color:var(--text-sub);letter-spacing:.06em;margin-bottom:6px">ビタミン・ミネラル</div>
+            <div class="micro-grid" id="microGrid"></div>
+          </div>
+        </div>
+      </details>
+
+      <!-- ④ 食事ブロック -->
       <div id="mealBlocks"></div>
 
-      <!-- 調味料クイック登録 -->
-      <div class="card" style="padding:10px 12px;margin-bottom:8px">
-        <div style="font-size:12px;font-weight:600;color:var(--text-sub);margin-bottom:8px">🧂 調味料 クイック登録（小さじ1）</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
-          <button onclick="addSeasoning('醤油（濃口）小さじ1')" class="seasoning-btn">しょうゆ</button>
-          <button onclick="addSeasoning('味噌（米みそ）小さじ1')" class="seasoning-btn">味噌</button>
-          <button onclick="addSeasoning('鶏ガラスープの素小さじ1')" class="seasoning-btn">鶏ガラ</button>
-          <button onclick="addSeasoning('米油小さじ1')" class="seasoning-btn">米油</button>
-          <button onclick="addSeasoning('みりん小さじ1')" class="seasoning-btn">みりん</button>
-          <button onclick="addSeasoning('にんにく小さじ1')" class="seasoning-btn">にんにく</button>
+      <!-- ⑤ 調味料クイック登録（折りたたみ） -->
+      <details style="margin-bottom:8px">
+        <summary>🧂 調味料 クイック登録（小さじ1）</summary>
+        <div style="padding-top:10px">
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
+            <button onclick="addSeasoning('醤油（濃口）小さじ1')" class="seasoning-btn">しょうゆ</button>
+            <button onclick="addSeasoning('味噌（米みそ）小さじ1')" class="seasoning-btn">味噌</button>
+            <button onclick="addSeasoning('鶏ガラスープの素小さじ1')" class="seasoning-btn">鶏ガラ</button>
+            <button onclick="addSeasoning('米油小さじ1')" class="seasoning-btn">米油</button>
+            <button onclick="addSeasoning('みりん小さじ1')" class="seasoning-btn">みりん</button>
+            <button onclick="addSeasoning('にんにく小さじ1')" class="seasoning-btn">にんにく</button>
+            <button onclick="addSeasoning('白だし小さじ1')" class="seasoning-btn">白だし</button>
+            <button onclick="addSeasoning('カレー粉小さじ1')" class="seasoning-btn">カレー粉</button>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <label style="font-size:11px;color:var(--text-sub);white-space:nowrap">登録先</label>
+            <select id="seasoningMeal" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);flex:1">
+              <option>朝食</option><option selected>昼食</option><option>夕食</option><option>間食</option>
+            </select>
+          </div>
         </div>
-        <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
-          <label style="font-size:11px;color:var(--text-sub);white-space:nowrap">登録先</label>
-          <select id="seasoningMeal" style="font-size:12px;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);flex:1">
-            <option>朝食</option>
-            <option selected>昼食</option>
-            <option>夕食</option>
-            <option>間食</option>
-          </select>
-          <div id="seasoningMsg" style="font-size:11px;color:var(--accent);min-width:80px"></div>
-        </div>
-      </div>
+      </details>
 
-      <!-- 運動ブロック -->
+      <!-- ⑥ 運動ブロック -->
       <div class="exercise-block" id="exerciseBlock">
         <div class="meal-block-header">
           <div class="meal-block-left">
@@ -627,7 +633,7 @@
         </div>
       </div>
 
-      <!-- コピー -->
+      <!-- ⑦ 過去からコピー（折りたたみ） -->
       <details style="margin-top:4px" onToggle="this.open&&renderCopyPanel()">
         <summary>過去の食事からコピー</summary>
         <div style="padding-top:10px">
@@ -660,6 +666,77 @@
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:160px"><canvas id="calChart"></canvas></div></div>
       <div class="sl">PFC推移</div>
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
+
+      <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
+
+      <!-- 代謝変動推定 -->
+      <div class="card" style="padding:13px;margin-bottom:8px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+          <div class="sl" style="margin:0">代謝変動推定</div>
+          <button onclick="toggleMetaHelp()" style="font-size:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 7px;color:var(--text-sub);cursor:pointer">？ 仕組み</button>
+        </div>
+        <div style="font-size:10px;color:var(--text-sub);margin-bottom:10px">期間の体重変化と摂取カロリーから実際のTDEEを逆算し、計算値との乖離を推定します</div>
+        <div id="metaHelp" style="display:none;font-size:11px;color:var(--text-sub);background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.7;border:1px solid var(--border)">
+          <strong style="color:var(--text)">計算式</strong><br>
+          実績TDEE = (摂取カロリー合計 − 体重変化kg × 7,200) ÷ 日数<br>
+          代謝変動 = 実績TDEE − 設定TDEE（Mifflin式 × 活動係数）<br><br>
+          <strong style="color:var(--text)">精度について</strong><br>
+          ・7日以上のデータで精度が上がります<br>
+          ・水分変動（短期）は誤差になります<br>
+          ・食事記録が完全であるほど正確です<br>
+          ・脂肪1kg ≈ 7,200kcal、筋肉1kg ≈ 4,500kcal で計算しています
+        </div>
+
+        <!-- 期間・体重入力 -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+          <div class="field"><label>開始日</label><input type="date" id="metaFrom" onchange="calcMetabolism()"></div>
+          <div class="field"><label>終了日</label><input type="date" id="metaTo" onchange="calcMetabolism()"></div>
+          <div class="field"><label>開始時の体重 (kg)</label><input type="number" id="metaWFrom" placeholder="65.0" step="0.1" min="30" max="300" oninput="calcMetabolism()"></div>
+          <div class="field"><label>終了時の体重 (kg)</label><input type="number" id="metaWTo" placeholder="64.5" step="0.1" min="30" max="300" oninput="calcMetabolism()"></div>
+        </div>
+
+        <!-- 体組成モード -->
+        <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">体重変化の内訳（任意・より正確な推定に）</div>
+        <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="toggle-btn meta-comp-btn active" data-mode="fat" onclick="setMetaCompMode('fat',this)">脂肪のみ変化</button>
+          <button class="toggle-btn meta-comp-btn" data-mode="mixed" onclick="setMetaCompMode('mixed',this)">脂肪+筋肉(50:50)</button>
+          <button class="toggle-btn meta-comp-btn" data-mode="custom" onclick="setMetaCompMode('custom',this)">カスタム</button>
+        </div>
+        <div id="metaCustomComp" style="display:none;margin-bottom:10px">
+          <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">体重変化のうち脂肪が占める割合</div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <input type="range" id="metaFatRatio" min="0" max="100" value="100" oninput="document.getElementById('metaFatRatioVal').textContent=this.value+'%';calcMetabolism()" style="flex:1">
+            <span id="metaFatRatioVal" style="font-size:12px;font-weight:600;min-width:36px">100%</span>
+          </div>
+        </div>
+
+        <!-- 結果 -->
+        <div id="metaResult"></div>
+      </div>
+      <div class="card" style="padding:13px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+          <div>
+            <div class="sl" style="margin-bottom:2px">血中アミノ酸濃度（推定）</div>
+            <div style="font-size:10px;color:var(--text-sub)">食事時刻を入力して24時間の推移を表示</div>
+          </div>
+          <button onclick="toggleAminoHelp()" style="font-size:10px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;padding:3px 7px;color:var(--text-sub);cursor:pointer">？ 仕組み</button>
+        </div>
+        <div id="aminoHelp" style="display:none;font-size:11px;color:var(--text-sub);background:var(--surface2);border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.7;border:1px solid var(--border)">
+          <strong style="color:var(--text)">推定モデル</strong><br>
+          各食事のタンパク質量・食品種別から吸収速度を推定し、血中アミノ酸の上昇・維持・減衰をモデル化します。<br><br>
+          <strong style="color:var(--text)">吸収速度（g/h）</strong>：動物性 8〜10g · 乳製品 6g · 植物性 5g<br>
+          <strong style="color:var(--text)">ロイシン比率</strong>：動物性 9% · 大豆 8% · 植物性 6%<br>
+          <strong style="color:var(--text)">MPS閾値</strong>：ロイシン約2.5g（筋タンパク合成の目安）<br><br>
+          ※ 個人差・消化状態・食事組み合わせにより実際の値は異なります。あくまで参考値です。
+        </div>
+        <!-- 食事時刻入力 -->
+        <div id="aminoTimeInputs" style="display:flex;flex-direction:column;gap:7px;margin-bottom:12px"></div>
+        <div style="font-size:10px;color:var(--text-sub);margin-bottom:8px">※ 時刻未入力の食事は除外されます</div>
+        <!-- グラフ -->
+        <div class="chart-wrap" style="height:180px"><canvas id="aminoChart"></canvas></div>
+        <!-- サマリー -->
+        <div id="aminoSummary" style="margin-top:10px;display:grid;grid-template-columns:1fr 1fr;gap:6px"></div>
+      </div>
     </div>
 
     <!-- 食品登録 -->

@@ -751,35 +751,25 @@ function renderRecord() {
 
   // ── エネルギー収支カード ──
   document.getElementById('balanceCard').innerHTML = `
-    <div class="card" style="padding:10px 14px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-        <div style="text-align:center;flex:1">
-          <div style="font-size:10px;color:var(--text-sub)">目標</div>
-          <div style="font-size:18px;font-weight:700">${ri(g.cal)}</div>
-          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
-        </div>
-        <div style="font-size:18px;color:var(--text-sub)">−</div>
-        <div style="text-align:center;flex:1">
+    <div class="card" style="padding:10px 12px;margin-bottom:8px">
+      <div style="display:flex;align-items:center;gap:0;margin-bottom:7px">
+        <div style="flex:1;min-width:0">
           <div style="font-size:10px;color:var(--text-sub)">摂取</div>
-          <div style="font-size:18px;font-weight:700">${ri(s.cal)}</div>
-          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.5px">${ri(s.cal)}<span style="font-size:11px;font-weight:400;color:var(--text-sub);margin-left:2px">kcal</span></div>
         </div>
-        ${exCal > 0 ? `
-        <div style="font-size:18px;color:var(--text-sub)">+</div>
-        <div style="text-align:center;flex:1">
-          <div style="font-size:10px;color:var(--text-sub)">運動消費</div>
-          <div style="font-size:18px;font-weight:700">${ri(exCal)}</div>
-          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
-        </div>` : ''}
-        <div style="font-size:18px;color:var(--text-sub)">=</div>
-        <div style="text-align:center;flex:1">
+        ${exCal > 0 ? `<div style="font-size:11px;color:var(--text-sub);padding:0 6px">+🏃${ri(exCal)}</div>` : ''}
+        <div style="font-size:18px;color:var(--text-sub);padding:0 6px">/</div>
+        <div style="flex:1;min-width:0;text-align:right">
+          <div style="font-size:10px;color:var(--text-sub)">目標</div>
+          <div style="font-size:20px;font-weight:700;letter-spacing:-.5px">${ri(g.cal)}<span style="font-size:11px;font-weight:400;color:var(--text-sub);margin-left:2px">kcal</span></div>
+        </div>
+        <div style="padding-left:10px;text-align:right;min-width:64px">
           <div style="font-size:10px;color:var(--text-sub)">${remain >= 0 ? 'あと' : '超過'}</div>
-          <div style="font-size:18px;font-weight:700;color:${remainColor}">${ri(Math.abs(remain))}</div>
-          <div style="font-size:10px;color:var(--text-sub)">kcal</div>
+          <div style="font-size:18px;font-weight:700;color:${remainColor};letter-spacing:-.5px">${ri(Math.abs(remain))}<span style="font-size:10px;font-weight:400;margin-left:1px">kcal</span></div>
         </div>
       </div>
-      <div style="margin-top:8px;height:6px;border-radius:3px;background:var(--border);overflow:hidden">
-        <div style="height:100%;border-radius:3px;background:${s.cal > g.cal ? '#c0392b' : 'var(--accent)'};width:${Math.min(s.cal/g.cal*100,100)}%;transition:width .3s"></div>
+      <div style="height:6px;border-radius:3px;background:var(--border);overflow:hidden">
+        <div style="height:100%;border-radius:3px;background:${s.cal > g.cal ? 'var(--red)' : 'var(--accent)'};width:${Math.min((s.cal+exCal)/g.cal*100,100).toFixed(1)}%;transition:width .4s cubic-bezier(.4,0,.2,1)"></div>
       </div>
     </div>`;
 
@@ -971,12 +961,14 @@ function selectAddResult(i, src, meal) {
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
 const SEASONING_MASTER = {
-  '醤油（濃口）小さじ1':   { name:'醤油（濃口）小さじ1',  amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0, vitd:0, salt:0.9 },
-  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）小さじ1', amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0, vitd:0, salt:0.7 },
-  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素小さじ1',amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0, vitd:0, salt:1.3 },
-  '米油小さじ1':           { name:'米油小さじ1',          amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0, vitd:0, salt:0   },
-  'みりん小さじ1':         { name:'みりん小さじ1',        amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0, vitd:0, salt:0   },
-  'にんにく小さじ1':       { name:'にんにく小さじ1',      amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6,vitd:0, salt:0   },
+  '醤油（濃口）小さじ1':   { name:'醤油（濃口）小さじ1',   amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0,   vitd:0, salt:0.9 },
+  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）小さじ1',  amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0,   vitd:0, salt:0.7 },
+  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素小さじ1',amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.3 },
+  '米油小さじ1':           { name:'米油小さじ1',           amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  'みりん小さじ1':         { name:'みりん小さじ1',         amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  'にんにく小さじ1':       { name:'にんにく小さじ1',       amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6, vitd:0, salt:0   },
+  '白だし小さじ1':         { name:'白だし小さじ1',         amount:6,  cal:7,   p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.0 },
+  'カレー粉小さじ1':       { name:'カレー粉小さじ1',       amount:2,  cal:7,   p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5,  vitc:0,   vitd:0, salt:0   },
 };
 
 let _seasoningMsgTimer = null;
@@ -1322,7 +1314,446 @@ function copyMeal(date, meal) {
 }
 
 // ── Stats ──
-function setPeriod(p, el) { statsPeriod=p; document.querySelectorAll('.period-tab').forEach(t=>t.classList.remove('active')); el.classList.add('active'); renderStats(); }
+// ── 代謝変動推定 ──
+let metaCompMode = 'fat'; // fat / mixed / custom
+
+function toggleMetaHelp() {
+  const el = document.getElementById('metaHelp');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function setMetaCompMode(mode, el) {
+  metaCompMode = mode;
+  document.querySelectorAll('.meta-comp-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+  const customPanel = document.getElementById('metaCustomComp');
+  if (customPanel) customPanel.style.display = mode === 'custom' ? 'block' : 'none';
+  calcMetabolism();
+}
+
+function initMetaInputs() {
+  // デフォルト: 直近30日
+  const to   = new Date(currentDate + 'T00:00:00');
+  const from = new Date(to); from.setDate(from.getDate() - 29);
+  const toEl   = document.getElementById('metaTo');
+  const fromEl = document.getElementById('metaFrom');
+  if (toEl   && !toEl.value)   toEl.value   = toDateStr(to);
+  if (fromEl && !fromEl.value) fromEl.value  = toDateStr(from);
+  // 体重はプロフィールからプリセット
+  const wFrom = document.getElementById('metaWFrom');
+  const wTo   = document.getElementById('metaWTo');
+  if (wFrom && !wFrom.value) wFrom.value = profile.weight || '';
+  if (wTo   && !wTo.value)   wTo.value   = profile.weight || '';
+}
+
+function calcMetabolism() {
+  const fromStr = document.getElementById('metaFrom')?.value;
+  const toStr   = document.getElementById('metaTo')?.value;
+  const wFrom   = parseFloat(document.getElementById('metaWFrom')?.value);
+  const wTo     = parseFloat(document.getElementById('metaWTo')?.value);
+  const result  = document.getElementById('metaResult');
+  if (!result) return;
+
+  if (!fromStr || !toStr || isNaN(wFrom) || isNaN(wTo)) {
+    result.innerHTML = '<div style="font-size:12px;color:var(--text-sub);padding:8px 0">すべての項目を入力してください</div>';
+    return;
+  }
+  if (fromStr >= toStr) {
+    result.innerHTML = '<div style="font-size:12px;color:var(--red)">終了日は開始日より後にしてください</div>';
+    return;
+  }
+
+  // 期間内の記録を集計
+  const fromD = new Date(fromStr + 'T00:00:00');
+  const toD   = new Date(toStr   + 'T00:00:00');
+  const days  = Math.round((toD - fromD) / 86400000) + 1;
+
+  // 記録のある日のみカウント（記録がない日は除外してTDEE計算を歪めない）
+  const recordedDates = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(fromD); d.setDate(d.getDate() + i);
+    const ds = toDateStr(d);
+    if (entries.some(e => e.date === ds)) recordedDates.push(ds);
+  }
+  const recordedDays = recordedDates.length;
+
+  if (recordedDays === 0) {
+    result.innerHTML = '<div style="font-size:12px;color:var(--text-sub);padding:8px 0">この期間に食事記録がありません</div>';
+    return;
+  }
+
+  const totalCal = recordedDates.reduce((sum, ds) => sum + sumEntries(getDayEntries(ds)).cal, 0);
+  const avgCal   = totalCal / recordedDays;
+
+  // 体重変化 → kcal換算
+  const weightDelta = wTo - wFrom; // 増加なら正
+  // 体組成モードで1kgあたりのkcalを決定
+  let kcalPerKg;
+  if (metaCompMode === 'fat') {
+    kcalPerKg = 7200;
+  } else if (metaCompMode === 'mixed') {
+    kcalPerKg = (7200 + 4500) / 2; // 5850
+  } else {
+    const fatRatio = (parseInt(document.getElementById('metaFatRatio')?.value) || 100) / 100;
+    kcalPerKg = 7200 * fatRatio + 4500 * (1 - fatRatio);
+  }
+
+  // 実績TDEE = (摂取合計 - 体重変化によるエネルギー変動) / 記録日数
+  // 体重増加 → 余剰カロリーがあった → 実TDEEは低い
+  const actualTDEE = (totalCal - weightDelta * kcalPerKg) / recordedDays;
+  const settingTDEE = calcTDEE();
+  const delta = actualTDEE - settingTDEE;
+  const deltaAbs = Math.abs(Math.round(delta));
+
+  // 代謝変動の方向
+  const isUp   = delta > 50;
+  const isDown = delta < -50;
+  const isNeut = !isUp && !isDown;
+  const deltaColor = isUp ? 'var(--green)' : isDown ? 'var(--red)' : 'var(--text-sub)';
+  const deltaLabel = isUp ? '⬆ 代謝亢進' : isDown ? '⬇ 代謝低下' : '→ ほぼ変化なし';
+  const deltaDesc  = isUp
+    ? `計算値より約${deltaAbs}kcal/日多く消費しています。運動習慣・筋肉量増加・NEAT増加などが考えられます。`
+    : isDown
+    ? `計算値より約${deltaAbs}kcal/日少ない消費です。食事制限による代謝適応・活動量低下などが考えられます。`
+    : `計算値とほぼ一致しています（誤差${deltaAbs}kcal以内）。`;
+
+  // 信頼度（記録日数・期間に基づく）
+  const confidence = recordedDays >= 21 ? '高' : recordedDays >= 10 ? '中' : '低';
+  const confColor  = recordedDays >= 21 ? 'var(--green)' : recordedDays >= 10 ? 'var(--amber)' : 'var(--red)';
+
+  result.innerHTML = `
+    <!-- 主要結果 -->
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="text-align:center;padding:8px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-sub)">実績TDEE（推定）</div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-.5px">${Math.round(actualTDEE)}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal/日</div>
+        </div>
+        <div style="text-align:center;padding:8px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
+          <div style="font-size:10px;color:var(--text-sub)">設定TDEE（計算値）</div>
+          <div style="font-size:22px;font-weight:700;letter-spacing:-.5px">${settingTDEE}</div>
+          <div style="font-size:10px;color:var(--text-sub)">kcal/日</div>
+        </div>
+      </div>
+      <div style="text-align:center;padding:10px;background:var(--surface);border-radius:8px;border:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--text-sub);margin-bottom:4px">代謝変動</div>
+        <div style="font-size:26px;font-weight:700;color:${deltaColor};letter-spacing:-.5px">
+          ${isNeut ? '±0' : (isUp ? '+' : '−') + deltaAbs}
+          <span style="font-size:13px;font-weight:400">kcal/日</span>
+        </div>
+        <div style="font-size:12px;font-weight:600;color:${deltaColor};margin-top:2px">${deltaLabel}</div>
+      </div>
+    </div>
+
+    <!-- 詳細 -->
+    <div style="font-size:11px;color:var(--text-sub);line-height:1.7;margin-bottom:10px;background:var(--surface2);border-radius:8px;padding:10px;border:1px solid var(--border)">
+      ${deltaDesc}
+    </div>
+
+    <!-- 内訳 -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;font-size:11px;margin-bottom:8px">
+      <div style="background:var(--surface2);border-radius:8px;padding:7px;text-align:center;border:1px solid var(--border)">
+        <div style="color:var(--text-sub);font-size:9px">記録日数</div>
+        <div style="font-weight:700;font-size:15px">${recordedDays}<span style="font-size:9px;font-weight:400">日</span></div>
+        <div style="color:var(--text-sub);font-size:9px">/ ${days}日間</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:7px;text-align:center;border:1px solid var(--border)">
+        <div style="color:var(--text-sub);font-size:9px">平均摂取</div>
+        <div style="font-weight:700;font-size:15px">${Math.round(avgCal)}<span style="font-size:9px;font-weight:400">kcal</span></div>
+        <div style="color:var(--text-sub);font-size:9px">/ 日</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:8px;padding:7px;text-align:center;border:1px solid var(--border)">
+        <div style="color:var(--text-sub);font-size:9px">体重変化</div>
+        <div style="font-weight:700;font-size:15px;color:${weightDelta < 0 ? 'var(--green)' : weightDelta > 0 ? 'var(--red)' : 'var(--text-sub)'}">${weightDelta >= 0 ? '+' : ''}${r1(weightDelta)}<span style="font-size:9px;font-weight:400">kg</span></div>
+        <div style="color:var(--text-sub);font-size:9px">≈ ${Math.round(Math.abs(weightDelta)*kcalPerKg)}kcal</div>
+      </div>
+    </div>
+
+    <!-- 信頼度 -->
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sub)">
+      <span>推定信頼度：</span>
+      <span style="font-weight:700;color:${confColor}">${confidence}</span>
+      <span>（${recordedDays}日分の記録）</span>
+      ${recordedDays < 10 ? '<span style="color:var(--amber)">⚠ 10日以上の記録で精度が上がります</span>' : ''}
+    </div>`;
+}
+
+function renderMetabolismSection() {
+  initMetaInputs();
+  calcMetabolism();
+}
+
+
+// 食品カテゴリ別パラメータ
+const AMINO_PARAMS = {
+  // 動物性（肉・魚・卵）: 速い吸収、高ロイシン
+  animal:  { absRate: 9,  leucineRatio: 0.09, peakMin: 60,  halfLife: 110 },
+  // 乳製品（チーズ・ヨーグルト・牛乳）: 中速、中ロイシン
+  dairy:   { absRate: 6,  leucineRatio: 0.10, peakMin: 90,  halfLife: 150 },
+  // 大豆・豆類: やや遅い
+  soy:     { absRate: 5,  leucineRatio: 0.08, peakMin: 90,  halfLife: 130 },
+  // その他植物性: 遅い、低ロイシン
+  plant:   { absRate: 4,  leucineRatio: 0.06, peakMin: 120, halfLife: 140 },
+  // プロテインパウダー（ホエイ相当）
+  whey:    { absRate: 10, leucineRatio: 0.11, peakMin: 45,  halfLife: 90  },
+};
+
+const ANIMAL_PAT  = /鶏|豚|牛|羊|ささみ|チキン|ポーク|ビーフ|ラム|ひき肉|合いびき|ベーコン|ハム|ソーセージ|ウインナー|いわし|さば|さんま|あじ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|えび|いか|ほたて|あさり|カニ|ぶり|たい|鯛|たら|焼き鳥|唐揚げ|から揚げ|ハンバーグ|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|チキン|プロテイン.*動物|animal|chicken|pork|beef|fish|salmon|tuna|egg/i;
+const DAIRY_PAT   = /牛乳|ミルク|チーズ|ヨーグルト|ホエイ|カゼイン|プロテイン(?!.*大豆)|milk|cheese|yogurt|whey|casein/i;
+const SOY_PAT     = /大豆|豆腐|納豆|豆乳|枝豆|おから|テンペ|soy|tofu|natto/i;
+const WHEY_PAT    = /ホエイ|ウェイ|WPC|WPI|whey/i;
+
+function classifyProteinSource(name) {
+  if (WHEY_PAT.test(name))  return 'whey';
+  if (DAIRY_PAT.test(name)) return 'dairy';
+  if (ANIMAL_PAT.test(name)) return 'animal';
+  if (SOY_PAT.test(name))   return 'soy';
+  return 'plant';
+}
+
+// 食事1回分のアミノ酸時系列を生成（minutesOffset=食事時刻の0時からの分数）
+// 返値: 分→相対濃度 のMap（0〜1440分）
+function calcAminoTimeSeries(entries, minutesOffset) {
+  // 食品ごとに分類してタンパク質量と吸収パラメータを集計
+  const groups = { animal:0, dairy:0, soy:0, plant:0, whey:0 };
+  entries.forEach(e => {
+    const src = classifyProteinSource(e.name);
+    groups[src] += (e.p || 0);
+  });
+
+  const RESOLUTION = 5; // 5分刻み
+  const totalMinutes = 1440;
+  const curve = new Array(Math.ceil(totalMinutes / RESOLUTION)).fill(0);
+
+  Object.entries(groups).forEach(([src, protein]) => {
+    if (protein <= 0) return;
+    const p = AMINO_PARAMS[src];
+    // 吸収時間 = protein / absRate (時間) → 分
+    const absorptionDuration = (protein / p.absRate) * 60;
+    // ピーク時刻（食事時刻 + peakMin）
+    const peakMinOffset = minutesOffset + p.peakMin;
+    // ピーク濃度 = protein * leucineRatio（ロイシン量g）をそのまま使う
+    const peakLeucine = protein * p.leucineRatio;
+
+    // 上昇フェーズ: 食事時刻 → ピーク
+    // 減衰フェーズ: ピーク → halfLifeに従って指数減衰
+    for (let i = 0; i < curve.length; i++) {
+      const t = i * RESOLUTION; // 現在の分
+      const dt = t - minutesOffset; // 食事後経過分
+      if (dt < 0) continue;
+
+      let conc = 0;
+      if (dt <= p.peakMin) {
+        // 上昇: 線形
+        conc = peakLeucine * (dt / p.peakMin);
+      } else {
+        // 減衰: 指数
+        const decayT = dt - p.peakMin;
+        conc = peakLeucine * Math.exp(-Math.log(2) * decayT / p.halfLife);
+      }
+      curve[i] += conc;
+    }
+  });
+
+  return curve;
+}
+
+// 食事時刻の保存キー
+function aminoTimeKey(date) { return 'aminoTimes_' + date; }
+function loadAminoTimes(date) {
+  try { return JSON.parse(localStorage.getItem(aminoTimeKey(date)) || '{}'); } catch { return {}; }
+}
+function saveAminoTimes(date, times) {
+  try { localStorage.setItem(aminoTimeKey(date), JSON.stringify(times)); } catch {}
+}
+
+let aminoChartInstance = null;
+
+function toggleAminoHelp() {
+  const el = document.getElementById('aminoHelp');
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function renderAminoInputs() {
+  const cont = document.getElementById('aminoTimeInputs');
+  if (!cont) return;
+  const times = loadAminoTimes(currentDate);
+  const meals = ['朝食','昼食','夕食','間食'];
+  cont.innerHTML = meals.map(meal => {
+    const mealEntries = getDayEntries(currentDate).filter(e => e.meal === meal);
+    if (!mealEntries.length) return '';
+    const totalP = r1(mealEntries.reduce((a,e) => a + (e.p||0), 0));
+    const leucineApprox = r1(mealEntries.reduce((a,e) => {
+      const src = classifyProteinSource(e.name);
+      return a + (e.p||0) * AMINO_PARAMS[src].leucineRatio;
+    }, 0));
+    return `<div style="display:flex;align-items:center;gap:8px;background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:8px 11px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:600">${meal}</div>
+        <div style="font-size:10px;color:var(--text-sub)">P ${totalP}g　ロイシン約 ${leucineApprox}g</div>
+      </div>
+      <input type="time" value="${times[meal]||''}" onchange="onAminoTimeChange('${meal}',this.value)"
+        style="font-size:13px;padding:5px 8px;border:1.5px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);width:100px">
+    </div>`;
+  }).filter(Boolean).join('');
+  if (!cont.innerHTML) cont.innerHTML = '<div style="font-size:12px;color:var(--text-sub);padding:6px 0">今日の食事記録がありません</div>';
+}
+
+function onAminoTimeChange(meal, value) {
+  const times = loadAminoTimes(currentDate);
+  if (value) times[meal] = value; else delete times[meal];
+  saveAminoTimes(currentDate, times);
+  renderAminoChart();
+}
+
+function renderAminoChart() {
+  const canvas = document.getElementById('aminoChart');
+  const summary = document.getElementById('aminoSummary');
+  if (!canvas) return;
+
+  const times = loadAminoTimes(currentDate);
+  const RESOLUTION = 5;
+  const points = Math.ceil(1440 / RESOLUTION);
+  const combined = new Array(points).fill(0);
+
+  const MPS_THRESHOLD = 2.5; // ロイシン2.5g以上でMPS促進
+
+  let hasData = false;
+  Object.entries(times).forEach(([meal, timeStr]) => {
+    if (!timeStr) return;
+    const [h, m] = timeStr.split(':').map(Number);
+    const minutesOffset = h * 60 + m;
+    const mealEntries = getDayEntries(currentDate).filter(e => e.meal === meal);
+    if (!mealEntries.length) return;
+    hasData = true;
+    const curve = calcAminoTimeSeries(mealEntries, minutesOffset);
+    curve.forEach((v, i) => { combined[i] += v; });
+  });
+
+  // ラベル（1時間刻み表示）
+  const labels = Array.from({length: points}, (_, i) => {
+    const totalMin = i * RESOLUTION;
+    const h = Math.floor(totalMin / 60) % 24;
+    const m = totalMin % 60;
+    return m === 0 ? `${h}:00` : '';
+  });
+
+  // MPS閾値ライン、バックグラウンドレベル（ベースライン = 0.3g相当）
+  const baseline = 0.3;
+  const data = combined.map(v => r1(Math.max(v + baseline, baseline)));
+
+  // Chart描画
+  if (aminoChartInstance) { aminoChartInstance.destroy(); aminoChartInstance = null; }
+  const ctx = canvas.getContext('2d');
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3266ad';
+
+  // グラデーション
+  const grad = ctx.createLinearGradient(0, 0, 0, 180);
+  grad.addColorStop(0, 'rgba(50,102,173,.35)');
+  grad.addColorStop(1, 'rgba(50,102,173,.02)');
+
+  aminoChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '血中アミノ酸（ロイシン換算g）',
+          data,
+          borderColor: '#3266ad',
+          backgroundColor: grad,
+          borderWidth: 2,
+          fill: true,
+          tension: 0.4,
+          pointRadius: 0,
+          pointHoverRadius: 4,
+        },
+        {
+          label: `MPS促進閾値 (${MPS_THRESHOLD}g)`,
+          data: new Array(points).fill(MPS_THRESHOLD),
+          borderColor: '#e91e63',
+          borderWidth: 1.5,
+          borderDash: [5, 4],
+          pointRadius: 0,
+          fill: false,
+        },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      animation: { duration: 600 },
+      plugins: {
+        legend: { display: true, labels: { font: { size: 10 }, boxWidth: 14, padding: 8 } },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const idx = items[0].dataIndex;
+              const totalMin = idx * RESOLUTION;
+              const h = Math.floor(totalMin / 60) % 24;
+              const m = String(totalMin % 60).padStart(2,'0');
+              return `${h}:${m}`;
+            },
+            label: item => item.datasetIndex === 0
+              ? `ロイシン換算: ${item.raw}g`
+              : `閾値: ${item.raw}g`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 12, color: '#6b7280' },
+          grid: { color: 'rgba(0,0,0,.05)' },
+        },
+        y: {
+          min: 0,
+          ticks: { font: { size: 9 }, color: '#6b7280', callback: v => v + 'g' },
+          grid: { color: 'rgba(0,0,0,.05)' },
+          title: { display: true, text: 'ロイシン換算 (g)', font: { size: 9 }, color: '#6b7280' },
+        },
+      },
+    },
+  });
+
+  // サマリー計算
+  if (!summary) return;
+  if (!hasData) {
+    summary.innerHTML = '<div style="font-size:12px;color:var(--text-sub);grid-column:span 2;padding:4px 0">食事時刻を入力するとサマリーが表示されます</div>';
+    return;
+  }
+  const peak = Math.max(...data);
+  // MPS閾値を超えている時間（分）
+  const mpsMinutes = data.filter(v => v >= MPS_THRESHOLD).length * RESOLUTION;
+  // 今この瞬間の濃度
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const nowIdx = Math.floor(nowMin / RESOLUTION);
+  const nowVal = data[Math.min(nowIdx, data.length-1)] || 0;
+  // 総ロイシン（各食事の推定量）
+  const totalLeucine = r1(getDayEntries(currentDate).reduce((a,e) => {
+    const src = classifyProteinSource(e.name);
+    return a + (e.p||0) * AMINO_PARAMS[src].leucineRatio;
+  }, 0));
+
+  const card = (label, val, unit, sub, color='var(--accent)') => `
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:9px;padding:9px 11px">
+      <div style="font-size:10px;color:var(--text-sub);margin-bottom:2px">${label}</div>
+      <div style="font-size:18px;font-weight:700;color:${color}">${val}<span style="font-size:11px;font-weight:400;color:var(--text-sub);margin-left:2px">${unit}</span></div>
+      <div style="font-size:10px;color:var(--text-sub);margin-top:2px">${sub}</div>
+    </div>`;
+
+  summary.innerHTML =
+    card('ピーク濃度', r1(peak), 'g', 'ロイシン換算') +
+    card('現在の推定値', r1(nowVal), 'g', now.getHours()+':'+String(now.getMinutes()).padStart(2,'0')+'時点', nowVal >= MPS_THRESHOLD ? 'var(--green)' : 'var(--text-sub)') +
+    card('MPS促進時間', mpsMinutes, '分', `閾値${MPS_THRESHOLD}g以上の時間`, mpsMinutes > 0 ? 'var(--green)' : 'var(--text-sub)') +
+    card('1日ロイシン合計', totalLeucine, 'g', '推定値（食品別係数による）');
+}
+
+function renderAminoSection() {
+  renderAminoInputs();
+  renderAminoChart();
+}
+
+
 function getAvg(period) {
   const today=new Date(); today.setHours(0,0,0,0);
   const days=period==='today'?[toDateStr(new Date())]:Array.from({length:period==='7d'?7:period==='30d'?30:90},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-i);return toDateStr(d)});
@@ -1383,6 +1814,8 @@ function renderCharts() {
     {label:'C',data:days.map(d=>r1(sumEntries(getDayEntries(d)).c)),borderColor:'#4caf50',backgroundColor:'transparent',tension:.3,pointRadius:0,borderWidth:2,borderDash:[2,2]},
     {label:'P目標',data:days.map(()=>g.p),borderColor:'rgba(50,102,173,.3)',borderDash:[3,3],borderWidth:1,pointRadius:0,fill:false},
   ]},options:{...baseOpts,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:8,padding:8}}}}});
+  renderAminoSection();
+  renderMetabolismSection();
 }
 
 // ── CSV ──
