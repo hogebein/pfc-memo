@@ -811,6 +811,81 @@ const LOCAL_DB = [
   {name:'液卵白（100ml）',yomi:'エキランパク',tags:'卵白 液卵 低脂肪 高タンパク プロテイン',en:'liquid egg whites 100ml',cal:52,p:11.0,f:0.1,c:0.7,per:100,fiber:0,iron:0,calcium:7,vitc:0,vitd:0,salt:0.4,serving:100,aa:{leu:.09,ile:.06,val:.06,lys:.07,met:.04,thr:.05,trp:.02,his:.02,score:1.00}},
   {name:'サイリウムハスク（大さじ1）',yomi:'サイリウム',tags:'サイリウム 食物繊維 低糖質 ダイエット',en:'psyllium husk tablespoon',cal:20,p:0.1,f:0.1,c:8.5,per:10,fiber:8.0,iron:0.3,calcium:20,vitc:0,vitd:0,salt:0},
 
+
+  // ── 朝食系・スムージー ──
+  {name:'ミューズリー（50g）',yomi:'ミューズリー',tags:'シリアル 朝食 燕麦 ドライフルーツ ナッツ',en:'muesli cereal 50g',cal:185,p:5.5,f:3.5,c:34.5,per:50,fiber:3.8,iron:2.0,calcium:35,vitc:0,vitd:0,salt:0.1,serving:50,aa:{leu:.08,ile:.04,val:.05,lys:.04,met:.02,thr:.04,trp:.01,his:.02,score:0.55}},
+  {name:'プロテインパンケーキ（1枚）',yomi:'プロテインパンケーキ',tags:'パンケーキ プロテイン 高タンパク 朝食',en:'protein pancake 1 piece',cal:150,p:15.0,f:4.5,c:14.5,per:80,fiber:1.0,iron:1.0,calcium:80,vitc:0,vitd:0.3,salt:0.4,serving:80,fa:{sat:.20,mufa:.28,n3:.04,n6:.16,trans:.01},aa:{leu:.11,ile:.07,val:.06,lys:.10,met:.02,thr:.07,trp:.02,his:.02,score:1.09}},
+  {name:'オーバーナイトオーツ（1人前）',yomi:'オーバーナイトオーツ',tags:'オーツ 朝食 ヨーグルト 低GI 簡単',en:'overnight oats with yogurt',cal:310,p:12.5,f:6.0,c:52.0,per:250,fiber:5.5,iron:2.5,calcium:180,vitc:1,vitd:0.2,salt:0.2,serving:250,aa:{leu:.10,ile:.06,val:.07,lys:.08,met:.03,thr:.05,trp:.01,his:.03,score:1.22},fa:{sat:.20,mufa:.28,n3:.04,n6:.16,trans:.01}},
+  {name:'グリーンスムージー（200ml）',yomi:'グリーンスムージー',tags:'スムージー 野菜 朝食 ほうれん草 バナナ',en:'green smoothie spinach banana 200ml',cal:110,p:2.5,f:0.5,c:25.5,per:200,fiber:3.0,iron:1.5,calcium:55,vitc:40,vitd:0,salt:0.1,serving:200},
+  {name:'プロテインスムージー（200ml）',yomi:'プロテインスムージー',tags:'スムージー プロテイン 高タンパク 朝食',en:'protein smoothie whey banana 200ml',cal:230,p:20.0,f:3.0,c:32.0,per:200,fiber:1.5,iron:0.5,calcium:150,vitc:5,vitd:0.2,salt:0.2,serving:200,aa:{leu:.11,ile:.07,val:.06,lys:.10,met:.02,thr:.07,trp:.02,his:.02,score:1.09},fa:{sat:.20,mufa:.28,n3:.04,n6:.16,trans:.01}},
+  {name:'アサイーボウル（1人前）',yomi:'アサイーボウル',tags:'アサイー ボウル スムージー トロピカル',en:'acai bowl 1 serving',cal:320,p:5.5,f:10.0,c:52.0,per:300,fiber:7.0,iron:2.0,calcium:80,vitc:20,vitd:0,salt:0.1,serving:300},
+  {name:'ポキボウル（1人前）',yomi:'ポキボウル',tags:'ポキ ハワイアン まぐろ ご飯 アボカド',en:'poke bowl hawaiian tuna',cal:550,p:28.0,f:14.0,c:75.0,per:400,fiber:5.0,iron:3.0,calcium:55,vitc:15,vitd:3,salt:2.5,serving:400,fa:{sat:.22,mufa:.32,n3:.28,n6:.08,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+
+  // ── コンビニ追加 ──
+  {name:'コンビニ 豚汁（1食）',yomi:'コンビニトンジル',tags:'豚汁 コンビニ 汁物 野菜',en:'convenience store tonjiru pork miso soup',cal:130,p:6.5,f:5.0,c:15.5,per:250,fiber:2.5,iron:1.0,calcium:45,vitc:5,vitd:0.1,salt:2.0,serving:250},
+  {name:'コンビニ コーンスープ（1食）',yomi:'コンビニコーンスープ',tags:'コーンスープ コンビニ スープ',en:'convenience store corn soup',cal:110,p:2.5,f:3.5,c:17.5,per:160,fiber:1.0,iron:0.3,calcium:40,vitc:2,vitd:0,salt:1.2,serving:160},
+  {name:'コンビニ ミネストローネ（1食）',yomi:'コンビニミネストローネ',tags:'ミネストローネ コンビニ スープ 野菜',en:'convenience store minestrone',cal:85,p:3.5,f:2.0,c:13.5,per:200,fiber:3.0,iron:1.0,calcium:35,vitc:15,vitd:0,salt:1.5,serving:200},
+  {name:'コンビニ プリン（1個）',yomi:'コンビニプリン',tags:'プリン コンビニ デザート 卵',en:'convenience store pudding custard',cal:110,p:3.0,f:4.5,c:14.5,per:85,fiber:0,iron:0.2,calcium:70,vitc:0,vitd:0.4,salt:0.2,serving:85},
+  {name:'コンビニ ショートケーキ（1個）',yomi:'コンビニショートケーキ',tags:'ショートケーキ コンビニ デザート ケーキ',en:'convenience store strawberry shortcake',cal:285,p:4.5,f:12.5,c:38.5,per:100,fiber:0.5,iron:0.3,calcium:50,vitc:4,vitd:0.2,salt:0.2,serving:100},
+  {name:'コンビニ 温泉卵（1個）',yomi:'コンビニオンセンタマゴ',tags:'温泉卵 コンビニ 卵 たまご',en:'convenience store onsen tamago soft cooked egg',cal:75,p:6.2,f:5.2,c:0.2,per:58,fiber:0,iron:0.9,calcium:26,vitc:0,vitd:1.9,salt:0.4,serving:58,aa:{leu:.09,ile:.06,val:.07,lys:.09,met:.03,thr:.06,trp:.02,his:.03,score:1.13}},
+  {name:'コンビニ アーモンドフィッシュ（1袋）',yomi:'アーモンドフィッシュ',tags:'アーモンドフィッシュ コンビニ スナック カルシウム',en:'almond small fish snack bag',cal:155,p:8.5,f:8.5,c:11.5,per:30,fiber:1.0,iron:0.8,calcium:200,vitc:0,vitd:3,salt:0.5,serving:30,fa:{sat:.27,mufa:.25,n3:.28,n6:.05,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+  {name:'コンビニ 納豆（3パック）',yomi:'コンビニナットウ',tags:'納豆 コンビニ 大豆 発酵',en:'convenience store natto 3 packs',cal:200,p:16.5,f:10.0,c:14.5,per:150,fiber:6.7,iron:4.5,calcium:120,vitc:0,vitd:0,salt:0,serving:150,fa:{sat:.14,mufa:.24,n3:.07,n6:.52,trans:.00},aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.01,thr:.04,trp:.01,his:.03,score:0.91}},
+
+  // ── 外食チェーン追加 ──
+  {name:'餃子の王将 餃子（6個）',yomi:'ギョウザノオウショウ',tags:'餃子 王将 外食 チェーン',en:'gyoza no ohsho dumplings 6pcs',cal:318,p:12.5,f:16.5,c:30.5,per:174,fiber:2.0,iron:1.5,calcium:30,vitc:3,vitd:0,salt:2.2,serving:174,fa:{sat:.38,mufa:.46,n3:.01,n6:.12,trans:.01},aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
+  {name:'天丼てんや 天丼（並）',yomi:'テンヤテンドン',tags:'天丼 てんや 外食 天ぷら',en:'tenya tendon tempura bowl regular',cal:740,p:22.0,f:18.5,c:112.0,per:430,fiber:2.5,iron:1.8,calcium:90,vitc:5,vitd:1.5,salt:3.5,serving:430,fa:{sat:.20,mufa:.32,n3:.05,n6:.38,trans:.01},aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
+  {name:'なか卯 親子丼（並）',yomi:'ナカウオヤコドン',tags:'なか卯 親子丼 外食 チェーン 鶏 卵',en:'nakayu oyakodon chicken egg bowl regular',cal:620,p:26.0,f:13.5,c:92.0,per:380,fiber:1.5,iron:1.8,calcium:65,vitc:4,vitd:1.0,salt:3.0,serving:380,fa:{sat:.31,mufa:.44,n3:.03,n6:.18,trans:.01},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.08}},
+  {name:'ゆで太郎 もりそば（並）',yomi:'ユデタロウモリソバ',tags:'ゆで太郎 そば もりそば 外食',en:'yudetaro mori soba cold noodles regular',cal:395,p:16.5,f:2.5,c:76.0,per:380,fiber:4.0,iron:2.0,calcium:40,vitc:0,vitd:0,salt:3.5,serving:380,aa:{leu:.07,ile:.04,val:.04,lys:.02,met:.02,thr:.03,trp:.01,his:.02,score:0.45}},
+  {name:'ガスト ハンバーグステーキ（200g）',yomi:'ガストハンバーグ',tags:'ガスト ハンバーグ 外食 ファミレス',en:'gusto hamburger steak 200g',cal:460,p:26.0,f:28.0,c:22.0,per:300,fiber:2.0,iron:3.0,calcium:50,vitc:5,vitd:0.2,salt:2.5,serving:300,fa:{sat:.43,mufa:.44,n3:.01,n6:.08,trans:.01},aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
+  {name:'リンガーハット 長崎ちゃんぽん',yomi:'リンガーハット',tags:'リンガーハット ちゃんぽん 外食 野菜',en:'ringerhut nagasaki champon noodles',cal:520,p:28.0,f:11.5,c:76.5,per:720,fiber:6.5,iron:3.5,calcium:180,vitc:40,vitd:0.5,salt:5.5,serving:720,fa:{sat:.30,mufa:.35,n3:.04,n6:.26,trans:.01},aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
+
+  // ── 魚介料理 ──
+  {name:'海鮮丼（外食・1人前）',yomi:'カイセンドン',tags:'海鮮丼 どんぶり 刺身 外食',en:'kaisen don assorted seafood rice bowl',cal:560,p:30.0,f:5.5,c:95.0,per:430,fiber:1.5,iron:2.5,calcium:45,vitc:5,vitd:8,salt:2.5,serving:430,fa:{sat:.27,mufa:.25,n3:.28,n6:.05,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+  {name:'アクアパッツァ（1人前）',yomi:'アクアパッツァ',tags:'アクアパッツァ イタリアン 白身魚 トマト',en:'acqua pazza italian fish tomato',cal:260,p:28.0,f:9.5,c:12.0,per:350,fiber:3.0,iron:1.5,calcium:60,vitc:20,vitd:5,salt:2.0,serving:350,fa:{sat:.28,mufa:.24,n3:.24,n6:.08,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+  {name:'魚介クラムチャウダー（1杯）',yomi:'クラムチャウダー',tags:'クラムチャウダー スープ 貝 洋食',en:'clam chowder seafood soup',cal:220,p:10.5,f:10.5,c:22.0,per:280,fiber:2.0,iron:1.5,calcium:120,vitc:8,vitd:0.5,salt:2.5,serving:280,fa:{sat:.62,mufa:.28,n3:.01,n6:.02,trans:.03},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+  {name:'刺身盛り合わせ（5点・1人前）',yomi:'サシミモリアワセ',tags:'刺身 盛り合わせ 刺し身 生魚 外食',en:'sashimi assorted 5 kinds',cal:225,p:35.0,f:4.5,c:1.5,per:180,fiber:0,iron:1.5,calcium:25,vitc:0,vitd:6,salt:0.5,serving:180,fa:{sat:.27,mufa:.25,n3:.28,n6:.05,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+  {name:'えびのアヒージョ（1人前）',yomi:'エビアヒージョ',tags:'アヒージョ えび スペイン オリーブオイル',en:'gambas al ajillo shrimp garlic oil',cal:340,p:20.0,f:25.5,c:4.0,per:200,fiber:0.5,iron:1.0,calcium:65,vitc:3,vitd:0,salt:1.5,serving:200,fa:{sat:.14,mufa:.74,n3:.01,n6:.10,trans:.00},aa:{leu:.09,ile:.05,val:.05,lys:.10,met:.03,thr:.05,trp:.01,his:.03,score:1.00}},
+
+  // ── 発酵・乳酸菌飲料 ──
+  {name:'ヤクルト（1本・65ml）',yomi:'ヤクルト',tags:'ヤクルト 乳酸菌 プロバイオティクス 腸活',en:'yakult probiotic drink 65ml',cal:50,p:0.8,f:0,c:11.5,per:65,fiber:0,iron:0,calcium:24,vitc:0,vitd:0,salt:0.1,serving:65},
+  {name:'ヤクルト1000（1本・100ml）',yomi:'ヤクルトセン',tags:'ヤクルト1000 乳酸菌 プロバイオティクス 睡眠',en:'yakult 1000 probiotic drink 100ml',cal:68,p:1.2,f:0,c:15.0,per:100,fiber:0,iron:0,calcium:32,vitc:0,vitd:0,salt:0.1,serving:100},
+  {name:'カルピス（希釈・コップ1杯200ml）',yomi:'カルピス',tags:'カルピス 乳酸菌 ドリンク 乳飲料',en:'calpis diluted drink 200ml',cal:76,p:0.8,f:0.2,c:17.0,per:200,fiber:0,iron:0,calcium:30,vitc:0,vitd:0,salt:0.1,serving:200},
+  {name:'乳酸菌飲料（ビフィズス菌入り・100ml）',yomi:'ニュウサンキンインリョウ',tags:'乳酸菌 ビフィズス菌 腸活 プロバイオティクス',en:'lactic acid bacteria drink bifidus 100ml',cal:65,p:1.5,f:0.1,c:14.5,per:100,fiber:0,iron:0,calcium:50,vitc:0,vitd:0,salt:0.1,serving:100,aa:{leu:.10,ile:.06,val:.07,lys:.08,met:.03,thr:.05,trp:.01,his:.03,score:1.22}},
+  {name:'ドリンクヨーグルト（飲むヨーグルト・200ml）',yomi:'ノムヨーグルト',tags:'飲むヨーグルト 乳酸菌 乳製品 腸活',en:'drinking yogurt 200ml',cal:130,p:5.0,f:3.0,c:21.0,per:200,fiber:0,iron:0.1,calcium:210,vitc:2,vitd:0.2,salt:0.2,serving:200,aa:{leu:.10,ile:.06,val:.07,lys:.08,met:.03,thr:.05,trp:.01,his:.03,score:1.22},fa:{sat:.62,mufa:.28,n3:.01,n6:.02,trans:.03}},
+
+  // ── 機能性食品・サプリ追加 ──
+  {name:'フィッシュオイル（DHA EPA・1粒）',yomi:'フィッシュオイル',tags:'フィッシュオイル DHA EPA オメガ3 サプリ',en:'fish oil DHA EPA capsule 1 piece',cal:9,p:0,f:1.0,c:0,per:1,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0,fa:{sat:.22,mufa:.11,n3:.42,n6:.02,trans:.00}},
+  {name:'クリルオイル（1粒・500mg）',yomi:'クリルオイル',tags:'クリルオイル オキアミ オメガ3 サプリ',en:'krill oil capsule 500mg',cal:4,p:0,f:0.5,c:0,per:0.5,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0,fa:{sat:.22,mufa:.11,n3:.42,n6:.02,trans:.00}},
+  {name:'マルチビタミン（1粒）',yomi:'マルチビタミン',tags:'マルチビタミン サプリ ビタミン ミネラル',en:'multivitamin supplement 1 tablet',cal:3,p:0.1,f:0,c:0.5,per:1,fiber:0,iron:5.0,calcium:100,vitc:60,vitd:5,salt:0},
+  {name:'ビタミンC（1000mg・1粒）',yomi:'ビタミンシー',tags:'ビタミンC サプリ 抗酸化 免疫',en:'vitamin C 1000mg supplement',cal:4,p:0,f:0,c:1.0,per:1,fiber:0,iron:0,calcium:0,vitc:1000,vitd:0,salt:0},
+  {name:'ビタミンD3（1粒）',yomi:'ビタミンデー',tags:'ビタミンD ビタミンD3 サプリ 骨 免疫',en:'vitamin D3 supplement',cal:2,p:0,f:0.2,c:0,per:1,fiber:0,iron:0,calcium:0,vitc:0,vitd:25,salt:0},
+  {name:'亜鉛サプリ（1粒）',yomi:'アエンサプリ',tags:'亜鉛 サプリ ミネラル 免疫 テストステロン',en:'zinc supplement 1 tablet',cal:2,p:0,f:0,c:0.5,per:1,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'マグネシウムサプリ（1粒）',yomi:'マグネシウム',tags:'マグネシウム サプリ ミネラル 筋肉 睡眠',en:'magnesium supplement 1 tablet',cal:2,p:0,f:0,c:0.5,per:1,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0},
+  {name:'鉄サプリ（1粒）',yomi:'テツサプリ',tags:'鉄 鉄分 サプリ 貧血 女性',en:'iron supplement 1 tablet',cal:2,p:0,f:0,c:0.5,per:1,fiber:0,iron:10.0,calcium:0,vitc:0,vitd:0,salt:0},
+
+  // ── 主食追加（特殊穀物） ──
+  {name:'はと麦（茹で・100g）',yomi:'ハトムギ',tags:'はと麦 雑穀 肌 美容 食物繊維',en:'hatomugi job tears coix seed boiled 100g',cal:170,p:5.8,f:1.5,c:35.0,per:100,fiber:0.6,iron:0.5,calcium:7,vitc:0,vitd:0,salt:0,aa:{leu:.07,ile:.04,val:.04,lys:.02,met:.02,thr:.03,trp:.01,his:.02,score:0.45}},
+  {name:'アマランサス（乾燥・大さじ1）',yomi:'アマランサス',tags:'アマランサス スーパーフード 雑穀 グルテンフリー',en:'amaranth seed dry tablespoon',cal:42,p:1.6,f:0.7,c:7.4,per:14,fiber:1.0,iron:0.9,calcium:18,vitc:0,vitd:0,salt:0,aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.02,thr:.04,trp:.01,his:.03,score:0.85}},
+  {name:'玄米麺（茹で・100g）',yomi:'ゲンマイメン',tags:'玄米麺 グルテンフリー 低GI 麺',en:'brown rice noodles boiled 100g',cal:145,p:2.5,f:0.8,c:32.0,per:100,fiber:1.5,iron:0.5,calcium:8,vitc:0,vitd:0,salt:0,serving:150,aa:{leu:.07,ile:.04,val:.04,lys:.02,met:.02,thr:.03,trp:.01,his:.02,score:0.45}},
+  {name:'そば茶（200ml）',yomi:'ソバチャ',tags:'そば茶 飲み物 ノンカフェイン ルチン',en:'buckwheat tea 200ml',cal:3,p:0.1,f:0,c:0.7,per:200,fiber:0,iron:0.1,calcium:2,vitc:0,vitd:0,salt:0,serving:200},
+
+  // ── 調味料・たれ追加 ──
+  {name:'テリヤキソース（大さじ1）',yomi:'テリヤキソース',tags:'照り焼き テリヤキ 調味料 たれ',en:'teriyaki sauce tablespoon',cal:28,p:1.0,f:0,c:6.5,per:18,fiber:0,iron:0.2,calcium:5,vitc:0,vitd:0,salt:1.0},
+  {name:'マスタード（粒・小さじ1）',yomi:'マスタード',tags:'マスタード 粒マスタード 調味料',en:'whole grain mustard teaspoon',cal:10,p:0.5,f:0.6,c:0.8,per:5,fiber:0.4,iron:0.2,calcium:15,vitc:1,vitd:0,salt:0.3},
+  {name:'スリラチャソース（小さじ1）',yomi:'スリラチャ',tags:'スリラチャ 辛い タイ ホットソース',en:'sriracha hot sauce teaspoon',cal:6,p:0.1,f:0,c:1.5,per:5,fiber:0.1,iron:0.1,calcium:2,vitc:2,vitd:0,salt:0.5},
+  {name:'酒粕（大さじ1）',yomi:'サカカス',tags:'酒粕 発酵 日本酒 調味料 甘酒',en:'sake lees tablespoon',cal:52,p:2.5,f:0.5,c:8.0,per:20,fiber:0.4,iron:0.1,calcium:5,vitc:0,vitd:0,salt:0},
+  {name:'豆腐マヨネーズ（大さじ1）',yomi:'トウフマヨネーズ',tags:'豆腐マヨ 低脂肪 ヴィーガン マヨネーズ代替',en:'tofu mayo vegan mayonnaise tablespoon',cal:28,p:1.5,f:1.5,c:2.0,per:15,fiber:0,iron:0.2,calcium:15,vitc:0,vitd:0,salt:0.3,fa:{sat:.14,mufa:.24,n3:.07,n6:.52,trans:.00},aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.01,thr:.04,trp:.01,his:.03,score:0.91}},
+  {name:'甜麺醤（テンメンジャン・小さじ1）',yomi:'テンメンジャン',tags:'甜麺醤 中華 調味料 回鍋肉',en:'tianmianjiang sweet bean paste teaspoon',cal:20,p:0.8,f:0.5,c:3.2,per:8,fiber:0.3,iron:0.1,calcium:5,vitc:0,vitd:0,salt:0.6},
+
+  // ── ヴィーガン・植物性タンパク ──
+  {name:'豆腐ハンバーグ（1個）',yomi:'トウフハンバーグ',tags:'豆腐 ハンバーグ ヴィーガン 植物性',en:'tofu hamburger patty vegan',cal:165,p:9.5,f:7.5,c:16.5,per:150,fiber:2.0,iron:1.5,calcium:85,vitc:2,vitd:0,salt:1.2,fa:{sat:.14,mufa:.24,n3:.07,n6:.52,trans:.00},aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.01,thr:.04,trp:.01,his:.03,score:0.91}},
+  {name:'大豆ミート（乾燥・30g）',yomi:'ダイズミート',tags:'大豆ミート 代替肉 ヴィーガン 植物性 高タンパク',en:'soy meat textured soy protein dry 30g',cal:105,p:16.5,f:2.0,c:8.5,per:30,fiber:3.5,iron:2.5,calcium:80,vitc:0,vitd:0,salt:0.2,serving:30,fa:{sat:.14,mufa:.24,n3:.07,n6:.52,trans:.00},aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.01,thr:.04,trp:.01,his:.03,score:0.91}},
+  {name:'エンドウ豆プロテイン（30g）',yomi:'エンドウマメプロテイン',tags:'エンドウ豆 プロテイン 植物性 ヴィーガン',en:'pea protein powder 30g',cal:110,p:21.5,f:1.5,c:4.5,per:30,fiber:1.0,iron:3.5,calcium:30,vitc:0,vitd:0,salt:0.3,serving:30,aa:{leu:.08,ile:.05,val:.05,lys:.07,met:.01,thr:.04,trp:.01,his:.03,score:0.82}},
+  {name:'ルウパ（ルッコラ・50g）',yomi:'ルッコラ',tags:'ルッコラ サラダ イタリアン 葉野菜 低カロリー',en:'arugula rocket 50g',cal:11,p:1.3,f:0.4,c:1.6,per:50,fiber:1.6,iron:0.7,calcium:80,vitc:30,vitd:0,salt:0,serving:50},
+  {name:'ビーツ（生・100g）',yomi:'ビーツ',tags:'ビーツ 根菜 鉄分 硝酸塩 スポーツ',en:'beetroot beet raw 100g',cal:43,p:1.6,f:0.1,c:9.6,per:100,fiber:2.8,iron:0.8,calcium:16,vitc:5,vitd:0,salt:0.1,serving:100},
+  {name:'ケール（生・50g）',yomi:'ケール',tags:'ケール スーパーフード 葉野菜 カルシウム',en:'kale raw 50g',cal:29,p:2.0,f:0.4,c:5.3,per:50,fiber:2.5,iron:0.7,calcium:75,vitc:60,vitd:0,salt:0.1,serving:50},
+  {name:'チアプディング（1人前）',yomi:'チアプディング',tags:'チア シード プディング 朝食 低糖質',en:'chia seed pudding 1 serving',cal:185,p:5.5,f:10.5,c:18.5,per:150,fiber:9.5,iron:1.5,calcium:200,vitc:1,vitd:0.2,salt:0.1,serving:150,fa:{sat:.10,mufa:.07,n3:.60,n6:.20,trans:.00}},
+
   // ── ビール・ハイボール・ワイン ──
   {name:'ビール缶（350ml）',yomi:'ビール',tags:'びーる アルコール 酒 缶',en:'beer can 350ml',cal:140,p:1.1,f:0,c:10.9,per:350,fiber:0,iron:0.1,calcium:11,vitc:0,vitd:0,salt:0,aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
   {name:'ビール缶（500ml）',yomi:'ビール',tags:'びーる アルコール 酒 缶',en:'beer can 500ml',cal:200,p:1.5,f:0,c:15.5,per:500,fiber:0,iron:0.1,calcium:15,vitc:0,vitd:0,salt:0,aa:{leu:.08,ile:.05,val:.05,lys:.06,met:.02,thr:.04,trp:.01,his:.03,score:0.75}},
@@ -3224,6 +3299,21 @@ function renderAiBackupList() {
   }).join('');
 }
 
+function handleAiKey(e) {
+  if (e.key !== 'Enter') return;
+  // スマホ（ソフトキーボード）判定: pointerの細かさ or maxTouchPoints
+  const isMobile = navigator.maxTouchPoints > 0 && window.matchMedia('(pointer: coarse)').matches;
+  if (isMobile) {
+    // スマホ: Enterは常に改行（送信はボタンのみ）
+    return;
+  }
+  // PC: Shift+Enterで改行、Enterで送信
+  if (!e.shiftKey) {
+    e.preventDefault();
+    sendAiMessage();
+  }
+}
+
 function resetAiChat() {
   aiHistory = [];
   const box = document.getElementById('aiChatBox');
@@ -3575,14 +3665,15 @@ ${fullCtx}
 ━━━━━━━━━━━━━━━━━━━━━━
 【操作コマンド仕様】
 操作が必要な場合は必ず末尾に \`\`\`json ブロックを出力してください。
+JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他の形式は使用不可。
 
 コマンド種別:
 
-1. add — 記録を追加
+1. add — 今日または指定日の食事記録に食品を追加
 {
   "commands": [{
     "type": "add",
-    "dates": ["2025-06-16", "2025-06-17"],
+    "dates": ["${today}"],
     "meal": "昼食",
     "items": [{"name": "食品名", "amount": 100, "cal": 168, "p": 2.5, "f": 0.3, "c": 37.1, "fiber": 0.3, "iron": 0.1, "calcium": 3, "vitc": 0, "vitd": 0, "salt": 0}]
   }],
@@ -3590,7 +3681,7 @@ ${fullCtx}
   "message": "ユーザーへの返答"
 }
 
-2. delete_by_id — IDを指定して削除
+2. delete_by_id — IDを指定して削除（コンテキストのidフィールドを使用）
 {
   "commands": [{"type": "delete_by_id", "ids": [1234567890]}],
   "backup_label": "夕食削除",
@@ -3599,29 +3690,57 @@ ${fullCtx}
 
 3. delete_by_date_meal — 日付×食事タイミングで一括削除
 {
-  "commands": [{"type": "delete_by_date_meal", "dates": ["2025-06-16"], "meal": "昼食"}],
+  "commands": [{"type": "delete_by_date_meal", "dates": ["${today}"], "meal": "昼食"}],
   "backup_label": "昼食一括削除",
   "message": "削除しました"
 }
 
-4. replace — 指定日時の記録を全削除して新しい内容で置き換え
+4. replace — 指定日時の既存記録を全削除して新内容で置き換え
 {
-  "commands": [{"type": "replace", "dates": ["2025-06-16", "2025-06-17"], "meal": "昼食", "items": [...]}],
-  "backup_label": "今週昼食を置き換え",
+  "commands": [{"type": "replace", "dates": ["${today}"], "meal": "昼食", "items": [...]}],
+  "backup_label": "昼食を置き換え",
   "message": "置き換えました"
 }
+
+5. add_custom_food — カスタム食品DBに食品を登録（食事記録への追加とは別・検索DBに保存）
+{
+  "commands": [{
+    "type": "add_custom_food",
+    "foods": [{"name": "商品名", "per": 100, "cal": 168, "p": 2.5, "f": 0.3, "c": 37.1, "fiber": 0, "iron": 0, "calcium": 0, "vitc": 0, "vitd": 0, "salt": 0}]
+  }],
+  "backup_label": "カスタム食品登録",
+  "message": "DBに登録しました。食品検索から追加できます。"
+}
+
+6. delete_custom_food — カスタム食品DBから削除
+{
+  "commands": [{"type": "delete_custom_food", "names": ["食品名"]}],
+  "backup_label": "カスタム食品削除",
+  "message": "削除しました"
+}
+
+【コマンド選択の判断基準（重要）】
+- 「〇〇を食べた」「〇〇を追加して」→ add（食事記録に追加）
+- 「〇〇をDBに登録して」「〇〇を保存して」「次回から検索できるように」→ add_custom_food
+- 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal
+- 「〇〇に変えて」「〇〇で置き換えて」→ replace
+- 「今週の〇〇を全部〇〇にして」→ replace を dates に全日付列挙して1コマンドで
+
+【必須ルール・よくある誤りの防止】
+- dates は必ず配列で指定。「今日」でも ["${today}"] と明示する
+- meal は必ず「朝食」「昼食」「夕食」「間食」のいずれか。省略・空文字・null 禁止
+- items の栄養素（cal/p/f/c）は必ず推定値を入れる。全て0はNG
+- amount は必ず正の数値。単位はg（人前ではなくg換算で記入）
+- 複数の食品を同じ meal に追加する場合は items 配列を使い、コマンドは1つにまとめる
+- add と add_custom_food を混同しない。食べた記録は add、DBへの保存は add_custom_food
+- "今週" は ${weekDates[0]}〜${weekDates[6]}（${weekDates.length}日間）
+- "昨日" は ${getLastNDates(2)[0]}、"一昨日" は ${getLastNDates(3)[0]}
+- 記録の読み取り・質問・雑談のみの場合は commands 不要、message だけ返す
+- 未来の日付には操作しない（予定記録はユーザーに確認する）
 
 【backup_labelルール】
 - 操作内容を10文字以内で端的に表す日本語ラベルを必ず付ける
 - 例）「朝食に卵追加」「昨日夕食削除」「今週昼食を置換」
-
-【重要ルール】
-- "今週"は ${weekDates[0]}〜${weekDates[6]} の7日間
-- "昨日"は ${getLastNDates(2)[0]}、"一昨日"は ${getLastNDates(3)[0]}
-- 栄養素は日本食品標準成分表の標準値を推定して必ず入れる
-- 量が不明なら一般的な1人前を推定
-- 複数日にまたがる操作はdatesに全日付を列挙する
-- 記録の読み取り・質問のみの場合はcommands不要、messageだけ返す
 
 5. add_custom_food — カスタム食品DBに食品を登録（記録への追加とは別）
 {
@@ -3679,23 +3798,47 @@ ${fullCtx}
     }
     const rawText = (data.content || []).map(b => b.text || '').join('');
 
-    // JSONブロック抽出
-    const jsonMatch = rawText.match(/```json\s*([\s\S]*?)```/);
+    // JSONブロック抽出（Geminiは```json以外の形式でも返すことがある）
     let parsed      = null;
     let displayText = rawText;
 
-    if (jsonMatch) {
-      try {
-        parsed = JSON.parse(jsonMatch[1].trim());
-        displayText = parsed.message || rawText.replace(/```json[\s\S]*?```/g, '').trim();
-      } catch(e) {}
+    // 複数のパターンを試みる
+    const jsonPatterns = [
+      /```json\s*([\s\S]*?)```/,   // 標準: ```json ... ```
+      /```\s*(\{[\s\S]*?\})\s*```/, // ``` { ... } ```
+      /(\{[\s\S]*"commands"[\s\S]*?\})\s*$/m, // 末尾のJSONオブジェクト
+      /(\{[\s\S]*"items"[\s\S]*?\})\s*$/m,    // itemsキーを含むJSON
+    ];
+
+    for (const pat of jsonPatterns) {
+      const m = rawText.match(pat);
+      if (m) {
+        try {
+          parsed = JSON.parse(m[1].trim());
+          displayText = parsed.message || rawText.replace(pat, '').trim();
+          break;
+        } catch(e) { /* 次のパターンを試す */ }
+      }
+    }
+
+    // 旧形式（items配列）のフォールバック対応
+    if (parsed && !parsed.commands && Array.isArray(parsed.items)) {
+      // 旧itemsフォーマットをcommands形式に変換
+      parsed = {
+        commands: [{
+          type: 'add',
+          dates: [currentDate],
+          meal: parsed.items[0]?.meal || '昼食',
+          items: parsed.items,
+        }],
+        message: parsed.message || '',
+        backup_label: '食品追加',
+      };
     }
 
     if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
-    // JSONブロックを除いた短縮版を履歴に保存（トークン節約）
     const historyContent = rawText.replace(/```json[\s\S]*?```/g, '[操作コマンド実行済み]').trim();
     aiHistory.push({ role: 'assistant', content: historyContent });
-    // 会話履歴が長くなりすぎたら古いものを削除（直近10往復まで）
     if (aiHistory.length > 20) aiHistory = aiHistory.slice(aiHistory.length - 20);
 
     // コマンド実行
