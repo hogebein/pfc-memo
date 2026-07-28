@@ -463,6 +463,9 @@
       box-shadow: var(--shadow-lg);
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    #toast.toast-action { pointer-events: auto; display: flex; align-items: center; gap: 10px; white-space: normal; }
+    .toast-undo-btn { flex-shrink: 0; background: transparent; border: 1px solid var(--surface); color: var(--surface); border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .toast-undo-btn:active { background: rgba(255,255,255,.2); }
 
     /* ═══════════════════════════════════════
        Reduced motion
@@ -541,6 +544,9 @@
           <div id="copyDayMsg" class="status-msg" style="margin-top:8px;text-align:center"></div>
         </div>
       </div>
+
+      <!-- ⚠️ 記録の異常値チェック -->
+      <div id="anomalyCard"></div>
 
       <!-- ① 収支カード（コンパクト1行） -->
       <div id="balanceCard"></div>
@@ -862,18 +868,18 @@
           </div>
           <div style="text-align:center;background:#e3f0ff;border-radius:8px;padding:7px 4px">
             <div style="font-size:10px;color:#3266ad">P</div>
-            <div style="font-weight:700" id="goalPreviewP">—</div>
-            <div style="font-size:10px;color:var(--text-sub)">g</div>
+            <div style="font-weight:700;color:#1a1d23" id="goalPreviewP">—</div>
+            <div style="font-size:10px;color:#4b5568">g</div>
           </div>
           <div style="text-align:center;background:#fff3e0;border-radius:8px;padding:7px 4px">
-            <div style="font-size:10px;color:#e8a838">F</div>
-            <div style="font-weight:700" id="goalPreviewF">—</div>
-            <div style="font-size:10px;color:var(--text-sub)">g</div>
+            <div style="font-size:10px;color:#a06a1a">F</div>
+            <div style="font-weight:700;color:#1a1d23" id="goalPreviewF">—</div>
+            <div style="font-size:10px;color:#4b5568">g</div>
           </div>
           <div style="text-align:center;background:#e8f5e9;border-radius:8px;padding:7px 4px">
-            <div style="font-size:10px;color:#4caf50">C</div>
-            <div style="font-weight:700" id="goalPreviewC">—</div>
-            <div style="font-size:10px;color:var(--text-sub)">g</div>
+            <div style="font-size:10px;color:#2f7d3a">C</div>
+            <div style="font-weight:700;color:#1a1d23" id="goalPreviewC">—</div>
+            <div style="font-size:10px;color:#4b5568">g</div>
           </div>
         </div>
 
