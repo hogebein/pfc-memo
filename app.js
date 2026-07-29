@@ -1059,8 +1059,9 @@ let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen =
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
 let currentDate = toDateStr(new Date());
 let ghToken = null, ghData = {}; // Google Health API
+let dailyActivity = {}; // Garmin/Google Health未連携ユーザー向け：日別の手動歩数入力
 let deferredPrompt = null;
-let profile = { sex:'male', age:30, height:170, weight:65, bf:null, activityFactor:1.2, temp:22 };
+let profile = { sex:'male', age:30, height:170, weight:65, bf:null, activityFactor:1.2, temp:22, neatTier:'mid' };
 
 // Firebase state
 let fbUser = null;   // 現在ログイン中のユーザー
@@ -1076,6 +1077,7 @@ try { exercises   = JSON.parse(localStorage.getItem('pfcExercises')  || '[]'); }
 try { userWeight  = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
 try { ghToken     = localStorage.getItem('ghToken') || null; } catch(e) {}
 try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
+try { dailyActivity = JSON.parse(localStorage.getItem('pfcDailyActivity') || '{}'); } catch(e) {}
 try { const p = JSON.parse(localStorage.getItem('pfcProfile') || 'null'); if(p) profile = {...profile, ...p}; } catch(e) {}
 
 function toDateStr(d) { return d.toISOString().split('T')[0]; }
@@ -1112,9 +1114,17 @@ async function saveToCloud() {
 
 // ローカル＋クラウドへ同時保存
 function save() { saveLocal(); saveToCloud(); }
+// 入力中の連続オートセーブ用：ローカルは即時、クラウドは間引いて送信
+let _cloudSaveTimer = null;
+function saveDebounced() {
+  saveLocal();
+  clearTimeout(_cloudSaveTimer);
+  _cloudSaveTimer = setTimeout(saveToCloud, 800);
+}
 function saveCustom() { saveLocal(); saveToCloud(); }
 function saveExercises() { saveLocal(); saveToCloud(); }
 function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} }
+function saveDailyActivity() { try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch(e) {} }
 function saveProfile() {
   profile.sex    = document.getElementById('pSex').value;
   profile.age    = parseInt(document.getElementById('pAge').value)    || 30;
@@ -1158,9 +1168,15 @@ function saveGoalSettings() {
   renderBmrPreview();
 }
 function setActivity(el) {
-  document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('#activityToggle .toggle-btn').forEach(b => b.classList.remove('active'));
   el.classList.add('active');
   profile.activityFactor = parseFloat(el.dataset.val);
+  saveProfile();
+}
+function setNeatTier(el) {
+  document.querySelectorAll('#neatToggle .toggle-btn').forEach(b => b.classList.remove('active'));
+  el.classList.add('active');
+  profile.neatTier = el.dataset.neat;
   saveProfile();
 }
 
@@ -1199,8 +1215,11 @@ function initProfile() {
   set('pWeight', profile.weight);
   set('pBF',     profile.bf ?? '');
   set('pTemp',   profile.temp);
-  document.querySelectorAll('.toggle-btn[data-val]').forEach(b => {
+  document.querySelectorAll('#activityToggle .toggle-btn[data-val]').forEach(b => {
     b.classList.toggle('active', parseFloat(b.dataset.val) === profile.activityFactor);
+  });
+  document.querySelectorAll('#neatToggle .toggle-btn[data-neat]').forEach(b => {
+    b.classList.toggle('active', b.dataset.neat === (profile.neatTier || 'mid'));
   });
   renderBmrPreview();
 }
@@ -1208,20 +1227,25 @@ function renderBmrPreview() {
   const el = document.getElementById('bmrPreview');
   if (!el) return;
   const tdee = calcTDEE();
-  const bmr  = Math.round(tdee / (profile.activityFactor || 1.2));
+  const bmr  = Math.round(calcBMR());
   const g    = goals();
   const modeLabel = { normal:'通常', recomp:'低脂質リコンプ', custom:'カスタム' }[profile.goalMode || 'normal'];
+  const detail = getDetailedActivity(currentDate);
+  const modeDesc = detail
+    ? `${detail.source === 'google_health' ? 'Google Health実測' : '手入力歩数'}（${(detail.steps||0).toLocaleString()}歩・活動 ${detail.activeCal}kcal）＋NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」`
+    : `活動係数 ${profile.activityFactor || 1.2}（ざっくり設定）`;
   el.innerHTML = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:6px">
       <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
         <div style="color:var(--text-sub);font-size:10px">基礎代謝 (BMR)</div>
         <div style="font-weight:700;font-size:16px">${bmr} <span style="font-size:10px;font-weight:400">kcal</span></div>
       </div>
       <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
-        <div style="color:var(--text-sub);font-size:10px">推定TDEE</div>
+        <div style="color:var(--text-sub);font-size:10px">推定TDEE（本日）</div>
         <div style="font-weight:700;font-size:16px">${tdee} <span style="font-size:10px;font-weight:400">kcal</span></div>
       </div>
     </div>
+    <div style="font-size:10px;color:var(--text-sub);margin-bottom:10px">今日の算出方法: ${modeDesc}</div>
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">現在の目標（${modeLabel}プリセット）</div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;text-align:center;font-size:11px">
       <div style="background:var(--bg);border-radius:6px;padding:5px 2px"><div style="color:var(--text-sub);font-size:9px">kcal</div><div style="font-weight:600">${g.cal}</div></div>
@@ -1263,15 +1287,59 @@ function getAllFoods() {
     ...comboFoods.map(f => ({...f, _search: normalize(f.name), _src:'combo'})),
   ];
 }
-function calcTDEE() {
+// ── 活動量の精緻化：NEAT（運動以外の日常活動）レベル ──
+// 職種・生活スタイルによる基礎的な活動量の差をBMRへの倍率として表現
+const NEAT_TIERS = {
+  low:  { label: '座り仕事中心', mult: 1.00 },
+  mid:  { label: '立ち仕事が多い', mult: 1.08 },
+  high: { label: '肉体労働・重作業', mult: 1.15 },
+};
+// 歩数→消費カロリー推定（体重比例、約35kcal/1000歩@70kgが目安）
+function stepsToCal(steps, weightKg) {
+  return Math.round((steps || 0) * (weightKg || 65) * 0.0005);
+}
+// 指定日の「実測 or 手入力による活動カロリー」を解決する
+// ① Google Health連携で実測値が取れていればそれを最優先
+// ② 手動入力した歩数があればそこから推定
+// ③ どちらも無ければnullを返し、呼び出し側で従来の活動係数にフォールバックする
+function getDetailedActivity(date) {
+  const gh = ghData[date];
+  if (gh && gh.activeCalories > 0) {
+    return { activeCal: gh.activeCalories, steps: gh.steps || 0, source: 'google_health' };
+  }
+  const manual = dailyActivity[date];
+  if (manual && manual.steps > 0) {
+    const w = profile.weight || userWeight || 65;
+    return { activeCal: stepsToCal(manual.steps, w), steps: manual.steps, source: 'manual_steps' };
+  }
+  return null;
+}
+function calcBMR() {
   const w = profile.weight || userWeight || 65;
   const h = profile.height || 170;
   const age = profile.age || 30;
   const isMale = profile.sex !== 'female';
-  const act = profile.activityFactor || 1.2;
-  const bmr = isMale
+  let bmr = isMale
     ? 10*w + 6.25*h - 5*age + 5
     : 10*w + 6.25*h - 5*age - 161;
+  const temp = profile.temp ?? 22;
+  if (temp < 10) bmr *= 1.06;
+  else if (temp >= 30) bmr *= 1.025;
+  return bmr;
+}
+function calcTDEE() {
+  const bmr = calcBMR();
+
+  // その日の歩数（Garmin/Google Health実測 または 手動入力）が分かれば、
+  // NEATレベルで補正したBMR＋実際の活動カロリーで精緻に算出する
+  const detail = getDetailedActivity(currentDate);
+  if (detail) {
+    const neatMult = (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).mult;
+    return Math.round(bmr * neatMult + detail.activeCal);
+  }
+
+  // 情報が無い日は従来通りの活動係数（ざっくり設定）にフォールバック
+  const act = profile.activityFactor || 1.2;
   return Math.round(bmr * act);
 }
 function goals() {
@@ -1364,7 +1432,7 @@ function renderCalendar() {
 }
 
 // ── 実質栄養価計算 ──
-// DIT（食事誘発性熱産生）: P=25-30%, C=6-8%, F=2-4%
+// DIT（食事誘発性熱産生）: P=25-30%, C=6-8%, F=2-4%、アルコール等の残差分は別途補正
 // 食物繊維NET補正: 食物繊維は消化吸収されないため実質カロリー = fiber * 2kcal/g（大腸発酵分）として扱い
 //                  通常計算されている炭水化物 * 4kcal から fiber * 4kcal を引いて fiber * 2kcal を足す
 //                  → 実質 fiber * 2kcal の節約
@@ -1373,9 +1441,20 @@ function calcNetCalories(s) {
   const ditP = s.p * 4 * 0.27;   // タンパク質: 27%消費
   const ditC = s.c * 4 * 0.07;   // 炭水化物: 7%消費
   const ditF = s.f * 9 * 0.03;   // 脂質: 3%消費
-  const ditTotal = ditP + ditC + ditF;
 
-  // ② 食物繊維NETカロリー補正
+  // ② P/F/C(4/9/4kcal換算)で説明しきれない残差カロリー
+  //    表示カロリーは食品ごとの実測値(cal)を積み上げているため、アルコール（7kcal/g）や
+  //    有機酸など、P/F/Cの係数だけでは説明できない熱量が残差として現れる。
+  //    最も代表的なのはアルコールなので、この残差にはアルコール相当のDIT（文献上10〜30%程度、
+  //    ここでは中間的に15%を採用）を適用する。数値の丸め誤差によるノイズは無視する。
+  const macroCal    = s.p * 4 + s.f * 9 + s.c * 4;
+  const residualCalRaw = s.cal - macroCal;
+  const residualCal = residualCalRaw > 5 ? residualCalRaw : 0;
+  const ditAlcohol  = residualCal * 0.15;
+
+  const ditTotal = ditP + ditC + ditF + ditAlcohol;
+
+  // ③ 食物繊維NETカロリー補正
   // 食物繊維は不溶性は0kcal、可溶性は約2kcal/gで大腸で発酵
   // 標準成分表では炭水化物に含めて4kcal/gで計算されているため差分を補正
   const fiberAdj = (s.fiber || 0) * 2; // 4kcal→2kcalへの補正分（差引き2kcal節約/g）
@@ -1387,11 +1466,13 @@ function calcNetCalories(s) {
   return {
     grossCal,
     netCal,
-    ditTotal: Math.round(ditTotal),
-    ditP:     Math.round(ditP),
-    ditC:     Math.round(ditC),
-    ditF:     Math.round(ditF),
-    fiberAdj: Math.round(fiberAdj),
+    ditTotal:    Math.round(ditTotal),
+    ditP:        Math.round(ditP),
+    ditC:        Math.round(ditC),
+    ditF:        Math.round(ditF),
+    ditAlcohol:  Math.round(ditAlcohol),
+    residualCal: Math.round(residualCal),
+    fiberAdj:    Math.round(fiberAdj),
     reduction,
   };
 }
@@ -1422,12 +1503,12 @@ function renderNetCard(s) {
         <span style="color:var(--text-sub)">kcal</span>
         <span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600">▼ ${n.reduction} kcal 節約</span>
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:5px;margin-bottom:8px">
         <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
           <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">DIT（食事誘発性熱産生）</div>
           <div style="font-weight:700;font-size:14px">▼ ${n.ditTotal} kcal</div>
           <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
-            P: ▼${n.ditP} / C: ▼${n.ditC} / F: ▼${n.ditF}
+            P: ▼${n.ditP} / C: ▼${n.ditC} / F: ▼${n.ditF}${n.ditAlcohol > 0 ? ` / Alc: ▼${n.ditAlcohol}` : ''}
           </div>
         </div>
         <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
@@ -1437,9 +1518,16 @@ function renderNetCard(s) {
             繊維 ${r1(s.fiber||0)}g × 2 kcal節約/g
           </div>
         </div>
+        ${n.residualCal > 0 ? `<div style="background:var(--bg);border-radius:8px;padding:7px 10px">
+          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">アルコール等の残差カロリー</div>
+          <div style="font-weight:700;font-size:14px">▼ ${n.ditAlcohol} kcal</div>
+          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
+            P/F/Cで説明できない${n.residualCal}kcal（主にアルコール由来）× 15%
+          </div>
+        </div>` : ''}
       </div>
       <div style="font-size:10px;color:var(--text-sub);line-height:1.6;border-top:1px solid var(--border);padding-top:6px">
-        DIT: P×27% / C×7% / F×3% を消化に消費と推定。食物繊維は腸内発酵で約2kcal/g（表示値4kcal/gとの差を補正）。あくまで推定値です。
+        DIT: P×27% / C×7% / F×3%、アルコール等の残差カロリーは×15%を消化に消費と推定。食物繊維は腸内発酵で約2kcal/g（表示値4kcal/gとの差を補正）。あくまで推定値です。
       </div>
     </div>`;
 }
@@ -1510,12 +1598,12 @@ function detectAnomalies(date) {
       issues.push({ sev: 'high', msg: `「${e.name}」: ${r1(amt)}gで${ri(cal)}kcalは密度が高すぎます（${density.toFixed(1)}kcal/g）。桁や単位の入力ミスの可能性があります` });
     }
     // カロリーとPFCから逆算した値の整合性
+    // ※ P/F/Cだけで説明しきれない分（記録カロリー > 計算値）はアルコール・糖アルコール・
+    //    有機酸など正当な理由がありうるため許容する。逆に計算値が記録カロリーを大きく超える
+    //    のは物理的にありえない（入力ミスの可能性が高い）ため、その方向のみ検出する。
     const calcCal = (e.p||0)*4 + (e.f||0)*9 + (e.c||0)*4;
-    if (cal > 50 && calcCal > 0) {
-      const diffRatio = Math.abs(cal - calcCal) / cal;
-      if (diffRatio > 0.4) {
-        issues.push({ sev: 'mid', msg: `「${e.name}」: カロリー(${ri(cal)}kcal)とP・F・Cから計算した値(${ri(calcCal)}kcal)が大きくずれています` });
-      }
+    if (cal > 50 && calcCal > cal * 1.15) {
+      issues.push({ sev: 'mid', msg: `「${e.name}」: P・F・Cから計算した値(${ri(calcCal)}kcal)が記録カロリー(${ri(cal)}kcal)を超えています。数値の入力ミスの可能性があります` });
     }
     // 単品として極端な量
     if (cal > 2500) issues.push({ sev: 'mid', msg: `「${e.name}」が${ri(cal)}kcalと、1品にしては非常に多い量です` });
@@ -1567,6 +1655,47 @@ function renderAnomalyCard(date) {
     </div>`;
 }
 
+function setDailySteps(date, val) {
+  const steps = parseFloat(val) || 0;
+  dailyActivity[date] = { ...(dailyActivity[date]||{}), steps };
+  saveDailyActivity();
+  renderRecord();
+}
+function renderActivityCard() {
+  const el = document.getElementById('activityCard');
+  if (!el) return;
+  const gh = ghData[currentDate];
+  const neatLabel = (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).label;
+
+  if (gh && gh.activeCalories > 0) {
+    // Garmin/Google Health連携で実測データがある日はそちらを優先表示（編集不可）
+    el.innerHTML = `
+      <div class="card" style="padding:10px 13px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="font-size:12px;font-weight:700">🚶 本日の活動量（Google Health実測）</div>
+          <span style="font-size:10px;color:var(--green);font-weight:600">✓ 連携中</span>
+        </div>
+        <div style="font-size:11px;color:var(--text-sub);margin-top:4px">
+          歩数 ${(gh.steps||0).toLocaleString()}歩　活動カロリー ${gh.activeCalories}kcal　NEAT「${neatLabel}」を適用
+        </div>
+      </div>`;
+    return;
+  }
+
+  const manualSteps = (dailyActivity[currentDate] && dailyActivity[currentDate].steps) || '';
+  el.innerHTML = `
+    <div class="card" style="padding:10px 13px;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:700;margin-bottom:6px">🚶 本日の活動量（歩数を入力）</div>
+      <div class="row" style="align-items:flex-end;gap:8px">
+        <div class="field" style="flex:1"><label>歩数</label><input type="number" min="0" step="100" placeholder="例: 8000" value="${manualSteps}" onchange="setDailySteps('${currentDate}', this.value)"></div>
+        <div style="font-size:10px;color:var(--text-sub);padding-bottom:9px;flex:1.4">NEAT「${neatLabel}」で計算（設定タブで変更可）</div>
+      </div>
+      <div style="font-size:10px;color:var(--text-sub);margin-top:6px">
+        Garmin/Google Health連携が無い日でも、歩数を入れるだけでその日のTDEEがより正確になります。未入力の場合は活動係数（ざっくり設定）が使われます。
+      </div>
+    </div>`;
+}
+
 function renderRecord() {
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
@@ -1578,6 +1707,9 @@ function renderRecord() {
 
   // ── タンパク質吸収補正 ──
   const absP = r1(calcAbsorbedProtein(list));
+
+  // ── 活動量（歩数・NEAT） ──
+  renderActivityCard();
 
   // ── 異常値チェック ──
   renderAnomalyCard(currentDate);
@@ -1612,13 +1744,17 @@ function renderRecord() {
     </div>`;
 
   // ── エネルギー内訳 ──
-  const bmr_disp = ri(g.cal / (profile.activityFactor || 1.2));
+  const bmr_disp = ri(calcBMR());
+  const actDetail = getDetailedActivity(currentDate);
+  const actDesc = actDetail
+    ? `× NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」+ 活動 ${actDetail.activeCal}kcal（${actDetail.source==='google_health'?'Google Health実測':'歩数入力'} ${(actDetail.steps||0).toLocaleString()}歩）`
+    : `× 活動係数 ${profile.activityFactor || 1.2}`;
   const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
   const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
   document.getElementById('energyBreakdown').innerHTML = `
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">
-      推定TDEE ${ri(g.cal)} kcal（BMR ${bmr_disp} kcal × 活動係数 ${profile.activityFactor || 1.2}）
+      推定TDEE ${ri(g.cal)} kcal（BMR ${bmr_disp} kcal ${actDesc}）
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
       <div style="background:#e3f0ff;border-radius:8px;padding:7px 4px">
@@ -1684,13 +1820,14 @@ function renderRecord() {
           window._editBase = window._editBase || {};
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
           html += `<div class="edit-form" id="editForm_${e.id}">
-            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="1" oninput="recalcEdit(${e.id})"></div></div>
-            <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1"></div></div>
-            <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1"></div></div>
-            <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01"></div></div>
-            <div class="row" style="margin-bottom:0"><div class="field"><label>タイミング</label><select id="em${e.id}">${MEALS_ORDER.map(m=>`<option${e.meal===m?' selected':''}>${m}</option>`).join('')}</select></div>
+            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="1" oninput="recalcEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:5px;gap:4px">${[2,1.5,0.5,0.25].map(m=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="multiplyEditAmount(${e.id},${m})">×${m}</button>`).join('')}</div>
+            <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01" onchange="autoSaveEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:0"><div class="field"><label>タイミング</label><select id="em${e.id}" onchange="autoSaveEdit(${e.id})">${MEALS_ORDER.map(m=>`<option${e.meal===m?' selected':''}>${m}</option>`).join('')}</select></div>
             <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="height:32px;margin-top:auto">保存</button>
-            <button class="btn btn-sm" onclick="cancelEdit()" style="height:32px;margin-top:auto">取消</button></div>
+            <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="height:32px;margin-top:auto">取消</button></div>
           </div>`;
         } else {
           html += `<div class="log-item"><div><div class="li-name">${e.name}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
@@ -1828,6 +1965,8 @@ function selectAddResult(i, src, meal) {
 
   // 追加した項目をすぐインライン編集できるように開く（量や栄養素の微調整用）
   editingId = entry.id;
+  window._editOriginal = window._editOriginal || {};
+  window._editOriginal[entry.id] = {...entry};
   renderRecord();
   renderCalendar();
   showToast(merged ? `✅「${f.name}」は既存の記録に合算しました。量を編集できます` : `✅「${f.name}」を登録しました。量を編集できます`);
@@ -1839,14 +1978,14 @@ function selectAddResult(i, src, meal) {
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
 const SEASONING_MASTER = {
-  '醤油（濃口）小さじ1':   { name:'醤油（濃口）小さじ1',   amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0,   vitd:0, salt:0.9 },
-  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）小さじ1',  amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0,   vitd:0, salt:0.7 },
-  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素小さじ1',amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.3 },
-  '米油小さじ1':           { name:'米油小さじ1',           amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  'みりん小さじ1':         { name:'みりん小さじ1',         amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  'にんにく小さじ1':       { name:'にんにく小さじ1',       amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6, vitd:0, salt:0   },
-  '白だし小さじ1':         { name:'白だし小さじ1',         amount:6,  cal:7,   p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.0 },
-  'カレー粉小さじ1':       { name:'カレー粉小さじ1',       amount:2,  cal:7,   p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5,  vitc:0,   vitd:0, salt:0   },
+  '醤油（濃口）小さじ1':   { name:'醤油（濃口）',      amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0,   vitd:0, salt:0.9 },
+  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）',    amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0,   vitd:0, salt:0.7 },
+  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素',  amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.3 },
+  '米油小さじ1':           { name:'米油',              amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  'みりん小さじ1':         { name:'みりん',            amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  'にんにく小さじ1':       { name:'にんにく',          amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6, vitd:0, salt:0   },
+  '白だし小さじ1':         { name:'白だし',            amount:6,  cal:7,   p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.0 },
+  'カレー粉小さじ1':       { name:'カレー粉',          amount:2,  cal:7,   p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5,  vitc:0,   vitd:0, salt:0   },
 };
 
 let _seasoningMsgTimer = null;
@@ -1873,7 +2012,7 @@ function addSeasoning(key) {
   });
   save();
   renderRecord();
-  showToast(merged ? `✅ ${s.name}を${meal}に合算しました` : `✅ ${s.name}を${meal}に追加`);
+  showToast(merged ? `✅ ${s.name}（${s.amount}g）を${meal}に合算しました` : `✅ ${s.name}（小さじ1・${s.amount}g）を${meal}に追加`);
 }
 
 
@@ -2145,7 +2284,21 @@ function addEntry(meal) {
   setTimeout(()=>{const m=document.getElementById('addMsg_'+meal);if(m){m.className='status-msg status-ok';m.textContent=merged?`「${name}」は既に記録済みのため数量を合算しました`:`「${name}」を追加しました`;setTimeout(()=>{if(m)m.textContent=''},2200)}},30);
 }
 function toggleAddPanel(meal){activeAddMeal=activeAddMeal===meal?null:meal;editingId=null;renderRecord()}
-function startEdit(id){editingId=id;renderRecord()}
+function startEdit(id){
+  editingId=id;
+  window._editOriginal = window._editOriginal || {};
+  const src = entries.find(e => e.id === id);
+  if (src) window._editOriginal[id] = {...src};
+  renderRecord();
+}
+function multiplyEditAmount(id, factor) {
+  const amtEl = document.getElementById('ea'+id);
+  if (!amtEl) return;
+  const cur = parseFloat(amtEl.value) || 0;
+  if (cur <= 0) return;
+  amtEl.value = r1(cur * factor);
+  recalcEdit(id);
+}
 function recalcEdit(id) {
   const base = window._editBase && window._editBase[id];
   if (!base) return;
@@ -2166,15 +2319,49 @@ function recalcEdit(id) {
   set('evc', base.vitc);
   set('evd', base.vitd);
   set('esl', base.salt, 2);
+  autoSaveEdit(id);
 }
-function cancelEdit(){if(window._editBase)window._editBase={};editingId=null;renderRecord()}
+// 保存ボタンを押さなくても、編集中の内容を都度バックグラウンドで確定させる
+// （画面の再描画はしない＝入力中のフォーカスやカーソル位置を崩さないため）
+function autoSaveEdit(id) {
+  const idx = entries.findIndex(e => e.id === id);
+  if (idx === -1) return;
+  const nameEl = document.getElementById('en'+id);
+  const amtEl  = document.getElementById('ea'+id);
+  if (!nameEl || !amtEl) return;
+  entries[idx] = {
+    ...entries[idx],
+    name:    nameEl.value.trim() || entries[idx].name,
+    amount:  parseFloat(amtEl.value) || entries[idx].amount,
+    cal:     parseFloat(document.getElementById('ec'+id).value) || 0,
+    p:       parseFloat(document.getElementById('ep'+id).value) || 0,
+    f:       parseFloat(document.getElementById('ef'+id).value) || 0,
+    c:       parseFloat(document.getElementById('ecc'+id).value) || 0,
+    fiber:   parseFloat(document.getElementById('efib'+id).value) || 0,
+    iron:    parseFloat(document.getElementById('efe'+id).value) || 0,
+    calcium: parseFloat(document.getElementById('eca'+id).value) || 0,
+    vitc:    parseFloat(document.getElementById('evc'+id).value) || 0,
+    vitd:    parseFloat(document.getElementById('evd'+id).value) || 0,
+    salt:    parseFloat(document.getElementById('esl'+id).value) || 0,
+    meal:    document.getElementById('em'+id).value,
+  };
+  saveDebounced();
+}
+function cancelEdit(id){
+  // オートセーブ済みの変更を、編集開始前の状態に戻す
+  if (id != null && window._editOriginal && window._editOriginal[id]) {
+    const idx = entries.findIndex(e => e.id === id);
+    if (idx !== -1) entries[idx] = window._editOriginal[id];
+    save();
+  }
+  if (window._editBase) window._editBase = {};
+  if (window._editOriginal && id != null) delete window._editOriginal[id];
+  editingId = null;
+  renderRecord();
+}
 function saveEdit(id) {
-  const idx=entries.findIndex(e=>e.id===id); if(idx===-1) return;
-  entries[idx]={...entries[idx],name:document.getElementById('en'+id).value.trim()||entries[idx].name,amount:parseFloat(document.getElementById('ea'+id).value)||entries[idx].amount,
-    cal:parseFloat(document.getElementById('ec'+id).value)||0,p:parseFloat(document.getElementById('ep'+id).value)||0,f:parseFloat(document.getElementById('ef'+id).value)||0,c:parseFloat(document.getElementById('ecc'+id).value)||0,
-    fiber:parseFloat(document.getElementById('efib'+id).value)||0,iron:parseFloat(document.getElementById('efe'+id).value)||0,calcium:parseFloat(document.getElementById('eca'+id).value)||0,
-    vitc:parseFloat(document.getElementById('evc'+id).value)||0,vitd:parseFloat(document.getElementById('evd'+id).value)||0,salt:parseFloat(document.getElementById('esl'+id).value)||0,
-    meal:document.getElementById('em'+id).value};
+  autoSaveEdit(id);
+  if (window._editOriginal) delete window._editOriginal[id];
   save(); editingId=null; renderRecord(); renderCalendar();
 }
 function deleteEntry(id){
@@ -3738,8 +3925,12 @@ function buildFullContext() {
   // ── プロフィール ──
   const sexLabel = profile.sex === 'male' ? '男性' : '女性';
   const actLabel = ({1.2:'座位中心',1.375:'軽い運動',1.55:'中程度',1.725:'激しい運動',1.9:'非常に激しい'})[String(profile.activityFactor)] || String(profile.activityFactor);
+  const todayDetail = getDetailedActivity(TODAY);
+  const actDesc = todayDetail
+    ? `詳細モード(NEAT:${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}, 本日${(todayDetail.steps||0)}歩/活動${todayDetail.activeCal}kcal, ${todayDetail.source==='google_health'?'Google Health実測':'歩数手入力'})`
+    : `活動係数:${actLabel}（ざっくり設定）`;
   lines.push('【プロフィール】');
-  lines.push(`性別:${sexLabel} 年齢:${profile.age} 身長:${profile.height}cm 体重:${profile.weight}kg 活動:${actLabel}`);
+  lines.push(`性別:${sexLabel} 年齢:${profile.age} 身長:${profile.height}cm 体重:${profile.weight}kg 活動:${actDesc}`);
 
   // ── 目標値 ──
   const g = goals();

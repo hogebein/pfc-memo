@@ -545,6 +545,9 @@
         </div>
       </div>
 
+      <!-- 🚶 その日の活動量（歩数・NEAT） -->
+      <div id="activityCard"></div>
+
       <!-- ⚠️ 記録の異常値チェック -->
       <div id="anomalyCard"></div>
 
@@ -816,14 +819,23 @@
         <div class="row"><div class="field"><label>体脂肪率 (%) — 任意</label><input type="number" id="pBF" placeholder="例: 20" min="3" max="60" step="0.1" onchange="saveProfile()"></div></div>
       </div>
       <div class="card">
-        <div class="sl">活動レベル（基本設定）</div>
-        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">Garmin連携時は歩数・運動データを優先</p>
+        <div class="sl">活動レベル（かんたん設定）</div>
+        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数の入力・Garmin/Google Health連携が無い日はこちらの係数を使用</p>
         <div class="toggle-group" id="activityToggle">
           <button class="toggle-btn active" data-val="1.2" onclick="setActivity(this)">座位中心</button>
           <button class="toggle-btn" data-val="1.375" onclick="setActivity(this)">軽い運動</button>
           <button class="toggle-btn" data-val="1.55" onclick="setActivity(this)">中程度運動</button>
           <button class="toggle-btn" data-val="1.725" onclick="setActivity(this)">活発な運動</button>
           <button class="toggle-btn" data-val="1.9" onclick="setActivity(this)">非常に活発</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="sl">NEATレベル（詳細設定・職種ベース）</div>
+        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数を入力した日、またはGarmin/Google Health連携がある日はこちらを使用。仕事や生活での基本的な活動量の差を反映します</p>
+        <div class="toggle-group" id="neatToggle">
+          <button class="toggle-btn" data-neat="low" onclick="setNeatTier(this)">座り仕事中心</button>
+          <button class="toggle-btn active" data-neat="mid" onclick="setNeatTier(this)">立ち仕事が多い</button>
+          <button class="toggle-btn" data-neat="high" onclick="setNeatTier(this)">肉体労働・重作業</button>
         </div>
       </div>
       <div class="card">
