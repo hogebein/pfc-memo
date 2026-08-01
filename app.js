@@ -25,24 +25,72 @@ const MEAL_META = {
 const MEALS_ORDER = ['朝食','昼食','夕食','間食'];
 
 // ── タンパク質吸収率 ──
-// 肉類・魚類・卵類: ×0.95（消化性高）/ その他: ×0.85
-const P_ABS_HIGH = 0.95;
-const P_ABS_LOW  = 0.85;
-const P_ABS_HIGH_PATTERN = /鶏|豚|牛|羊|合いびき|ひき肉|ベーコン|ハム|ソーセージ|ウインナー|サラミ|いわし|さば|さんま|あじ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|えび|いか|ほたて|あさり|カニ|かに|ぶり|たい|鯛|たら|タラ|さわら|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|ヴィーナス|ささみ|チキン|ポーク|ビーフ|シーフード|seafood|chicken|pork|beef|fish|salmon|tuna|egg|shrimp/i;
+// ① 食品カテゴリ別の消化率（真の消化率に近い値。豆類は十分な加熱・水さらし等で
+//    トリプシンインヒビター等の抗栄養素がほぼ失活している前提で高めの値を採用）
+const DIGEST_ANIMAL = 0.97; // 肉・魚・卵・乳（消化性が最も高い）
+const DIGEST_LEGUME = 0.90; // 豆類・大豆製品（十分に加熱・下処理された前提）
+const DIGEST_GRAIN  = 0.87; // 穀物
+const DIGEST_NUT    = 0.80; // ナッツ・種子（脂質・食物繊維に囲まれ消化率がやや低め）
+const DIGEST_OTHER  = 0.78; // 野菜など、上記に当てはまらないもの
 
+const P_ABS_ANIMAL_PATTERN = /鶏|豚|牛|羊|合いびき|ひき肉|ベーコン|ハム|ソーセージ|ウインナー|サラミ|いわし|さば|さんま|あじ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|えび|いか|ほたて|あさり|カニ|かに|ぶり|たい|鯛|たら|タラ|さわら|しじみ|ホッケ|ホタルイカ|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|ささみ|チキン|ポーク|ビーフ|シーフード|チーズ|ヨーグルト|牛乳|ミルク|ホエイ|プロテイン|seafood|chicken|pork|beef|fish|salmon|tuna|egg|shrimp|whey|cheese|milk|yogurt/i;
+const P_ABS_LEGUME_PATTERN = /豆腐|納豆|豆乳|大豆|えだまめ|枝豆|きな粉|小豆|ひよこ豆|レンズ豆|黒豆|そら豆|いんげん豆|インゲン豆|ミックスビーンズ|油揚げ|厚揚げ|がんもどき|湯葉|テンペ|白和え|けんちん|えんどう豆プロテイン/i;
+const P_ABS_GRAIN_PATTERN  = /米|ごはん|ご飯|パン|うどん|パスタ|そば|ラーメン|マカロニ|ビーフン|そうめん|ひやむぎ|中華麺|オートミール|小麦粉|とうもろこし|コーン|キヌア|もち|シリアル|ミューズリー|グラノーラ|白玉粉|上新粉/i;
+const P_ABS_NUT_PATTERN    = /アーモンド|くるみ|カシューナッツ|ピーナッツ|ナッツ|ごま|松の実|ひまわりの種|かぼちゃの種|フラックスシード|チアシード|ピーナッツバター/i;
+
+function foodDigestibility(e) {
+  if (P_ABS_ANIMAL_PATTERN.test(e.name)) return DIGEST_ANIMAL;
+  if (P_ABS_LEGUME_PATTERN.test(e.name)) return DIGEST_LEGUME;
+  if (P_ABS_GRAIN_PATTERN.test(e.name))  return DIGEST_GRAIN;
+  if (P_ABS_NUT_PATTERN.test(e.name))    return DIGEST_NUT;
+  return DIGEST_OTHER;
+}
+
+// ② WHO/FAO/UNU(2007) 成人必須アミノ酸参照パターン（gアミノ酸 / gたんぱく質）
+//    食事全体で消化されたアミノ酸をプールし、このパターンと比較して制限アミノ酸を判定する
+const AA_REFERENCE = { his:0.015, ile:0.030, leu:0.059, lys:0.045, met:0.022, thr:0.023, trp:0.006, val:0.039 };
+
+// ③ 食事（同じmeal区分）単位でアミノ酸を合算し、食べ合わせによる補完効果を反映する
+//    例: 白米（リジンが制限）＋ 豆類（メチオニンが制限だがリジンは豊富）を同じ食事で摂ると、
+//        単品ごとのスコアより食事全体のスコアが上がる（アミノ酸補完効果）
 function calcAbsorbedProtein(list) {
-  // aa.scoreがあればDIAAS近似値×吸収率、なければ従来のパターンマッチ
-  return list.reduce((sum, e) => {
-    const p = e.p || 0;
-    if (p <= 0) return sum;
-    // aa.score があれば DIAAS × 0.9（腸吸収係数）で高精度推定
-    if (e.aa && e.aa.score) {
-      return sum + p * Math.min(e.aa.score, 1.0) * 0.9;
+  const meals = {};
+  list.forEach(e => { (meals[e.meal || '_'] = meals[e.meal || '_'] || []).push(e); });
+
+  let totalAbsorbed = 0;
+  Object.values(meals).forEach(mealList => {
+    let digestedProtein = 0;
+    let hasAaData = false;
+    const aaSum = { his:0, ile:0, leu:0, lys:0, met:0, thr:0, trp:0, val:0 };
+
+    mealList.forEach(e => {
+      const p = e.p || 0;
+      if (p <= 0) return;
+      const digestedP = p * foodDigestibility(e);
+      digestedProtein += digestedP;
+      if (e.aa) {
+        hasAaData = true;
+        Object.keys(aaSum).forEach(k => { aaSum[k] += (e.aa[k] || 0) * digestedP; });
+      }
+    });
+
+    if (digestedProtein <= 0) return;
+
+    if (hasAaData) {
+      // 消化後アミノ酸プールを参照パターンと比較し、食事全体の制限アミノ酸スコアを算出
+      let mealScore = 1.0;
+      Object.keys(AA_REFERENCE).forEach(k => {
+        const supplyRatio = (aaSum[k] / digestedProtein) / AA_REFERENCE[k];
+        mealScore = Math.min(mealScore, supplyRatio);
+      });
+      totalAbsorbed += digestedProtein * Math.min(mealScore, 1.0);
+    } else {
+      // アミノ酸データが無い食品のみの食事は消化率のみ反映
+      totalAbsorbed += digestedProtein;
     }
-    // フォールバック: 従来の食品名パターン
-    const rate = P_ABS_HIGH_PATTERN.test(e.name) ? P_ABS_HIGH : P_ABS_LOW;
-    return sum + p * rate;
-  }, 0);
+  });
+
+  return totalAbsorbed;
 }
 
 
@@ -1232,8 +1280,8 @@ function renderBmrPreview() {
   const modeLabel = { normal:'通常', recomp:'低脂質リコンプ', custom:'カスタム' }[profile.goalMode || 'normal'];
   const detail = getDetailedActivity(currentDate);
   const modeDesc = detail
-    ? `${detail.source === 'google_health' ? 'Google Health実測' : '手入力歩数'}（${(detail.steps||0).toLocaleString()}歩・活動 ${detail.activeCal}kcal）＋NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」`
-    : `活動係数 ${profile.activityFactor || 1.2}（ざっくり設定）`;
+    ? `${detail.source === 'google_health' ? 'Google Health実測' : '手入力歩数'}（${(detail.steps||0).toLocaleString()}歩・活動 ${detail.activeCal}kcal）＋NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」＋DIT（本日の実際の食事構成から算出）`
+    : `活動係数 ${profile.activityFactor || 1.2}（ざっくり設定・DITは本日の食事構成に応じて補正）`;
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:6px">
       <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
@@ -1290,9 +1338,9 @@ function getAllFoods() {
 // ── 活動量の精緻化：NEAT（運動以外の日常活動）レベル ──
 // 職種・生活スタイルによる基礎的な活動量の差をBMRへの倍率として表現
 const NEAT_TIERS = {
-  low:  { label: '座り仕事中心', mult: 1.00 },
-  mid:  { label: '立ち仕事が多い', mult: 1.08 },
-  high: { label: '肉体労働・重作業', mult: 1.15 },
+  low:  { label: '座り仕事中心', mult: 1.10 },
+  mid:  { label: '立ち仕事が多い', mult: 1.20 },
+  high: { label: '肉体労働・重作業', mult: 1.30 },
 };
 // 歩数→消費カロリー推定（体重比例、約35kcal/1000歩@70kgが目安）
 function stepsToCal(steps, weightKg) {
@@ -1327,20 +1375,108 @@ function calcBMR() {
   else if (temp >= 30) bmr *= 1.025;
   return bmr;
 }
-function calcTDEE() {
+// DIT（食事誘発性熱産生）の基準率。活動係数（ざっくり設定）・詳細モードのどちらも
+// 「標準的な食事構成であればこの程度のDIT率」という前提を置いている。
+// 実際の食事のタンパク質比率が高い、あるいはアルコールを摂っている等でこの前提から
+// ズレる場合は、その差分だけをTDEEに加減算して補正する。
+// ※ 基準率は下のcalcActualDitと同じ加重式（P27%/C7%/F3%）を、
+//   「標準的な食事構成」の目安であるPFCバランス(P15%/F30%/C55%)に適用して算出したもの。
+//   ハードコードした固定値だと式を変えた時にズレるため、必ずこの式から導出する。
+const STANDARD_MACRO_SHARE = { p: 0.15, f: 0.30, c: 0.55 }; // カロリー構成比の目安
+const DIT_RATE = STANDARD_MACRO_SHARE.p * 0.27 + STANDARD_MACRO_SHARE.c * 0.07 + STANDARD_MACRO_SHARE.f * 0.03;
+// → 0.15×0.27 + 0.55×0.07 + 0.30×0.03 = 0.088（8.8%）
+
+// その日実際に記録された食事から、真のDIT（kcal）と基準からの差分を算出する
+// ※ タンパク質27% / 炭水化物7% / 脂質3%の消費率で計算し、P/F/C(4/9/4kcal換算)で
+//    説明しきれない残差カロリー（主にアルコール）にも15%のDITを見込む
+function calcActualDit(s) {
+  if (!s || !s.cal || s.cal <= 0) return null; // まだ何も記録が無い日は算出不可
+  const macroCal = (s.p||0)*4 + (s.f||0)*9 + (s.c||0)*4;
+  const ditFromMacro = (s.p||0)*4*0.27 + (s.c||0)*4*0.07 + (s.f||0)*9*0.03;
+  const residualRaw  = s.cal - macroCal;
+  const residualCal  = residualRaw > 5 ? residualRaw : 0; // 丸め誤差のノイズは無視
+  const ditFromResidual = residualCal * 0.15; // アルコール等、文献上10〜30%程度の中間値
+  return { kcal: ditFromMacro + ditFromResidual, residualCal };
+}
+
+// ── DITの時間経過モデル（Erlang-2 / Gamma(k=2, θ=1h)分布）──
+// 食後のDITは「消化・吸収」→「それに伴う代謝反応の亢進」という2段階の律速過程を経るため、
+// 単純な指数減衰ではなく、食後1時間前後にピークを迎えてから緩やかに減衰する形になる
+// （指数分布を2つ直列につないだ形＝Erlang-2は、この2段階過程の素朴なモデルとして
+//  薬物動態のBateman関数などでも使われる標準的な形）。
+//   PDF:      f(t) = t・e^(-t/θ) / θ²   （モード＝θ、θ=1hならピークは食後1時間）
+//   生存関数: S(t) = e^(-t/θ)・(1 + t/θ)  （時刻tの時点で"まだ発生していない"AUCの割合）
+// 5時間でAUCの約96%が完了し、指標熱量測定で一般的なDIT観測時間（5〜6時間）と整合する。
+const DIT_THETA_HOURS = 1;
+function ditSurvivalFraction(hoursElapsed) {
+  const t = Math.max(0, hoursElapsed);
+  return Math.exp(-t / DIT_THETA_HOURS) * (1 + t / DIT_THETA_HOURS);
+}
+function parseTimeToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (isNaN(h) || isNaN(min) || h > 24 || min > 59) return null;
+  return h * 60 + min;
+}
+// 食事時刻をもとに、「その日（0:00〜24:00）の会計区切りの中でまだ発生し終えていない」
+// DIT AUCの分を求める。これは睡眠がDITを抑制するという生理学的な主張ではなく、
+// アプリが全ての指標を日付単位で集計している以上、深夜に近い時間に食べた食事ほど
+// その日のうちに発生しきる分が少なくなる、という会計上の整理。
+// 就寝時刻は記録項目として保持するが、根拠が確立していないためこの補正には使用しない。
+// 時刻が未記録のエントリ（過去データ・後方互換）は対象外とし、常に全量をその日のDITとして計上する。
+function calcMealTimingUnrealized(list) {
+  let unrealized = 0;
+  list.forEach(e => {
+    const eatMinutes = parseTimeToMinutes(e.time);
+    if (eatMinutes == null) return;
+    const p = e.p || 0, f = e.f || 0, c = e.c || 0, cal = e.cal || 0;
+    const macroCal = p*4 + f*9 + c*4;
+    const entryDit = p*4*0.27 + c*4*0.07 + f*9*0.03;
+    const residual = Math.max(0, cal - macroCal);
+    const entryDitTotal = entryDit + residual*0.15;
+    if (entryDitTotal <= 0) return;
+    const hoursToMidnight = (24*60 - eatMinutes) / 60;
+    unrealized += entryDitTotal * ditSurvivalFraction(hoursToMidnight);
+  });
+  return unrealized;
+}
+
+function getTdeeBreakdown() {
   const bmr = calcBMR();
 
   // その日の歩数（Garmin/Google Health実測 または 手動入力）が分かれば、
   // NEATレベルで補正したBMR＋実際の活動カロリーで精緻に算出する
   const detail = getDetailedActivity(currentDate);
-  if (detail) {
-    const neatMult = (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).mult;
-    return Math.round(bmr * neatMult + detail.activeCal);
-  }
+  const base = detail
+    ? bmr * (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).mult + detail.activeCal
+    : bmr * (profile.activityFactor || 1.2);
 
-  // 情報が無い日は従来通りの活動係数（ざっくり設定）にフォールバック
-  const act = profile.activityFactor || 1.2;
-  return Math.round(bmr * act);
+  // その日実際に記録された食事構成から、基準DIT率とのズレを補正する
+  const list = getDayEntries(currentDate);
+  const s = sumEntries(list);
+  const actualDit = calcActualDit(s);
+  // 基準DITは「実際に食べた総カロリー(s.cal)」に対して標準的な食事構成なら生じるはずの量で比較する。
+  // baseを基準にすると「摂取量がbase(推定TDEE)からどれだけ多い/少ないか」まで混ざってしまい、
+  // 標準的な食事構成の人でも摂取量がbaseとズレているだけで補正がかかってしまうため、
+  // 必ず同じ母数(s.cal)で比較する。
+  const baselineDitKcal = actualDit ? s.cal * DIT_RATE : 0;
+  // 食事時刻が記録されていれば、日をまたいで発生しきらない分をさらに差し引く。
+  // ※ ただし上限を「基準DITの20%」に制限する。これは生理学的な根拠に基づく値ではなく、
+  //   深夜ギリギリに大きな食事を記録した場合に暦日の境界だけでTDEEが大きく変動してしまう
+  //   （数式上は正しくても実用上避けたい）モデル上の過大な変動を抑えるための実装上の安全弁。
+  const TIMING_CAP_RATE = 0.20;
+  const timingUnrealizedRaw = actualDit ? calcMealTimingUnrealized(list) : 0;
+  const timingCapKcal = actualDit ? baselineDitKcal * TIMING_CAP_RATE : 0;
+  const timingUnrealized = Math.min(timingUnrealizedRaw, timingCapKcal);
+  const ditDelta = actualDit ? (actualDit.kcal - baselineDitKcal - timingUnrealized) : 0;
+  const tdee = actualDit ? Math.round(base + ditDelta) : Math.round(base * (1 + DIT_RATE));
+
+  return { bmr, detail, base, actualDit, baselineDitKcal, timingUnrealized, timingUnrealizedRaw, ditDelta, tdee };
+}
+function calcTDEE() {
+  return getTdeeBreakdown().tdee;
 }
 function goals() {
   // カスタム目標が有効な場合はそちらを優先
@@ -1437,42 +1573,19 @@ function renderCalendar() {
 //                  通常計算されている炭水化物 * 4kcal から fiber * 4kcal を引いて fiber * 2kcal を足す
 //                  → 実質 fiber * 2kcal の節約
 function calcNetCalories(s) {
-  // ① DIT補正（安静時代謝で消費されるエネルギー）
-  const ditP = s.p * 4 * 0.27;   // タンパク質: 27%消費
-  const ditC = s.c * 4 * 0.07;   // 炭水化物: 7%消費
-  const ditF = s.f * 9 * 0.03;   // 脂質: 3%消費
-
-  // ② P/F/C(4/9/4kcal換算)で説明しきれない残差カロリー
-  //    表示カロリーは食品ごとの実測値(cal)を積み上げているため、アルコール（7kcal/g）や
-  //    有機酸など、P/F/Cの係数だけでは説明できない熱量が残差として現れる。
-  //    最も代表的なのはアルコールなので、この残差にはアルコール相当のDIT（文献上10〜30%程度、
-  //    ここでは中間的に15%を採用）を適用する。数値の丸め誤差によるノイズは無視する。
-  const macroCal    = s.p * 4 + s.f * 9 + s.c * 4;
-  const residualCalRaw = s.cal - macroCal;
-  const residualCal = residualCalRaw > 5 ? residualCalRaw : 0;
-  const ditAlcohol  = residualCal * 0.15;
-
-  const ditTotal = ditP + ditC + ditF + ditAlcohol;
-
-  // ③ 食物繊維NETカロリー補正
+  // 食物繊維NETカロリー補正
   // 食物繊維は不溶性は0kcal、可溶性は約2kcal/gで大腸で発酵
   // 標準成分表では炭水化物に含めて4kcal/gで計算されているため差分を補正
   const fiberAdj = (s.fiber || 0) * 2; // 4kcal→2kcalへの補正分（差引き2kcal節約/g）
 
   const grossCal  = s.cal;
-  const netCal    = Math.round(grossCal - ditTotal - fiberAdj);
-  const reduction = Math.round(ditTotal + fiberAdj);
+  const netCal    = Math.round(grossCal - fiberAdj);
+  const reduction = Math.round(fiberAdj);
 
   return {
     grossCal,
     netCal,
-    ditTotal:    Math.round(ditTotal),
-    ditP:        Math.round(ditP),
-    ditC:        Math.round(ditC),
-    ditF:        Math.round(ditF),
-    ditAlcohol:  Math.round(ditAlcohol),
-    residualCal: Math.round(residualCal),
-    fiberAdj:    Math.round(fiberAdj),
+    fiberAdj: Math.round(fiberAdj),
     reduction,
   };
 }
@@ -1503,31 +1616,15 @@ function renderNetCard(s) {
         <span style="color:var(--text-sub)">kcal</span>
         <span style="background:#e8f5e9;color:#2e7d32;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:600">▼ ${n.reduction} kcal 節約</span>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:5px;margin-bottom:8px">
-        <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
-          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">DIT（食事誘発性熱産生）</div>
-          <div style="font-weight:700;font-size:14px">▼ ${n.ditTotal} kcal</div>
-          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
-            P: ▼${n.ditP} / C: ▼${n.ditC} / F: ▼${n.ditF}${n.ditAlcohol > 0 ? ` / Alc: ▼${n.ditAlcohol}` : ''}
-          </div>
+      <div style="background:var(--bg);border-radius:8px;padding:7px 10px;margin-bottom:8px;max-width:220px">
+        <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">食物繊維NET補正</div>
+        <div style="font-weight:700;font-size:14px">▼ ${n.fiberAdj} kcal</div>
+        <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
+          繊維 ${r1(s.fiber||0)}g × 2 kcal節約/g
         </div>
-        <div style="background:var(--bg);border-radius:8px;padding:7px 10px">
-          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">食物繊維NET補正</div>
-          <div style="font-weight:700;font-size:14px">▼ ${n.fiberAdj} kcal</div>
-          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
-            繊維 ${r1(s.fiber||0)}g × 2 kcal節約/g
-          </div>
-        </div>
-        ${n.residualCal > 0 ? `<div style="background:var(--bg);border-radius:8px;padding:7px 10px">
-          <div style="color:var(--text-sub);font-size:10px;margin-bottom:3px">アルコール等の残差カロリー</div>
-          <div style="font-weight:700;font-size:14px">▼ ${n.ditAlcohol} kcal</div>
-          <div style="font-size:10px;color:var(--text-sub);margin-top:3px;line-height:1.6">
-            P/F/Cで説明できない${n.residualCal}kcal（主にアルコール由来）× 15%
-          </div>
-        </div>` : ''}
       </div>
       <div style="font-size:10px;color:var(--text-sub);line-height:1.6;border-top:1px solid var(--border);padding-top:6px">
-        DIT: P×27% / C×7% / F×3%、アルコール等の残差カロリーは×15%を消化に消費と推定。食物繊維は腸内発酵で約2kcal/g（表示値4kcal/gとの差を補正）。あくまで推定値です。
+        食物繊維は腸内発酵で約2kcal/g（表示値4kcal/gとの差を補正）。DIT（食事誘発性熱産生）は摂取側からの控除ではなく、本日のTDEE（推定消費カロリー）側に加算する形で反映しています。あくまで推定値です。
       </div>
     </div>`;
 }
@@ -1661,11 +1758,22 @@ function setDailySteps(date, val) {
   saveDailyActivity();
   renderRecord();
 }
+function setDailyBedtime(date, val) {
+  dailyActivity[date] = { ...(dailyActivity[date]||{}), bedtime: val || null };
+  saveDailyActivity();
+  renderRecord();
+}
 function renderActivityCard() {
   const el = document.getElementById('activityCard');
   if (!el) return;
   const gh = ghData[currentDate];
   const neatLabel = (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).label;
+  const bedtimeVal = (dailyActivity[currentDate] && dailyActivity[currentDate].bedtime) || '';
+  const bedtimeRow = `
+    <div class="row" style="align-items:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
+      <div class="field" style="flex:1"><label>🛏 就寝時刻</label><input type="time" value="${bedtimeVal}" onchange="setDailyBedtime('${currentDate}', this.value)"></div>
+      <div style="font-size:10px;color:var(--text-sub);padding-bottom:9px;flex:1.6">記録用の項目です（睡眠がDITを抑制するという根拠が十分でないため、現時点ではTDEE計算には使用していません）</div>
+    </div>`;
 
   if (gh && gh.activeCalories > 0) {
     // Garmin/Google Health連携で実測データがある日はそちらを優先表示（編集不可）
@@ -1678,6 +1786,7 @@ function renderActivityCard() {
         <div style="font-size:11px;color:var(--text-sub);margin-top:4px">
           歩数 ${(gh.steps||0).toLocaleString()}歩　活動カロリー ${gh.activeCalories}kcal　NEAT「${neatLabel}」を適用
         </div>
+        ${bedtimeRow}
       </div>`;
     return;
   }
@@ -1693,6 +1802,7 @@ function renderActivityCard() {
       <div style="font-size:10px;color:var(--text-sub);margin-top:6px">
         Garmin/Google Health連携が無い日でも、歩数を入れるだけでその日のTDEEがより正確になります。未入力の場合は活動係数（ざっくり設定）が使われます。
       </div>
+      ${bedtimeRow}
     </div>`;
 }
 
@@ -1744,11 +1854,15 @@ function renderRecord() {
     </div>`;
 
   // ── エネルギー内訳 ──
-  const bmr_disp = ri(calcBMR());
-  const actDetail = getDetailedActivity(currentDate);
+  const tb = getTdeeBreakdown();
+  const bmr_disp = ri(tb.bmr);
+  const actDetail = tb.detail;
+  const ditDesc = tb.actualDit
+    ? `DIT ${tb.ditDelta >= 0 ? '+' : ''}${ri(tb.ditDelta)}kcal（本日の食事構成${tb.timingUnrealized >= 1 ? '・摂取時刻' : ''}から算出）`
+    : `DIT基準${Math.round(DIT_RATE*100)}%見込み（まだ記録なし）`;
   const actDesc = actDetail
-    ? `× NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」+ 活動 ${actDetail.activeCal}kcal（${actDetail.source==='google_health'?'Google Health実測':'歩数入力'} ${(actDetail.steps||0).toLocaleString()}歩）`
-    : `× 活動係数 ${profile.activityFactor || 1.2}`;
+    ? `× NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」+ 活動 ${actDetail.activeCal}kcal（${actDetail.source==='google_health'?'Google Health実測':'歩数入力'} ${(actDetail.steps||0).toLocaleString()}歩）+ ${ditDesc}`
+    : `× 活動係数 ${profile.activityFactor || 1.2} + ${ditDesc}`;
   const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
   const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
@@ -1825,7 +1939,7 @@ function renderRecord() {
             <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01" onchange="autoSaveEdit(${e.id})"></div></div>
-            <div class="row" style="margin-bottom:0"><div class="field"><label>タイミング</label><select id="em${e.id}" onchange="autoSaveEdit(${e.id})">${MEALS_ORDER.map(m=>`<option${e.meal===m?' selected':''}>${m}</option>`).join('')}</select></div>
+            <div class="row" style="margin-bottom:0"><div class="field"><label>タイミング</label><select id="em${e.id}" onchange="autoSaveEdit(${e.id})">${MEALS_ORDER.map(m=>`<option${e.meal===m?' selected':''}>${m}</option>`).join('')}</select></div><div class="field" style="flex:1"><label>摂取時刻</label><input type="time" id="et${e.id}" value="${e.time||''}" onchange="autoSaveEdit(${e.id})"></div>
             <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="height:32px;margin-top:auto">保存</button>
             <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="height:32px;margin-top:auto">取消</button></div>
           </div>`;
@@ -1840,10 +1954,13 @@ function renderRecord() {
     }
     if (isAdding) {
       html += `<div class="add-panel" id="addPanel_${meal}">
-        <div class="search-wrap">
-          <input type="text" id="addSearch_${meal}" placeholder="いわし、chicken, egg…" oninput="onAddSearch(this.value,'${meal}')" autocomplete="off">
-          <div class="search-icon-box" id="addSearchIcon_${meal}"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div>
-          <div class="spin-box" id="addSpinner_${meal}"><div class="spinner"></div></div>
+        <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:9px">
+          <div class="search-wrap" style="flex:1;margin-bottom:0">
+            <input type="text" id="addSearch_${meal}" placeholder="いわし、chicken, egg…" oninput="onAddSearch(this.value,'${meal}')" autocomplete="off">
+            <div class="search-icon-box" id="addSearchIcon_${meal}"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div>
+            <div class="spin-box" id="addSpinner_${meal}"><div class="spinner"></div></div>
+          </div>
+          <button type="button" class="btn btn-sm" onclick="toggleAddPanel('${meal}')" aria-label="閉じる" style="height:38px;padding:0 13px;flex-shrink:0">✕</button>
         </div>
         <div class="results-box" id="addResultsBox_${meal}"></div>
         <div class="row" style="margin-bottom:6px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="addName_${meal}" placeholder="食品名"></div><div class="field" style="flex:1.4"><label style="display:flex;align-items:center;justify-content:space-between">量 <span style="display:flex;gap:2px" id="unitToggle_${meal}"><button type="button" onclick="setAmtUnit('${meal}','g')" id="unitG_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer">g</button><button type="button" onclick="setAmtUnit('${meal}','serving')" id="unitS_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--border);background:var(--bg);color:var(--text-sub);cursor:pointer">人前</button></span></label><input type="number" id="addAmt_${meal}" value="100" min="0.1" step="0.1" oninput="recalcAdd('${meal}')" style="width:100%"></div></div>
@@ -1939,6 +2056,7 @@ function selectAddResult(i, src, meal) {
     id: Date.now() + Math.random(),
     date: currentDate,
     meal,
+    time:    nowTimeStr(),
     name:    f.name,
     amount:  amt,
     cal:     r1((f.cal||0)*r),
@@ -1997,6 +2115,7 @@ function addSeasoning(key) {
     id: Date.now() + Math.random(),
     date: currentDate,
     meal,
+    time:    nowTimeStr(),
     name:    s.name,
     amount:  s.amount,
     cal:     s.cal,
@@ -2257,13 +2376,17 @@ function addOrMergeEntry(newEntry, excludeId) {
   return { entry: newEntry, merged: false };
 }
 
+function nowTimeStr() {
+  const d = new Date();
+  return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+}
 function gv(id) { return parseFloat(document.getElementById(id).value)||0; }
 function addEntry(meal) {
   const nameEl=document.getElementById('addName_'+meal);
   const name=nameEl?nameEl.value.trim():'';
   const msg=document.getElementById('addMsg_'+meal);
   if(!name){if(msg){msg.className='status-msg status-err';msg.textContent='食品名を入力してください'}return}
-  const newEntry = {id:Date.now(),date:currentDate,name,meal,
+  const newEntry = {id:Date.now(),date:currentDate,name,meal,time:nowTimeStr(),
     cal:gv('addCal_'+meal),p:gv('addP_'+meal),f:gv('addF_'+meal),c:gv('addC_'+meal),
     amount: (() => {
       const unit = window._amtUnit?.[meal] || 'g';
@@ -2283,7 +2406,27 @@ function addEntry(meal) {
   save(); renderRecord(); renderCalendar();
   setTimeout(()=>{const m=document.getElementById('addMsg_'+meal);if(m){m.className='status-msg status-ok';m.textContent=merged?`「${name}」は既に記録済みのため数量を合算しました`:`「${name}」を追加しました`;setTimeout(()=>{if(m)m.textContent=''},2200)}},30);
 }
-function toggleAddPanel(meal){activeAddMeal=activeAddMeal===meal?null:meal;editingId=null;renderRecord()}
+function toggleAddPanel(meal) {
+  const wasOpen = activeAddMeal === meal;
+  activeAddMeal = wasOpen ? null : meal;
+  editingId = null;
+  if (!wasOpen) {
+    // 開いた: 端末の「戻る」操作（スワイプ／戻るボタン）でこのパネルを閉じられるよう履歴を1つ積む
+    try { history.pushState({ pfcOverlay: 'addPanel' }, ''); } catch(e) {}
+  } else if (window.history.state && window.history.state.pfcOverlay === 'addPanel') {
+    // ✕ボタン等で明示的に閉じた: 積んでおいた履歴を back() で消費する
+    // （実際のクローズ処理は popstate ハンドラ側で行う。二重描画を避けるためここでは return）
+    try { history.back(); return; } catch(e) {}
+  }
+  renderRecord();
+}
+// 検索パネルを開いている状態で端末の「戻る」操作をした場合、アプリ自体を閉じずにパネルだけ閉じる
+window.addEventListener('popstate', () => {
+  if (activeAddMeal) {
+    activeAddMeal = null;
+    renderRecord();
+  }
+});
 function startEdit(id){
   editingId=id;
   window._editOriginal = window._editOriginal || {};
@@ -2344,6 +2487,7 @@ function autoSaveEdit(id) {
     vitd:    parseFloat(document.getElementById('evd'+id).value) || 0,
     salt:    parseFloat(document.getElementById('esl'+id).value) || 0,
     meal:    document.getElementById('em'+id).value,
+    time:    document.getElementById('et'+id)?.value || entries[idx].time,
   };
   saveDebounced();
 }
@@ -4023,6 +4167,7 @@ function executeAiCommands(commands, backupLabel) {
           const aiEntry = {
             id: Date.now() + Math.random(),
             date, meal,
+            time:    item.time || nowTimeStr(),
             name:    item.name,
             amount:  parseFloat(item.amount)  || 100,
             cal:     parseFloat(item.cal)     || 0,
@@ -4080,6 +4225,7 @@ function executeAiCommands(commands, backupLabel) {
           const aiEntry = {
             id: Date.now() + Math.random(),
             date, meal,
+            time:    item.time || nowTimeStr(),
             name:    item.name,
             amount:  parseFloat(item.amount)  || 100,
             cal:     parseFloat(item.cal)     || 0,
