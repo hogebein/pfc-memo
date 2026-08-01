@@ -1128,7 +1128,14 @@ try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(
 try { dailyActivity = JSON.parse(localStorage.getItem('pfcDailyActivity') || '{}'); } catch(e) {}
 try { const p = JSON.parse(localStorage.getItem('pfcProfile') || 'null'); if(p) profile = {...profile, ...p}; } catch(e) {}
 
-function toDateStr(d) { return d.toISOString().split('T')[0]; }
+function toDateStr(d) {
+  // ローカルの年月日で組み立てる（toISOString()はUTC変換されるため、
+  // 日本のような正のUTCオフセットのタイムゾーンでは日付が1日ずれるバグの原因になっていた）
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function fmtDate(s) { const d = new Date(s+'T00:00:00'); return d.toLocaleDateString('ja-JP',{month:'long',day:'numeric',weekday:'short'}); }
 function isToday(s) { return s === toDateStr(new Date()); }
 function r1(n) { return Math.round(n*10)/10; }
@@ -1927,6 +1934,11 @@ function renderRecord() {
       <button class="meal-add-btn${isAdding?' active-add':''}" onclick="toggleAddPanel('${meal}')">${isAdding?'✕ 閉じる':'＋ 追加'}</button>
     </div>`;
     if (items.length) {
+      html += `<div style="display:flex;align-items:center;gap:6px;padding:0 12px 8px;font-size:11px">
+        <span style="color:var(--text-sub)">⏱ 摂取時刻を一括設定</span>
+        <input type="time" id="mealTimeSet_${meal}" style="padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
+        <button type="button" class="btn btn-sm" style="padding:3px 10px;font-size:11px" onclick="setMealTime('${meal}', document.getElementById('mealTimeSet_${meal}').value)">反映</button>
+      </div>`;
       html += `<div class="meal-items">`;
       items.forEach(e => {
         if (editingId === e.id) {
@@ -2073,7 +2085,7 @@ function selectAddResult(i, src, meal) {
     aa:      f.aa || null,
   };
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
-  const { entry, merged } = addOrMergeEntry(newEntry);
+  const { merged } = addOrMergeEntry(newEntry);
   save();
 
   box.style.display='none';
@@ -2081,17 +2093,9 @@ function selectAddResult(i, src, meal) {
   const cont = document.getElementById('amtQuickPick_'+meal);
   if (cont) cont.style.display = 'none';
 
-  // 追加した項目をすぐインライン編集できるように開く（量や栄養素の微調整用）
-  editingId = entry.id;
-  window._editOriginal = window._editOriginal || {};
-  window._editOriginal[entry.id] = {...entry};
   renderRecord();
   renderCalendar();
-  showToast(merged ? `✅「${f.name}」は既存の記録に合算しました。量を編集できます` : `✅「${f.name}」を登録しました。量を編集できます`);
-  setTimeout(() => {
-    const el = document.getElementById('editForm_' + entry.id);
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, 60);
+  showToast(merged ? `✅「${f.name}」は既存の記録に合算しました` : `✅「${f.name}」を登録しました`);
 }
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
@@ -2376,6 +2380,15 @@ function addOrMergeEntry(newEntry, excludeId) {
   return { entry: newEntry, merged: false };
 }
 
+function setMealTime(meal, timeVal) {
+  if (!timeVal) { showToast('時刻を選択してください'); return; }
+  const list = getDayEntries(currentDate).filter(e => e.meal === meal);
+  if (!list.length) return;
+  list.forEach(e => { e.time = timeVal; });
+  save();
+  renderRecord();
+  showToast(`✅ ${meal}（${list.length}件）の摂取時刻を${timeVal}に設定しました`);
+}
 function nowTimeStr() {
   const d = new Date();
   return String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
