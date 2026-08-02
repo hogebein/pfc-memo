@@ -1159,6 +1159,10 @@ const SEASONING_MASTER = {
   'にんにく小さじ1':       { name:'にんにく',          amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6, vitd:0, salt:0   },
   '白だし小さじ1':         { name:'白だし',            amount:6,  cal:7,   p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.0 },
   'カレー粉小さじ1':       { name:'カレー粉',          amount:2,  cal:7,   p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5,  vitc:0,   vitd:0, salt:0   },
+  '酢小さじ1':             { name:'酢（穀物酢）',       amount:5,  cal:1,   p:0,   f:0,   c:0.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  '砂糖小さじ1':           { name:'砂糖（上白糖）',     amount:3,  cal:12,  p:0,   f:0,   c:3.0, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
+  'ウスターソース小さじ1': { name:'ウスターソース',    amount:6,  cal:7,   p:0.1, f:0,   c:1.6, fiber:0,   iron:0.1, calcium:4,  vitc:0,   vitd:0, salt:0.5 },
+  'ケチャップ小さじ1':     { name:'ケチャップ',         amount:5,  cal:6,   p:0.1, f:0,   c:1.4, fiber:0.1, iron:0,   calcium:1,  vitc:0.5, vitd:0, salt:0.2 },
 };
 
 let _seasoningMsgTimer = null;
@@ -1515,6 +1519,7 @@ window.addEventListener('popstate', () => {
 });
 function startEdit(id){
   editingId=id;
+  activeAddMeal=null; // 検索・食品追加パネルが開いていれば閉じる（同時に開かない）
   window._editOriginal = window._editOriginal || {};
   const src = entries.find(e => e.id === id);
   if (src) window._editOriginal[id] = {...src};
@@ -2498,6 +2503,12 @@ function goalBar(label, actual, target, unit, color, reverse=false) {
   const pct=Math.min(actual/target*100,100), over=actual>target;
   const col=reverse?(over?'#c0392b':color):(over?'#c0392b':color);
   return `<div class="goal-bar-wrap"><div class="goal-bar-label"><span>${label}</span><span style="font-weight:500;color:${over&&!reverse?'#c0392b':'var(--text)'}">${actual}${unit}<span style="font-weight:400;color:var(--text-sub)"> / ${target}${unit}</span></span></div><div class="goal-bar-track"><div class="goal-bar-fill" style="width:${pct}%;background:${col}"></div></div><div style="font-size:10px;text-align:right;margin-top:2px;color:${over&&!reverse?'#c0392b':'var(--text-sub)'}"> ${over?`+${r1(actual-target)}${unit} オーバー`:`あと ${r1(target-actual)}${unit}`}</div></div>`;
+}
+function setPeriod(period, el) {
+  statsPeriod = period;
+  document.querySelectorAll('.period-tab').forEach(b => b.classList.remove('active'));
+  if (el) el.classList.add('active');
+  renderStats();
 }
 function renderStats() {
   const g=goals(), avg=getAvg(statsPeriod), s=avg||{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0};
