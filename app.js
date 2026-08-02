@@ -727,8 +727,10 @@ function detectAnomalies(date) {
     // ※ P/F/Cだけで説明しきれない分（記録カロリー > 計算値）はアルコール・糖アルコール・
     //    有機酸など正当な理由がありうるため許容する。逆に計算値が記録カロリーを大きく超える
     //    のは物理的にありえない（入力ミスの可能性が高い）ため、その方向のみ検出する。
+    // ※ 野菜など低カロリー食品は、成分表の丸め等による数kcalの差でも%では大きく出てしまうため、
+    //    相対的な閾値（15%超）に加えて絶対値の閾値（20kcal超）も満たす場合のみ検出する。
     const calcCal = (e.p||0)*4 + (e.f||0)*9 + (e.c||0)*4;
-    if (cal > 50 && calcCal > cal * 1.15) {
+    if (cal > 50 && calcCal > cal * 1.15 && (calcCal - cal) > 20) {
       issues.push({ sev: 'mid', msg: `「${e.name}」: P・F・Cから計算した値(${ri(calcCal)}kcal)が記録カロリー(${ri(cal)}kcal)を超えています。数値の入力ミスの可能性があります` });
     }
     // 単品として極端な量
@@ -995,7 +997,8 @@ function renderRecord() {
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
           html += `<div class="edit-form" id="editForm_${e.id}">
             <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="1" oninput="recalcEdit(${e.id})"></div></div>
-            <div class="row" style="margin-bottom:5px;gap:4px">${[2,1.5,0.5,0.25].map(m=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="multiplyEditAmount(${e.id},${m})">×${m}</button>`).join('')}</div>
+            <div class="row" style="margin-bottom:2px;gap:8px;align-items:center"><input type="range" id="easlider${e.id}" min="0" max="${Math.max(200, r1(e.amount*3))}" step="5" value="${e.amount}" style="flex:1" oninput="syncAmountFromSlider(${e.id}, this.value)"></div>
+            <div class="row" style="margin-bottom:5px;gap:4px">${[-50,-10,10,50].map(d=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="nudgeEditAmount(${e.id},${d})">${d>0?'+':''}${d}g</button>`).join('')}</div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01" onchange="autoSaveEdit(${e.id})"></div></div>
@@ -1484,16 +1487,23 @@ function addEntry(meal) {
 }
 function toggleAddPanel(meal) {
   const wasOpen = activeAddMeal === meal;
-  activeAddMeal = wasOpen ? null : meal;
-  editingId = null;
-  if (!wasOpen) {
-    // 開いた: 端末の「戻る」操作（スワイプ／戻るボタン）でこのパネルを閉じられるよう履歴を1つ積む
-    try { history.pushState({ pfcOverlay: 'addPanel' }, ''); } catch(e) {}
-  } else if (window.history.state && window.history.state.pfcOverlay === 'addPanel') {
-    // ✕ボタン等で明示的に閉じた: 積んでおいた履歴を back() で消費する
-    // （実際のクローズ処理は popstate ハンドラ側で行う。二重描画を避けるためここでは return）
-    try { history.back(); return; } catch(e) {}
+  if (wasOpen) {
+    // 閉じる: 履歴を積んであればback()で消費し、実際のクローズ処理はpopstateハンドラに任せる
+    // （activeAddMealをここで先にnullにしてしまうと、popstateハンドラの判定が
+    //  常にfalseになり再描画が起きなくなるため、状態変更は必ず描画とセットで行う）
+    if (window.history.state && window.history.state.pfcOverlay === 'addPanel') {
+      try { history.back(); return; } catch(e) {}
+    }
+    activeAddMeal = null;
+    editingId = null;
+    renderRecord();
+    return;
   }
+  // 開く
+  activeAddMeal = meal;
+  editingId = null;
+  // 端末の「戻る」操作（スワイプ／戻るボタン）でこのパネルを閉じられるよう履歴を1つ積む
+  try { history.pushState({ pfcOverlay: 'addPanel' }, ''); } catch(e) {}
   renderRecord();
 }
 // 検索パネルを開いている状態で端末の「戻る」操作をした場合、アプリ自体を閉じずにパネルだけ閉じる
@@ -1510,12 +1520,17 @@ function startEdit(id){
   if (src) window._editOriginal[id] = {...src};
   renderRecord();
 }
-function multiplyEditAmount(id, factor) {
+function syncAmountFromSlider(id, val) {
+  const amtEl = document.getElementById('ea'+id);
+  if (!amtEl) return;
+  amtEl.value = val;
+  recalcEdit(id);
+}
+function nudgeEditAmount(id, delta) {
   const amtEl = document.getElementById('ea'+id);
   if (!amtEl) return;
   const cur = parseFloat(amtEl.value) || 0;
-  if (cur <= 0) return;
-  amtEl.value = r1(cur * factor);
+  amtEl.value = Math.max(1, r1(cur + delta));
   recalcEdit(id);
 }
 function recalcEdit(id) {
@@ -1523,6 +1538,11 @@ function recalcEdit(id) {
   if (!base) return;
   const amt = parseFloat(document.getElementById('ea'+id).value) || 0;
   if (amt <= 0) return;
+  const sliderEl = document.getElementById('easlider'+id);
+  if (sliderEl) {
+    if (amt > parseFloat(sliderEl.max)) sliderEl.max = amt; // 大きい値を直接入力された場合はスライダーの上限を追従させる
+    sliderEl.value = amt;
+  }
   const r = amt / (base.per || 100);
   const set = (elId, val, dec) => {
     const el = document.getElementById(elId+id);
