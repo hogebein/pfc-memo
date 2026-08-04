@@ -6,12 +6,18 @@ function normalize(s) {
 }
 
 // ── ミクロ栄養素目標 ──
+// goal: 推奨量/目安量（RDA/AI）　ul: 耐容上限量（日本人の食事摂取基準 2020年版、成人の目安値）
+// ビタミンKはUL未設定（高摂取での健康被害の報告が無いため、日本人の食事摂取基準でも上限は定められていない）
 const MICRO_GOALS = {
   fiber:   { label:'食物繊維', unit:'g',  goal:21,   color:'#8bc34a' },
   iron:    { label:'鉄',       unit:'mg', goal:7,    color:'#e91e63' },
   calcium: { label:'Ca',       unit:'mg', goal:700,  color:'#03a9f4' },
   vitc:    { label:'VitC',     unit:'mg', goal:100,  color:'#ff9800' },
-  vitd:    { label:'VitD',     unit:'μg', goal:8.5,  color:'#ffd600' },
+  vitd:    { label:'VitD',     unit:'μg', goal:8.5,  color:'#ffd600', ul:100 },
+  vita:    { label:'VitA',     unit:'μg', goal:850,  color:'#ff7043', ul:2700 },
+  vite:    { label:'VitE',     unit:'mg', goal:6.5,  color:'#ab47bc', ul:800 },
+  vitk:    { label:'VitK',     unit:'μg', goal:150,  color:'#26a69a' },
+  iodine:  { label:'ヨウ素',   unit:'μg', goal:130,  color:'#5c6bc0', ul:3000 },
   salt:    { label:'塩分',     unit:'g',  goal:7.5,  color:'#9e9e9e', reverse:true },
 };
 const MICRO_KEYS = Object.keys(MICRO_GOALS);
@@ -103,7 +109,7 @@ LOCAL_DB.forEach(f => {
 // ── State ──
 let entries = [], customFoods = [], comboFoods = [], exercises = [];
 let userWeight = 65, statsPeriod = 'today', chartMode = 'raw';
-let calChart = null, pfcChart = null;
+let calChart = null, pfcChart = null, vitdStockChart = null;
 let searchTimer = null, comboTimer = null, apiAbort = null;
 let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen = false;
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
@@ -532,7 +538,8 @@ function sumEntries(list) {
     cal:a.cal+e.cal, p:a.p+e.p, f:a.f+e.f, c:a.c+e.c,
     fiber:a.fiber+(e.fiber||0), iron:a.iron+(e.iron||0), calcium:a.calcium+(e.calcium||0),
     vitc:a.vitc+(e.vitc||0), vitd:a.vitd+(e.vitd||0), salt:a.salt+(e.salt||0),
-  }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+    vita:a.vita+(e.vita||0), vite:a.vite+(e.vite||0), vitk:a.vitk+(e.vitk||0), iodine:a.iodine+(e.iodine||0),
+  }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0,vita:0,vite:0,vitk:0,iodine:0});
 }
 function getDayEntries(d) { return entries.filter(e => e.date === d); }
 
@@ -1131,6 +1138,10 @@ function selectAddResult(i, src, meal) {
     calcium: r1((f.calcium||0)*r),
     vitc:    r1((f.vitc||0)*r),
     vitd:    r2((f.vitd||0)*r),
+    vita:    r1((f.vita||0)*r),
+    vite:    r2((f.vite||0)*r),
+    vitk:    r1((f.vitk||0)*r),
+    iodine:  r1((f.iodine||0)*r),
     salt:    r2((f.salt||0)*r),
     fa:      f.fa || null,
     aa:      f.aa || null,
@@ -2490,13 +2501,61 @@ function renderAminoSection() {
 }
 
 
+// ── 耐容上限量（UL）超過チェック ──
+// 期間平均ではなく「その期間内に1日でも上限を超えた日があったか」を見る。
+// 平均で見ると、例えば1日だけ大量に摂取した日があっても他の日で薄まってしまい
+// 見逃してしまうため、ULは日ごとの安全域の指標として日単位でチェックする。
+function checkUlExceedances(period) {
+  const today = new Date(); today.setHours(0,0,0,0);
+  const days = period==='today' ? [toDateStr(new Date())]
+    : Array.from({length:period==='7d'?7:period==='30d'?30:90}, (_,i) => { const d=new Date(today); d.setDate(d.getDate()-i); return toDateStr(d); });
+
+  const results = [];
+  Object.keys(MICRO_GOALS).forEach(key => {
+    const g = MICRO_GOALS[key];
+    if (!g.ul) return; // ULが設定されていない栄養素（ビタミンK等）はチェック対象外
+    const overDays = [];
+    days.forEach(d => {
+      const list = getDayEntries(d);
+      if (!list.length) return;
+      const val = sumEntries(list)[key] || 0;
+      if (val > g.ul) overDays.push({ date: d, val: r1(val) });
+    });
+    if (overDays.length) {
+      results.push({ key, label: g.label, unit: g.unit, ul: g.ul, overDays, maxVal: Math.max(...overDays.map(o=>o.val)) });
+    }
+  });
+  return results;
+}
+function renderUlWarning() {
+  const el = document.getElementById('ulWarning');
+  if (!el) return;
+  const issues = checkUlExceedances(statsPeriod);
+  if (!issues.length) { el.innerHTML = ''; return; }
+  el.innerHTML = `
+    <div class="card" style="padding:11px 13px;margin-bottom:12px;border:1.5px solid #f0ad4e55;background:linear-gradient(135deg,#fff8ec,#fffdf9)">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;font-weight:700;font-size:13px;color:#a06a1a">
+        ⚠️ 耐容上限量を超えた日があります
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${issues.map(i => `
+          <div style="font-size:12px;line-height:1.6;color:#4b3a1a">
+            <b>${i.label}</b>: ${i.overDays.length}日間で上限（${i.ul}${i.unit}）を超過（最大 ${i.maxVal}${i.unit}）
+            <div style="font-size:10px;color:#6b5638">${i.overDays.map(o=>o.date.slice(5)).join('、')}</div>
+          </div>`).join('')}
+      </div>
+      <div style="font-size:10px;color:#6b5638;margin-top:8px;border-top:1px solid #f0ad4e33;padding-top:6px">
+        耐容上限量は日本人の食事摂取基準(2020年版)の成人目安値です。サプリメントの重複摂取や、海藻類（ヨウ素）の多量摂取などが主な原因になりやすい項目です。
+      </div>
+    </div>`;
+}
 function getAvg(period) {
   const today=new Date(); today.setHours(0,0,0,0);
   const days=period==='today'?[toDateStr(new Date())]:Array.from({length:period==='7d'?7:period==='30d'?30:90},(_,i)=>{const d=new Date(today);d.setDate(d.getDate()-i);return toDateStr(d)});
   const wd=days.filter(d=>getDayEntries(d).length>0); if(!wd.length) return null;
   const tot=wd.map(d=>sumEntries(getDayEntries(d))); const n=wd.length;
   const avg={days:n};
-  ['cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
+  ['cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
   return avg;
 }
 function goalBar(label, actual, target, unit, color, reverse=false) {
@@ -2511,7 +2570,8 @@ function setPeriod(period, el) {
   renderStats();
 }
 function renderStats() {
-  const g=goals(), avg=getAvg(statsPeriod), s=avg||{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0};
+  renderUlWarning();
+  const g=goals(), avg=getAvg(statsPeriod), s=avg||{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,vita:0,vite:0,vitk:0,iodine:0,salt:0};
   // 統計期間の吸収タンパク質（平均）
   const statsDays = (() => {
     const now = new Date(); const days = statsPeriod==='today'?1:statsPeriod==='7d'?7:statsPeriod==='30d'?30:90;
@@ -2535,9 +2595,84 @@ function renderStats() {
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:8px">PFC・カロリー</div>
     ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin:12px 0 8px">ビタミン・ミネラル・食物繊維</div>
-    ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
+    ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('ビタミンA',ri(s.vita),850,'μg','#ff7043')}${goalBar('ビタミンE',r1(s.vite),6.5,'mg','#ab47bc')}${goalBar('ビタミンK',ri(s.vitk),150,'μg','#26a69a')}${goalBar('ヨウ素',ri(s.iodine),130,'μg','#5c6bc0')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
   ` : `<div style="text-align:center;padding:2rem;color:var(--text-sub);font-size:13px">この期間の記録がありません</div>`;
   renderCharts();
+  renderVitDStock();
+}
+// ── ビタミンD ストック（体内蓄積）推定 ──
+// 血中の主要な貯蔵型である25(OH)Dの半減期（文献上おおよそ3週間/21日）に基づく
+// 単一コンパートメントの指数減衰モデル。
+//   Stock(day) = Stock(day-1) × 減衰率 + その日の摂取量
+// 減衰率は半減期21日から算出（e^(-ln2/21) ≈ 0.9675、1日あたり約3.25%減少）。
+//
+// 重要な限界（UIにも明記する）:
+//   ・日照による皮膚合成を一切考慮していない（ビタミンDの主要な供給源は
+//     食事より日光であることが多く、屋外活動が多い人はここでの推定より
+//     実際の体内量は多いはずである）
+//   ・絶対的な血中濃度ではなく、記録開始日を「目安量を続けていた場合の
+//     定常状態」とみなした相対的な蓄積トレンドである（採血の代替にはならない）
+const VITD_HALFLIFE_DAYS = 21;
+const VITD_DECAY = Math.pow(0.5, 1 / VITD_HALFLIFE_DAYS);
+function calcVitDStockSeries() {
+  const allDates = [...new Set(entries.map(e => e.date))].sort();
+  if (!allDates.length) return [];
+  const startDate = allDates[0];
+  const endDate = toDateStr(new Date());
+  // 開始日の前提在庫: 目安量(8.5μg/日)を継続摂取した場合の定常状態を初期値とする
+  const rdaSteady = MICRO_GOALS.vitd.goal / (1 - VITD_DECAY);
+
+  let stock = rdaSteady;
+  const series = [];
+  const d = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  while (d <= end) {
+    const ds = toDateStr(d);
+    const intake = sumEntries(getDayEntries(ds)).vitd || 0;
+    stock = stock * VITD_DECAY + intake;
+    series.push({ date: ds, stock: r1(stock) });
+    d.setDate(d.getDate() + 1);
+  }
+  return series;
+}
+function renderVitDStock() {
+  const wrap = document.getElementById('vitdStockWrap');
+  if (!wrap) return;
+  const series = calcVitDStockSeries();
+  if (series.length < 2) { wrap.style.display = 'none'; return; }
+  wrap.style.display = '';
+
+  const rdaSteady = MICRO_GOALS.vitd.goal / (1 - VITD_DECAY);
+  const latest = series[series.length - 1].stock;
+  const pct = Math.round(latest / rdaSteady * 100);
+
+  document.getElementById('vitdStockSummary').innerHTML =
+    `現在の推定ストック: <b style="font-size:15px">${latest}</b> <span style="color:var(--text-sub)">(目安量継続時を100%とすると ${pct}%)</span>`;
+
+  // 表示範囲は直近90日まで（それより前は折りたたむ）
+  const shown = series.slice(-90);
+  const labels = shown.map(s => { const dt = new Date(s.date + 'T00:00:00'); return `${dt.getMonth()+1}/${dt.getDate()}`; });
+  const skip = shown.length > 30 ? Math.ceil(shown.length / 12) : 1;
+
+  if (vitdStockChart) vitdStockChart.destroy();
+  vitdStockChart = new Chart(document.getElementById('vitdStockChart'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'ストック推定', data: shown.map(s => s.stock), borderColor: '#ffd600', backgroundColor: 'rgba(255,214,0,.12)', tension: .3, pointRadius: 0, borderWidth: 2, fill: true },
+        { label: '定常状態(目安量継続時)', data: shown.map(() => r1(rdaSteady)), borderColor: 'rgba(128,128,128,.4)', borderDash: [4,3], borderWidth: 1, pointRadius: 0, fill: false },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { font: { size: 10 }, boxWidth: 8, padding: 8 } } },
+      scales: {
+        y: { beginAtZero: true, ticks: { font: { size: 10 } }, grid: { color: 'rgba(128,128,128,.1)' } },
+        x: { ticks: { font: { size: 10 }, callback: (_, i) => i % skip === 0 ? labels[i] : '' } },
+      },
+    },
+  });
 }
 function getLast(n) { return Array.from({length:n},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(n-1-i));return toDateStr(d)}); }
 function renderCharts() {
@@ -3288,6 +3423,10 @@ function executeAiCommands(commands, backupLabel) {
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
             vitd:    parseFloat(item.vitd)    || 0,
+            vita:    parseFloat(item.vita)    || 0,
+            vite:    parseFloat(item.vite)    || 0,
+            vitk:    parseFloat(item.vitk)    || 0,
+            iodine:  parseFloat(item.iodine)  || 0,
             salt:    parseFloat(item.salt)    || 0,
           };
           enrichFoodProfile(aiEntry);
@@ -3346,6 +3485,10 @@ function executeAiCommands(commands, backupLabel) {
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
             vitd:    parseFloat(item.vitd)    || 0,
+            vita:    parseFloat(item.vita)    || 0,
+            vite:    parseFloat(item.vite)    || 0,
+            vitk:    parseFloat(item.vitk)    || 0,
+            iodine:  parseFloat(item.iodine)  || 0,
             salt:    parseFloat(item.salt)    || 0,
           };
           enrichFoodProfile(aiEntry);

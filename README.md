@@ -10,19 +10,30 @@
 pfc-app/
 ├── index.html
 ├── app.js
+├── foods-db.js                    # 内蔵食品データベース
 ├── sw.js                          # Service Worker（オフライン対応）
 ├── manifest.json                  # PWAマニフェスト
-├── netlify.toml
+├── netlify.toml                   # Netlify用設定
+├── vercel.json                    # Vercel用設定（代替デプロイ先）
 ├── package.json
+├── build.js                       # sw.jsのキャッシュバージョンを埋め込むビルドスクリプト
 ├── generate-icons.js
 ├── icons/
 │   ├── icon-192.png
 │   └── icon-512.png
-└── netlify/functions/
-    ├── google-health-auth-start.js    # OAuth 2.0 認証開始
-    ├── google-health-auth-callback.js # OAuth 2.0 コールバック
-    └── google-health-daily.js         # 日次データ取得
+├── netlify/functions/             # Netlifyデプロイ時に使われる関数
+│   ├── ai-chat.js                     # Gemini APIプロキシ
+│   ├── google-health-auth-start.js    # OAuth 2.0 認証開始
+│   ├── google-health-auth-callback.js # OAuth 2.0 コールバック
+│   └── google-health-daily.js         # 日次データ取得
+└── api/                            # Vercelデプロイ時に使われる関数（内容は上と同等）
+    ├── ai-chat.js
+    ├── google-health-auth-start.js
+    ├── google-health-auth-callback.js
+    └── google-health-daily.js
 ```
+
+デプロイ先ごとにサーバーレス関数の置き場所が異なる（Netlifyは`netlify/functions/`、Vercelは`api/`）ため両方を同梱していますが、`index.html`・`app.js`・`foods-db.js`などのフロントエンド部分は完全に共通です。`vercel.json`のrewrite設定により、フロントエンドのコードは`/.netlify/functions/...`というパスのままVercel上でも動作します（書き換え不要）。
 
 ---
 
@@ -31,6 +42,54 @@ pfc-app/
 1. GitHubリポジトリを作成してプッシュ
 2. https://app.netlify.com で "Import from GitHub"
 3. リポジトリを選択 → Deploy
+
+---
+
+## STEP 1' — 代替デプロイ先: Vercel（Netlifyの無料枠を使い切った場合など）
+
+NetlifyとVercelはどちらも無料枠でこのアプリを問題なく運用できます。同じGitHubリポジトリから、Netlifyの代わりに（あるいは両方同時に）Vercelへデプロイすることも可能です。移行にあたってのフロントエンド側の書き換えは不要です。
+
+### 1'-1. デプロイ
+
+1. https://vercel.com にアクセスし、GitHubアカウントでログイン
+2. "Add New..." → "Project" → このリポジトリを選択
+3. Framework Preset は **Other**（自動検出される場合はそのままでOK）のまま "Deploy"
+   - `vercel.json` により、ビルドコマンド・ルーティング・キャッシュヘッダーは自動で設定されます
+   - `netlify/functions/` 配下は無視され、`api/` 配下の関数が使われます
+
+デプロイ完了後に発行される `https://プロジェクト名.vercel.app` がサイトURLになります。
+
+### 1'-2. 環境変数の設定
+
+Netlifyで設定した環境変数はVercelには引き継がれません。同じ変数名で再度設定してください。
+
+Vercelダッシュボード → プロジェクトを選択 → Settings → Environment Variables：
+
+| 変数名 | 値 |
+|---|---|
+| `GEMINI_API_KEY` | STEP 3.5 で取得したAPIキー（AIアシスタントを使う場合） |
+| `GOOGLE_HEALTH_CLIENT_ID` | STEP 2 で取得したクライアントID（Google Health連携を使う場合） |
+| `GOOGLE_HEALTH_CLIENT_SECRET` | STEP 2 で取得したシークレット（同上） |
+
+設定後、Deployments タブから最新デプロイの "Redeploy" を実行してください。
+
+### 1'-3. Google Health連携を使う場合の追加設定
+
+Vercel用のURLは Netlify用と異なるため、**Google Cloud ConsoleのOAuthクライアントに、Vercel用のリダイレクトURIを追加登録**する必要があります（既存のNetlify用のURIは削除せず、両方登録しておけば両方のデプロイ先を併用できます）。
+
+「APIとサービス」→「認証情報」→ 対象のOAuthクライアントID → 「承認済みのリダイレクトURI」に追加：
+
+```
+https://プロジェクト名.vercel.app/api/google-health-auth-callback
+```
+
+（Netlify版は `/.netlify/functions/google-health-auth-callback` でしたが、Vercel版は `/api/google-health-auth-callback` になる点に注意してください）
+
+### 1'-4. Firebase クラウド同期を使う場合
+
+STEP 4 の設定はデプロイ先に依存しないため、変更不要です（`index.html`に直接書き込む方式のため）。ただし、Firebase Authenticationの「承認済みドメイン」に、Vercelのドメイン（`プロジェクト名.vercel.app`）も追加登録してください。
+
+Firebase Console → Authentication → Settings → 承認済みドメイン → ドメインを追加
 
 ---
 
@@ -46,10 +105,11 @@ pfc-app/
 
 1. 「APIとサービス」→「認証情報」→「認証情報を作成」→「OAuthクライアントID」
 2. アプリの種類：**ウェブアプリケーション**
-3. 承認済みのリダイレクトURIに以下を追加：
+3. 承認済みのリダイレクトURIに以下を追加（Netlifyにデプロイした場合）：
    ```
    https://あなたのサイト名.netlify.app/.netlify/functions/google-health-auth-callback
    ```
+   Vercelにデプロイした場合は STEP 1'-3 を参照してください（URIの形式が異なります）。
 4. **クライアントID** と **クライアントシークレット** を控える
 
 ### 2-3. Netlify 環境変数に設定

@@ -2,5 +2,8 @@
   "name": "pfc-memo",
   "version": "1.0.0",
   "description": "カロリー・PFC管理PWA with Google Health API連携",
+  "scripts": {
+    "build": "node build.js"
+  },
   "dependencies": {}
 }

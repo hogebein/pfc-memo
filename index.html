@@ -685,6 +685,7 @@
           <button class="period-tab" onclick="setPeriod('90d',this)">3ヶ月</button>
         </div>
       </div>
+      <div id="ulWarning"></div>
       <div id="goalBars" class="card"></div>
       <div class="chart-tab-row">
         <button class="chart-tab active" onclick="setChartMode('raw',this)">補正前</button>
@@ -695,7 +696,17 @@
       <div class="sl">PFC推移</div>
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
 
-      <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
+      <!-- ビタミンD ストック推定 -->
+      <div id="vitdStockWrap" style="display:none">
+        <div class="sl">ビタミンD ストック推定（実験的機能）</div>
+        <div class="card" style="padding:13px;margin-bottom:8px">
+          <div id="vitdStockSummary" style="font-size:13px;margin-bottom:8px"></div>
+          <div class="chart-wrap" style="height:150px"><canvas id="vitdStockChart"></canvas></div>
+          <div style="font-size:10px;color:var(--text-sub);line-height:1.6;border-top:1px solid var(--border);padding-top:8px;margin-top:8px">
+            血中の主要な貯蔵型（25(OH)D）の半減期（約21日）を用いた推定です。<b>日光による皮膚合成は考慮していません</b>（ビタミンDは食事より日光からの供給が多いことが一般的なため、屋外活動が多い方は実際の体内量はこれより多いはずです）。血液検査の値を表すものではなく、記録した食事からの相対的な蓄積トレンドとしてご覧ください。
+          </div>
+        </div>
+      </div>
 
       <!-- 代謝変動推定 -->
       <div class="card" style="padding:13px;margin-bottom:8px">
