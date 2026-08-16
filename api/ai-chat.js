@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
     generationConfig: {
-      maxOutputTokens: 2048,
+      maxOutputTokens: 8192,
       temperature: 0.7,
     },
   };
@@ -78,7 +78,12 @@ module.exports = async (req, res) => {
 
     // finish_reason チェック（SAFETY など）
     const candidate = data.candidates?.[0];
-    if (candidate?.finishReason && candidate.finishReason !== 'STOP' && candidate.finishReason !== 'MAX_TOKENS') {
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      return json(res, 200, {
+        content: [{ type: 'text', text: `⚠️ 応答が長すぎて途中で切れました。一度に頼む量を減らす（例：品目数を分割する、日付範囲を短くする）と改善する場合があります。` }],
+      });
+    }
+    if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
       return json(res, 200, {
         content: [{ type: 'text', text: `⚠️ 応答が中断されました（理由: ${candidate.finishReason}）。別の表現で試してください。` }],
       });

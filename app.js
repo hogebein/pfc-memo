@@ -795,11 +795,13 @@ function setDailySteps(date, val) {
   dailyActivity[date] = { ...(dailyActivity[date]||{}), steps };
   saveDailyActivity();
   renderRecord();
+  renderBmrPreview();
 }
 function setDailyBedtime(date, val) {
   dailyActivity[date] = { ...(dailyActivity[date]||{}), bedtime: val || null };
   saveDailyActivity();
   renderRecord();
+  renderBmrPreview();
 }
 let activityCardExpanded = false;
 function toggleActivityCard() {
@@ -1033,24 +1035,29 @@ function renderRecord() {
           <button type="button" class="btn btn-sm" onclick="toggleAddPanel('${meal}')" aria-label="閉じる" style="height:38px;padding:0 13px;flex-shrink:0">✕</button>
         </div>
         <div class="results-box" id="addResultsBox_${meal}"></div>
-        <div class="row" style="margin-bottom:6px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="addName_${meal}" placeholder="食品名"></div><div class="field" style="flex:1.4"><label style="display:flex;align-items:center;justify-content:space-between">量 <span style="display:flex;gap:2px" id="unitToggle_${meal}"><button type="button" onclick="setAmtUnit('${meal}','g')" id="unitG_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer">g</button><button type="button" onclick="setAmtUnit('${meal}','serving')" id="unitS_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--border);background:var(--bg);color:var(--text-sub);cursor:pointer">人前</button></span></label><input type="number" id="addAmt_${meal}" value="100" min="0.1" step="0.1" oninput="recalcAdd('${meal}')" style="width:100%"></div></div>
-        <div id="amtQuickPick_${meal}" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>
-        <div class="macro-row">
-          <div class="field"><label>kcal</label><input type="number" id="addCal_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>P(g)</label><input type="number" id="addP_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>F(g)</label><input type="number" id="addF_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>C(g)</label><input type="number" id="addC_${meal}" placeholder="0" step="0.1"></div>
-        </div>
-        <div class="macro-row">
-          <div class="field"><label>食物繊維(g)</label><input type="number" id="addFib_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>鉄(mg)</label><input type="number" id="addFe_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>Ca(mg)</label><input type="number" id="addCa_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>VitC(mg)</label><input type="number" id="addVc_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>VitD(μg)</label><input type="number" id="addVd_${meal}" placeholder="0" step="0.1"></div>
-          <div class="field"><label>塩分(g)</label><input type="number" id="addSalt_${meal}" placeholder="0" step="0.01"></div>
-        </div>
-        <button class="btn btn-primary btn-block" onclick="addEntry('${meal}')">追加する</button>
-        <div id="addMsg_${meal}" class="status-msg"></div>
+        <details style="margin-top:2px">
+          <summary style="font-size:12px;color:var(--text-sub);cursor:pointer;padding:4px 0">見つからない場合は手入力で追加</summary>
+          <div style="padding-top:8px">
+            <div class="row" style="margin-bottom:6px"><div class="field" style="flex:3"><label>食品名（手入力）</label><input type="text" id="addName_${meal}" placeholder="食品名"></div><div class="field" style="flex:1.4"><label style="display:flex;align-items:center;justify-content:space-between">量 <span style="display:flex;gap:2px" id="unitToggle_${meal}"><button type="button" onclick="setAmtUnit('${meal}','g')" id="unitG_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer">g</button><button type="button" onclick="setAmtUnit('${meal}','serving')" id="unitS_${meal}" style="font-size:9px;padding:1px 5px;border-radius:3px;border:1px solid var(--border);background:var(--bg);color:var(--text-sub);cursor:pointer">人前</button></span></label><input type="number" id="addAmt_${meal}" value="100" min="0.1" step="0.1" oninput="recalcAdd('${meal}')" style="width:100%"></div></div>
+            <div id="amtQuickPick_${meal}" style="display:none;flex-wrap:wrap;gap:4px;margin-bottom:6px"></div>
+            <div class="macro-row">
+              <div class="field"><label>kcal</label><input type="number" id="addCal_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>P(g)</label><input type="number" id="addP_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>F(g)</label><input type="number" id="addF_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>C(g)</label><input type="number" id="addC_${meal}" placeholder="0" step="0.1"></div>
+            </div>
+            <div class="macro-row">
+              <div class="field"><label>食物繊維(g)</label><input type="number" id="addFib_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>鉄(mg)</label><input type="number" id="addFe_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>Ca(mg)</label><input type="number" id="addCa_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>VitC(mg)</label><input type="number" id="addVc_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>VitD(μg)</label><input type="number" id="addVd_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>塩分(g)</label><input type="number" id="addSalt_${meal}" placeholder="0" step="0.01"></div>
+            </div>
+            <button class="btn btn-primary btn-block" onclick="addEntry('${meal}')">追加する</button>
+            <div id="addMsg_${meal}" class="status-msg"></div>
+          </div>
+        </details>
       </div>`;
     }
     html += `</div>`;
@@ -1479,7 +1486,16 @@ function addEntry(meal) {
   const nameEl=document.getElementById('addName_'+meal);
   const name=nameEl?nameEl.value.trim():'';
   const msg=document.getElementById('addMsg_'+meal);
-  if(!name){if(msg){msg.className='status-msg status-err';msg.textContent='食品名を入力してください'}return}
+  if(!name){
+    if(msg){
+      const searchVal = document.getElementById('addSearch_'+meal)?.value.trim();
+      msg.className='status-msg status-err';
+      msg.textContent = searchVal
+        ? '検索結果からタップして選ぶか、下の「食品名」欄に手入力してください'
+        : '食品名を入力してください';
+    }
+    return;
+  }
   const newEntry = {id:Date.now(),date:currentDate,name,meal,time:nowTimeStr(),
     cal:gv('addCal_'+meal),p:gv('addP_'+meal),f:gv('addF_'+meal),c:gv('addC_'+meal),
     amount: (() => {
@@ -2770,16 +2786,68 @@ function deleteCustomFood(id){
   if (idx === -1) return;
   const removed = customFoods[idx];
   customFoods.splice(idx,1);
+  if (editingCustomFoodId === id) editingCustomFoodId = null;
   saveCustom();renderCustomFoodList();
   showUndoToast(`「${removed.name}」をDBから削除しました`, () => {
     customFoods.splice(Math.min(idx, customFoods.length), 0, removed);
     saveCustom(); renderCustomFoodList();
   });
 }
+let editingCustomFoodId = null;
+function startEditCustomFood(id) {
+  editingCustomFoodId = id;
+  renderCustomFoodList();
+}
+function cancelEditCustomFood() {
+  editingCustomFoodId = null;
+  renderCustomFoodList();
+}
+function saveEditCustomFood(id) {
+  const idx = customFoods.findIndex(f => f.id === id);
+  if (idx === -1) return;
+  const gvSuf = (suf) => { const el = document.getElementById('ecf'+suf+id); return el ? (parseFloat(el.value) || 0) : 0; };
+  const nameEl = document.getElementById('ecfName'+id);
+  const name = nameEl ? nameEl.value.trim() : '';
+  const msg = document.getElementById('csSaveMsg');
+  if (!name) {
+    if (msg) { msg.className = 'status-msg status-err'; msg.textContent = '食品名を入力してください'; }
+    return;
+  }
+  if (customFoods.some((f,i) => i !== idx && normFoodName(f.name) === normFoodName(name))) {
+    if (msg) { msg.className = 'status-msg status-err'; msg.textContent = `「${name}」は既に別のカスタム食品で使われています`; }
+    return;
+  }
+  customFoods[idx] = {
+    ...customFoods[idx],
+    name,
+    per:     gvSuf('Per') || 100,
+    cal:     gvSuf('Cal'), p: gvSuf('P'), f: gvSuf('F'), c: gvSuf('C'),
+    fiber:   gvSuf('Fib'), iron: gvSuf('Fe'), calcium: gvSuf('Ca'),
+    vitc:    gvSuf('Vc'),  vitd: gvSuf('Vd'), salt: gvSuf('Salt'),
+  };
+  saveCustom();
+  editingCustomFoodId = null;
+  renderCustomFoodList();
+  showToast(`「${name}」を更新しました`);
+}
 function renderCustomFoodList() {
   const cont=document.getElementById('customFoodList');
   if(!customFoods.length){cont.innerHTML=`<div style="font-size:12px;color:var(--text-sub);padding:8px 0">まだ登録がありません</div>`;return}
-  cont.innerHTML=customFoods.map(f=>`<div class="custom-item"><div><div style="font-weight:500">${f.name}</div><div style="font-size:10px;color:var(--text-sub)">${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div></div><button class="btn btn-sm btn-danger" onclick="deleteCustomFood(${f.id})">✕</button></div>`).join('');
+  cont.innerHTML=customFoods.map(f=>{
+    if (editingCustomFoodId === f.id) {
+      return `<div class="custom-item" style="flex-direction:column;align-items:stretch;gap:6px;padding:10px">
+        <div class="row" style="margin-bottom:0"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="ecfName${f.id}" value="${f.name}"></div><div class="field" style="flex:1"><label>基準量(g)</label><input type="number" id="ecfPer${f.id}" value="${f.per}"></div></div>
+        <div class="row" style="margin-bottom:0"><div class="field"><label>kcal</label><input type="number" id="ecfCal${f.id}" value="${f.cal}" step="0.1"></div><div class="field"><label>P</label><input type="number" id="ecfP${f.id}" value="${f.p}" step="0.1"></div><div class="field"><label>F</label><input type="number" id="ecfF${f.id}" value="${f.f}" step="0.1"></div><div class="field"><label>C</label><input type="number" id="ecfC${f.id}" value="${f.c}" step="0.1"></div></div>
+        <div class="row" style="margin-bottom:0"><div class="field"><label>食物繊維</label><input type="number" id="ecfFib${f.id}" value="${f.fiber||0}" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="ecfFe${f.id}" value="${f.iron||0}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="ecfCa${f.id}" value="${f.calcium||0}" step="0.1"></div></div>
+        <div class="row" style="margin-bottom:0"><div class="field"><label>VitC</label><input type="number" id="ecfVc${f.id}" value="${f.vitc||0}" step="0.1"></div><div class="field"><label>VitD</label><input type="number" id="ecfVd${f.id}" value="${f.vitd||0}" step="0.1"></div><div class="field"><label>塩分</label><input type="number" id="ecfSalt${f.id}" value="${f.salt||0}" step="0.01"></div></div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveEditCustomFood(${f.id})">保存</button>
+          <button class="btn btn-sm" style="flex:1" onclick="cancelEditCustomFood()">取消</button>
+        </div>
+      </div>`;
+    }
+    return `<div class="custom-item"><div><div style="font-weight:500">${f.name}</div><div style="font-size:10px;color:var(--text-sub)">${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div></div><div style="display:flex;gap:4px"><button class="btn btn-sm" onclick="startEditCustomFood(${f.id})">✏️</button><button class="btn btn-sm btn-danger" onclick="deleteCustomFood(${f.id})">✕</button></div></div>`;
+  }).join('');
 }
 
 // ── Combo foods ──
@@ -3151,6 +3219,7 @@ function takeAiBackup(label) {
   aiBackups.push({
     label,
     entries: JSON.parse(JSON.stringify(entries)),
+    customFoods: JSON.parse(JSON.stringify(customFoods)),
     timestamp: new Date().toISOString(),
   });
   if (aiBackups.length > AI_BACKUP_MAX) aiBackups.shift();
@@ -3161,7 +3230,9 @@ function restoreAiBackup(idx) {
   const bk = aiBackups[idx];
   if (!bk) return;
   entries = JSON.parse(JSON.stringify(bk.entries));
-  save(); renderRecord(); renderCalendar();
+  if (bk.customFoods) customFoods = JSON.parse(JSON.stringify(bk.customFoods));
+  save(); saveCustom(); renderRecord(); renderCalendar();
+  if (typeof renderCustomFoodList === 'function') renderCustomFoodList();
   appendAiMessage('ai', `♻️ バックアップを復元しました\n「${bk.label}」（${fmtBackupTime(bk.timestamp)}）`);
   renderAiBackupList();
 }
@@ -3566,6 +3637,44 @@ function executeAiCommands(commands, backupLabel) {
       changed = true;
     }
 
+    // ── REGISTER_COMBO_FROM_LOG ──（複数の記録済みエントリを合算して1つのカスタム食品として登録）
+    // 例:「今日の夕食のお好み焼きの材料をまとめてカスタム食品登録して」のような、
+    //     どのエントリが対象かをAI自身の食品知識で判断する曖昧な依頼に対応する。
+    else if (cmd.type === 'register_combo_from_log') {
+      const ids = Array.isArray(cmd.entry_ids) ? cmd.entry_ids : (Array.isArray(cmd.ids) ? cmd.ids : []);
+      const name = (cmd.name || '').trim();
+      if (!name) { log.push('⚠️ カスタム食品名が指定されていません'); }
+      else if (customFoods.some(f => normFoodName(f.name) === normFoodName(name))) {
+        log.push(`ℹ️ 「${name}」は既にカスタム食品DBに登録済みです。別の名前を指定してください`);
+      } else {
+        const srcs = ids.map(id => entries.find(e => e.id === id)).filter(Boolean);
+        const totalAmount = srcs.reduce((a, e) => a + Math.max(0, e.amount || 0), 0);
+        if (!srcs.length || totalAmount <= 0) {
+          log.push('⚠️ 対象の記録が見つからないため、合算登録できませんでした');
+        } else {
+          const sum = { cal:0, p:0, f:0, c:0, fiber:0, iron:0, calcium:0, vitc:0, vitd:0, vita:0, vite:0, vitk:0, iodine:0, salt:0 };
+          srcs.forEach(e => { Object.keys(sum).forEach(k => { sum[k] += Math.max(0, e[k] || 0); }); });
+          const scale = 100 / totalAmount;
+          customFoods.push({
+            id:      Date.now() + Math.random(),
+            name,
+            per:     100,
+            cal:     r1(sum.cal*scale),     p:       r1(sum.p*scale),
+            f:       r1(sum.f*scale),       c:       r1(sum.c*scale),
+            fiber:   r1(sum.fiber*scale),   iron:    r2(sum.iron*scale),
+            calcium: r1(sum.calcium*scale), vitc:    r1(sum.vitc*scale),
+            vitd:    r2(sum.vitd*scale),    vita:    r1(sum.vita*scale),
+            vite:    r2(sum.vite*scale),    vitk:    r1(sum.vitk*scale),
+            iodine:  r1(sum.iodine*scale),  salt:    r2(sum.salt*scale),
+            _src:    'combo_log',
+          });
+          log.push(`📦 「${name}」を${srcs.length}件の記録（合計${r1(totalAmount)}g）から合算してDBに登録`);
+        }
+      }
+      saveCustom();
+      changed = true;
+    }
+
     // ── DELETE_CUSTOM_FOOD ──（カスタム食品DBからの削除）
     else if (cmd.type === 'delete_custom_food') {
       const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
@@ -3573,6 +3682,34 @@ function executeAiCommands(commands, backupLabel) {
       customFoods = customFoods.filter(f => !names.includes(f.name));
       saveCustom();
       log.push(`🗑️ カスタム食品 ${before - customFoods.length}件削除`);
+      changed = true;
+    }
+
+    // ── EDIT_CUSTOM_FOOD ──（カスタム食品DBの既存項目を編集）
+    else if (cmd.type === 'edit_custom_food') {
+      const targetName = (cmd.name || '').trim();
+      const idx = customFoods.findIndex(f => normFoodName(f.name) === normFoodName(targetName));
+      if (idx === -1) {
+        log.push(`⚠️ 「${targetName}」がカスタム食品DBに見つかりません`);
+      } else {
+        const updates = cmd.updates || {};
+        const newName = updates.name != null ? String(updates.name).trim() : '';
+        const nameCollides = newName && normFoodName(newName) !== normFoodName(customFoods[idx].name) &&
+          customFoods.some((f, i) => i !== idx && normFoodName(f.name) === normFoodName(newName));
+        if (nameCollides) {
+          log.push(`⚠️ 「${newName}」という名前は既に別のカスタム食品で使われています`);
+        } else {
+          const numericKeys = ['per','cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'];
+          numericKeys.forEach(k => {
+            if (updates[k] === undefined || updates[k] === null || updates[k] === '') return;
+            const v = parseFloat(updates[k]);
+            if (!isNaN(v)) customFoods[idx][k] = Math.max(0, v);
+          });
+          if (newName) customFoods[idx].name = newName;
+          saveCustom();
+          log.push(`✏️ 「${customFoods[idx].name}」を更新しました`);
+        }
+      }
       changed = true;
     }
   });
@@ -3678,7 +3815,35 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "登録しました"
 }
 
-7. delete_custom_food — カスタム食品DBから削除
+7. register_combo_from_log — 複数の記録済みエントリを合算して1つのカスタム食品として登録する。
+   「〇〇（料理名）の材料をまとめてカスタム食品登録して」のように、対象が個別に指定されず
+   曖昧な依頼の場合、コンテキストの食事記録一覧から対象となる品目をあなたの食品知識で判断し、
+   その entry_id を全て entry_ids に列挙する。name は既存のカスタム食品と重複しない、
+   内容が一目でわかる名前を自分で考えて付ける（コンテキストの【カスタム食品】一覧を必ず確認すること）。
+{
+  "commands": [{
+    "type": "register_combo_from_log",
+    "entry_ids": [1234567890, 1234567891, 1234567892],
+    "name": "お好み焼き（自家製・キャベツ豚玉）"
+  }],
+  "backup_label": "合算カスタム食品登録",
+  "message": "3件の記録を合算して登録しました"
+}
+
+8. edit_custom_food — カスタム食品DBの既存項目の値を修正する（栄養価の間違い修正、名前変更など）。
+   name で対象を特定し、updates に変更したいフィールドだけを指定する（指定しなかったフィールドは変更されない）。
+   updates.name を指定すると名前も変更できる（他の既存カスタム食品と重複する名前には変更できない）。
+{
+  "commands": [{
+    "type": "edit_custom_food",
+    "name": "対象の既存カスタム食品名（コンテキストの【カスタム食品】一覧から一致するものを探す）",
+    "updates": {"cal": 250, "p": 12, "f": 8, "c": 30}
+  }],
+  "backup_label": "カスタム食品編集",
+  "message": "更新しました"
+}
+
+9. delete_custom_food — カスタム食品DBから削除
 {
   "commands": [{"type": "delete_custom_food", "names": ["食品名"]}],
   "backup_label": "カスタム食品削除",
@@ -3688,19 +3853,27 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 【コマンド選択の判断基準（重要）】
 - 「〇〇を食べた」「〇〇を追加して」→ add（食事記録に追加）
 - 「（今日/昨日/〇月〇日の）朝食/昼食/夕食の〇〇を食品DBに登録して」「さっき記録した〇〇を保存して」など、既に記録済みの食品を指す依頼 → register_logged_food（コンテキストの食事記録からid付きで該当項目を探し、その id を entry_id に使う。栄養値は絶対に自分で計算し直さない）
+- 「〇〇（料理名）の材料をまとめて登録して」など、複数の記録済み品目をひとまとめにしたい・
+  かつどの品目が対象か曖昧な依頼 → register_combo_from_log（対象の特定はあなたの食品知識で行い、
+  該当しそうにない品目まで巻き込まない。判断に自信が持てない場合は無理に実行せず、
+  message で対象候補を確認する質問を返す）
 - まだ記録されていない食品を新しくDBに登録したい依頼（「〇〇という商品をDBに登録して」等）→ add_custom_food（栄養値を推定して入力）
 - 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal
+- 「カスタム食品の〇〇のカロリーを△△に直して」「〇〇の名前を△△に変更して」など、既存のカスタム食品の内容を修正したい依頼 → edit_custom_food（updatesには変更したいフィールドだけを入れる。対象がコンテキストの【カスタム食品】一覧に見当たらない場合は無理に実行せず確認する）
 - 「〇〇に変えて」「〇〇で置き換えて」→ replace
 - 「今週の〇〇を全部〇〇にして」→ replace を dates に全日付列挙して1コマンドで
 
 【必須ルール・よくある誤りの防止】
+- 1回の応答で出力するJSONが非常に大きくなりそうな場合（一度に大量の日付・大量の品目を扱う依頼など）は、無理に1回で全て出力しようとせず、まず一部だけを実行してmessageで「残りは分けて実行しましょうか？」と提案する。出力途中で切れて壊れたJSONを返すより、確実に完了する範囲に絞ること
 - dates は必ず配列で指定。「今日」でも ["${today}"] と明示する
 - meal は必ず「朝食」「昼食」「夕食」「間食」のいずれか。省略・空文字・null 禁止
 - items の栄養素（cal/p/f/c）は必ず推定値を入れる。全て0はNG
 - amount は必ず正の数値。単位はg（人前ではなくg換算で記入）
 - 複数の食品を同じ meal に追加する場合は items 配列を使い、コマンドは1つにまとめる
 - add と add_custom_food を混同しない。食べた記録は add、DBへの保存は add_custom_food
-- register_logged_food の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
+- register_logged_food / register_combo_from_log の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
+- register_combo_from_log の name は必ずコンテキストの【カスタム食品】一覧と重複しないこと。似た名前になりそうな場合は「（自家製）」「（〇月〇日）」等を付けて区別する
+- カスタム食品DBへの登録・編集・削除系コマンド（add_custom_food / register_logged_food / register_combo_from_log / edit_custom_food / delete_custom_food）は、ユーザーの明示的な依頼がある場合のみ実行する。他の会話の流れから先回りして実行しない
 - "今週" は ${weekDates[0]}〜${weekDates[6]}（${weekDates.length}日間）
 - "昨日" は ${getLastNDates(2)[0]}、"一昨日" は ${getLastNDates(3)[0]}
 - 記録の読み取り・質問・雑談のみの場合は commands 不要、message だけ返す
@@ -3721,6 +3894,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 
 【カスタム食品登録のルール】
 - 既に記録した食事から登録したい場合は register_logged_food（記録値そのまま使う・最も正確）
+- 複数の記録済み品目を1つにまとめたい場合は register_combo_from_log（対象の判断はあなたの食品知識で行う）
 - まだ記録していない新しい商品を登録したい場合は add_custom_food（per は商品1個・1食分・100g など最も使いやすい単位を選ぶ。栄養成分表示がある場合はその数値を使用、なければ標準的な値を推定）
 - 登録後は「記録タブの食品検索から追加できます」と案内する
 ━━━━━━━━━━━━━━━━━━━━━━`;
