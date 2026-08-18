@@ -44,6 +44,7 @@ exports.handler = async (event) => {
   const geminiBody = {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
+    tools: [{ google_search: {} }],
     generationConfig: {
       maxOutputTokens: 8192,
       temperature: 0.7,

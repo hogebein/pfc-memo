@@ -990,6 +990,11 @@
       </div>
 
       <!-- チャット画面 -->
+      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
+        <button onclick="sendQuickAiPrompt('直近1週間の食事を分析して、気になる点や改善案を教えて')" class="btn btn-sm" style="font-size:11px">📊 週の分析</button>
+        <button onclick="sendQuickAiPrompt('今日の記録でおかしい点はある？')" class="btn btn-sm" style="font-size:11px">🔍 今日のチェック</button>
+        <button onclick="sendQuickAiPrompt('直近1ヶ月で、目標に対して不足・過剰が続いている栄養素はある？')" class="btn btn-sm" style="font-size:11px">📈 1ヶ月の傾向</button>
+      </div>
       <div id="aiChatBox" style="
         height: 52vh;
         overflow-y: auto;
