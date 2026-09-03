@@ -459,7 +459,7 @@ function parseTimeToMinutes(hhmm) {
 // DIT AUCの分を求める。これは睡眠がDITを抑制するという生理学的な主張ではなく、
 // アプリが全ての指標を日付単位で集計している以上、深夜に近い時間に食べた食事ほど
 // その日のうちに発生しきる分が少なくなる、という会計上の整理。
-// 就寝時刻は記録項目として保持するが、根拠が確立していないためこの補正には使用しない。
+// （就寝時刻の記録UIは、DIT計算上の意味のある変数ではなかったため削除した）
 // 時刻が未記録のエントリ（過去データ・後方互換）は対象外とし、常に全量をその日のDITとして計上する。
 function calcMealTimingUnrealized(list) {
   let unrealized = 0;
@@ -797,12 +797,6 @@ function setDailySteps(date, val) {
   renderRecord();
   renderBmrPreview();
 }
-function setDailyBedtime(date, val) {
-  dailyActivity[date] = { ...(dailyActivity[date]||{}), bedtime: val || null };
-  saveDailyActivity();
-  renderRecord();
-  renderBmrPreview();
-}
 let activityCardExpanded = false;
 function toggleActivityCard() {
   activityCardExpanded = !activityCardExpanded;
@@ -813,14 +807,12 @@ function renderActivityCard() {
   if (!el) return;
   const gh = ghData[currentDate];
   const neatLabel = (NEAT_TIERS[profile.neatTier] || NEAT_TIERS.mid).label;
-  const bedtimeVal = (dailyActivity[currentDate] && dailyActivity[currentDate].bedtime) || '';
   const manualSteps = (dailyActivity[currentDate] && dailyActivity[currentDate].steps) || '';
 
   const summaryParts = [];
   if (gh && gh.activeCalories > 0) summaryParts.push(`Google Health実測 ${(gh.steps||0).toLocaleString()}歩`);
   else if (manualSteps) summaryParts.push(`歩数 ${manualSteps}歩`);
   else summaryParts.push('歩数未入力');
-  if (bedtimeVal) summaryParts.push(`就寝${bedtimeVal}`);
 
   const headerRow = `
     <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer" onclick="toggleActivityCard()">
@@ -836,12 +828,6 @@ function renderActivityCard() {
     return;
   }
 
-  const bedtimeRow = `
-    <div class="row" style="align-items:flex-end;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--border)">
-      <div class="field" style="flex:1"><label>🛏 就寝時刻</label><input type="time" value="${bedtimeVal}" onchange="setDailyBedtime('${currentDate}', this.value)"></div>
-      <div style="font-size:10px;color:var(--text-sub);padding-bottom:9px;flex:1.6">記録用の項目です（睡眠がDITを抑制するという根拠が十分でないため、現時点ではTDEE計算には使用していません）</div>
-    </div>`;
-
   if (gh && gh.activeCalories > 0) {
     // Garmin/Google Health連携で実測データがある日はそちらを優先表示（編集不可）
     el.innerHTML = `
@@ -853,7 +839,6 @@ function renderActivityCard() {
         <div style="font-size:11px;color:var(--text-sub);margin-top:4px">
           歩数 ${(gh.steps||0).toLocaleString()}歩　活動カロリー ${gh.activeCalories}kcal　NEAT「${neatLabel}」を適用
         </div>
-        ${bedtimeRow}
       </div>`;
     return;
   }
@@ -868,7 +853,6 @@ function renderActivityCard() {
       <div style="font-size:10px;color:var(--text-sub);margin-top:6px">
         Garmin/Google Health連携が無い日でも、歩数を入れるだけでその日のTDEEがより正確になります。未入力の場合は活動係数（ざっくり設定）が使われます。
       </div>
-      ${bedtimeRow}
     </div>`;
 }
 
@@ -3574,6 +3558,10 @@ function executeAiCommands(commands, backupLabel) {
       const foods = Array.isArray(cmd.foods) ? cmd.foods : [cmd];
       foods.forEach(food => {
         if (!food.name) return;
+        if (customFoods.some(f => normFoodName(f.name) === normFoodName(food.name))) {
+          log.push(`ℹ️ 「${food.name}」は既にカスタム食品DBに登録済みです（重複登録をスキップしました）`);
+          return;
+        }
         const per = parseFloat(food.per) || 100;
         customFoods.push({
           id:      Date.now() + Math.random(),
@@ -3722,6 +3710,21 @@ function sendQuickAiPrompt(text) {
   input.value = text;
   sendAiMessage();
 }
+// AIのsearch_food_db関数呼び出しを実際に実行する（ユーザーの検索と同じデータソースを使う）
+function searchFoodDbForAi(query) {
+  const q = normalize(String(query || '').trim());
+  if (!q) return '検索キーワードが空です';
+  const matches = getAllFoods().filter(f => (f._search || normalize(f.name)).includes(q)).slice(0, 10);
+  if (!matches.length) return `「${query}」に一致する食品は見つかりませんでした`;
+  const srcLabel = { local: '内蔵DB', custom: 'カスタムDB', combo: '複合食品' };
+  return matches.map(f => {
+    const src = srcLabel[f._src] || f._src || '';
+    const extras = [];
+    if (f.fiber) extras.push(`繊維${f.fiber}g`);
+    if (f.salt) extras.push(`塩分${f.salt}g`);
+    return `${f.name}（${src}・${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${extras.length ? ' ' + extras.join(' ') : ''}）`;
+  }).join('\n');
+}
 async function sendAiMessage() {
   const inp = document.getElementById('aiInput');
   const btn = document.getElementById('aiSendBtn');
@@ -3752,11 +3755,17 @@ async function sendAiMessage() {
 
 ${fullCtx}
 
-【標準食品DB例】${dbSample} など
+【標準食品DB例】${dbSample} など（これは一部のサンプルです。全件を確認したい場合や、特定の食品がDBに登録済みか確認したい場合は search_food_db 関数で検索してください）
 
 【食事タイミング】朝食 / 昼食 / 夕食 / 間食
 
 ━━━━━━━━━━━━━━━━━━━━━━
+【search_food_db 関数について】
+内蔵食品DB・カスタム食品DBを実際に検索できる関数です。以下のような場面で積極的に使ってください：
+- 「〇〇は登録されている？」「〇〇の栄養価教えて」など、DBの内容そのものを聞かれたとき
+- add / add_custom_food 等で記録・登録する前に、同じ食品や紛らわしい名前の食品が既にDBに無いか確認したいとき
+- 一般的な食品名で構わないので、まず検索してみて、見つかればその実測値を使う。見つからなければ通常通りあなたの知識で推定する
+検索結果が0件でも構いません。無理に何度も検索し直さず、見つからなければその旨を伝えるか、通常の推定に切り替えてください。
 【分析の依頼について】
 「今週どうだった？」「分析して」「気になる点ある？」のような、記録の操作を伴わない分析・振り返りの依頼には、JSONコマンド無しで、コンテキストのデータから読み取れる具体的な内容を答えてください。以下のような観点が有用です（全て機械的に網羅する必要はなく、実際にデータから読み取れて意味のあるものだけ触れる）：
 - 目標（cal/P/F/C）に対して継続的に過不足がある栄養素
@@ -3769,6 +3778,11 @@ ${fullCtx}
 【操作コマンド仕様】
 操作が必要な場合は必ず末尾に \`\`\`json ブロックを出力してください。
 JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他の形式は使用不可。
+
+【重要】JSONブロックを出力すると、その場で即座に実行されます。「確認してから実行する」という仕組みは存在しません。
+そのため：
+- 実行してよいと判断したら、JSONブロックを出力し、message は「登録しました」のように完了形で書く。「よろしいでしょうか？」のような確認を求める文言をJSONブロックと同時に出すことは絶対に禁止（実行済みなのに未実行であるかのように見え、ユーザーが「はい」と答えると重複実行してしまう）
+- 本当にユーザーの確認を先に得たい場合（対象の特定に自信が無い、破壊的な操作で念のため確認したい等）は、その回ではJSONブロックを一切出力せず、確認の質問だけを返す。ユーザーが同意する返答をした次のやりとりで、初めてJSONブロックを出力する
 
 コマンド種別:
 
@@ -3916,22 +3930,38 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
   try {
-    const res = await fetch('/.netlify/functions/ai-chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1500,
-        system: systemPrompt,
-        messages: aiHistory,
-      }),
-    });
+    let workingMessages = [...aiHistory]; // ツール呼び出しのやりとり用のローカル作業コピー（aiHistory本体には最終応答だけ残す）
+    let rawText = '';
+    const MAX_TOOL_LOOPS = 3;
 
-    const data = await res.json();
-    if (!res.ok) {
-      throw new Error(data.error || `サーバーエラー (${res.status})`);
+    for (let loop = 0; loop <= MAX_TOOL_LOOPS; loop++) {
+      const res = await fetch('/.netlify/functions/ai-chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system: systemPrompt,
+          messages: workingMessages,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || `サーバーエラー (${res.status})`);
+      }
+
+      if (data.functionCall) {
+        const { name, args } = data.functionCall;
+        const toolResult = name === 'search_food_db'
+          ? searchFoodDbForAi(args && args.query)
+          : `未対応の関数です: ${name}`;
+        workingMessages.push({ role: 'assistant', parts: [{ functionCall: { name, args } }] });
+        workingMessages.push({ role: 'function',  parts: [{ functionResponse: { name, response: { result: toolResult } } }] });
+        continue; // 検索結果を渡してもう一度Geminiに問い合わせる
+      }
+
+      rawText = (data.content || []).map(b => b.text || '').join('');
+      break;
     }
-    const rawText = (data.content || []).map(b => b.text || '').join('');
 
     // JSONブロック抽出（Geminiは```json以外の形式でも返すことがある）
     let parsed      = null;

@@ -34,15 +34,32 @@ module.exports = async (req, res) => {
     ? { parts: [{ text: body.system }] }
     : undefined;
 
-  const contents = body.messages.map(m => ({
-    role: m.role === 'assistant' ? 'model' : 'user',
-    parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
-  }));
+  const contents = body.messages.map(m => {
+    if (m.parts) {
+      return { role: m.role === 'assistant' ? 'model' : m.role, parts: m.parts };
+    }
+    return {
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: typeof m.content === 'string' ? m.content : JSON.stringify(m.content) }],
+    };
+  });
 
   const geminiBody = {
     contents,
     ...(systemInstruction ? { systemInstruction } : {}),
-    tools: [{ google_search: {} }],
+    tools: [{
+      functionDeclarations: [{
+        name: 'search_food_db',
+        description: 'ユーザーの内蔵食品データベースおよびカスタム食品DBを、食品名の一部で検索する。「〇〇は登録されている？」のような質問、栄養価が分からない食品の確認、記録追加の前の下調べに使う。',
+        parameters: {
+          type: 'OBJECT',
+          properties: {
+            query: { type: 'STRING', description: '検索キーワード（食品名の一部。ひらがな・カタカナ・漢字いずれでも可）' },
+          },
+          required: ['query'],
+        },
+      }],
+    }],
     generationConfig: {
       maxOutputTokens: 8192,
       temperature: 0.7,
@@ -91,6 +108,10 @@ module.exports = async (req, res) => {
     }
 
     const text = candidate?.content?.parts?.map(p => p.text || '').join('') || '';
+    const functionCallPart = candidate?.content?.parts?.find(p => p.functionCall);
+    if (functionCallPart) {
+      return json(res, 200, { functionCall: functionCallPart.functionCall });
+    }
     return json(res, 200, { content: [{ type: 'text', text }] });
 
   } catch (err) {
