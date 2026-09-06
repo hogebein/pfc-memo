@@ -505,8 +505,14 @@ function getTdeeBreakdown() {
   const timingUnrealizedRaw = actualDit ? calcMealTimingUnrealized(list) : 0;
   const timingCapKcal = actualDit ? baselineDitKcal * TIMING_CAP_RATE : 0;
   const timingUnrealized = Math.min(timingUnrealizedRaw, timingCapKcal);
+  // 実際のDITは「まるごと」baseに加算する。標準的なDIT(baselineDitKcal)は
+  // 「今日の食事構成が標準よりDITを多く/少なく生んでいるか」を表示用に見せるための
+  // 参考値であり、tdeeの計算からは差し引かない
+  // （誤って差し引くと、標準的なPFCバランスで食べた瞬間に実際のDITがまるごと
+  //   相殺されて消えてしまい、「何も記録していない時」のフォールバック式
+  //   base×(1+DIT_RATE) との整合が取れなくなる）
   const ditDelta = actualDit ? (actualDit.kcal - baselineDitKcal - timingUnrealized) : 0;
-  const tdee = actualDit ? Math.round(base + ditDelta) : Math.round(base * (1 + DIT_RATE));
+  const tdee = actualDit ? Math.round(base + actualDit.kcal - timingUnrealized) : Math.round(base * (1 + DIT_RATE));
 
   return { bmr, detail, base, actualDit, baselineDitKcal, timingUnrealized, timingUnrealizedRaw, ditDelta, tdee };
 }
@@ -890,7 +896,7 @@ function renderRecord() {
         ${exCal > 0 ? `<div style="font-size:11px;color:var(--text-sub);padding:0 6px">+🏃${ri(exCal)}</div>` : ''}
         <div style="font-size:18px;color:var(--text-sub);padding:0 6px">/</div>
         <div style="flex:1;min-width:0;text-align:right">
-          <div style="font-size:10px;color:var(--text-sub)">目標</div>
+          <div style="font-size:10px;color:var(--text-sub)">${profile.goalMode === 'custom' ? '目標' : '維持カロリー'}</div>
           <div style="font-size:20px;font-weight:700;letter-spacing:-.5px">${ri(g.cal)}<span style="font-size:11px;font-weight:400;color:var(--text-sub);margin-left:2px">kcal</span></div>
         </div>
         <div style="padding-left:10px;text-align:right;min-width:64px">
@@ -907,8 +913,9 @@ function renderRecord() {
   const tb = getTdeeBreakdown();
   const bmr_disp = ri(tb.bmr);
   const actDetail = tb.detail;
+  const ditActualAdded = tb.actualDit ? r1(tb.actualDit.kcal - tb.timingUnrealized) : 0;
   const ditDesc = tb.actualDit
-    ? `DIT ${tb.ditDelta >= 0 ? '+' : ''}${ri(tb.ditDelta)}kcal（本日の食事構成${tb.timingUnrealized >= 1 ? '・摂取時刻' : ''}から算出）`
+    ? `DIT +${ri(ditActualAdded)}kcal（本日の食事構成${tb.timingUnrealized >= 1 ? '・摂取時刻' : ''}から算出。標準的な食事なら+${ri(tb.baselineDitKcal)}kcal相当）`
     : `DIT基準${Math.round(DIT_RATE*100)}%見込み（まだ記録なし）`;
   const actDesc = actDetail
     ? `× NEAT「${(NEAT_TIERS[profile.neatTier]||NEAT_TIERS.mid).label}」+ 活動 ${actDetail.activeCal}kcal（${actDetail.source==='google_health'?'Google Health実測':'歩数入力'} ${(actDetail.steps||0).toLocaleString()}歩）+ ${ditDesc}`
@@ -918,7 +925,7 @@ function renderRecord() {
   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
   document.getElementById('energyBreakdown').innerHTML = `
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">
-      推定TDEE ${ri(g.cal)} kcal（BMR ${bmr_disp} kcal ${actDesc}）
+      推定TDEE ${ri(tb.tdee)} kcal（BMR ${bmr_disp} kcal ${actDesc}）
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
       <div style="background:#e3f0ff;border-radius:8px;padding:7px 4px">

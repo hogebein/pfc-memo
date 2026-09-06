@@ -856,12 +856,18 @@
       </div>
       <div class="card">
         <div class="sl">NEATレベル（詳細設定・職種ベース）</div>
-        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数を入力した日、またはGarmin/Google Health連携がある日はこちらを使用。仕事や生活での基本的な活動量の差を反映します</p>
+        <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数を入力した日、またはGarmin/Google Health連携がある日はこちらを使用。歩数分の消費とは別に、日常の姿勢・こまごまとした動き（デスクワークか、立ち歩きが多い仕事か等）の差を反映します</p>
         <div class="toggle-group" id="neatToggle">
           <button class="toggle-btn" data-neat="low" onclick="setNeatTier(this)">座り仕事中心</button>
           <button class="toggle-btn active" data-neat="mid" onclick="setNeatTier(this)">立ち仕事が多い</button>
           <button class="toggle-btn" data-neat="high" onclick="setNeatTier(this)">肉体労働・重作業</button>
         </div>
+        <p style="font-size:10px;color:var(--text-sub);margin-top:6px;line-height:1.6">
+          例）座り仕事中心：デスクワーク・在宅勤務で座っている時間が長い／
+          立ち仕事が多い：接客・販売・教員・看護など、勤務中に立ったり歩き回ったりする時間が長い／
+          肉体労働・重作業：建設・引っ越し・農作業など身体を使う作業が中心<br>
+          迷ったら「座り仕事中心」を選んでおくのが無難です（歩数分の消費は別途加算されるため、ここは"歩数に含まれない普段の動き"だけを表します）
+        </p>
       </div>
       <div class="card">
         <div class="sl">気温設定（代謝補正）</div>
