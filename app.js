@@ -2888,11 +2888,13 @@ function editComboFood(id) {
   document.getElementById('comboName').value = f.name;
   // 食材リストを復元
   comboIngredients = (f.ingredients || []).map(ing => {
-    const r = 100 / (ing.per || 100);
+    const per = ing.per || 100;
+    const amount = ing.amount || per;
+    const r = amount / per;
     return {
       ...ing,
-      per: ing.per || 100,
-      amount: ing.amount,
+      per,
+      amount,
       _cal:     r1((ing.cal     || 0) * r),
       _p:       r1((ing.p       || 0) * r),
       _f:       r1((ing.f       || 0) * r),
@@ -2967,6 +2969,28 @@ function saveComboFood() {
   msg.className = 'status-msg status-ok';
   renderComboFoodList();
   setTimeout(() => { msg.textContent = ''; }, 2500);
+}
+
+function deleteComboFood(id) {
+  const idx = comboFoods.findIndex(f => f.id === id);
+  if (idx === -1) return;
+  const removed = comboFoods[idx];
+  comboFoods.splice(idx, 1);
+  // 削除対象を編集中だった場合はフォームを登録モードに戻す
+  const btn = document.getElementById('comboSaveBtn');
+  if (btn && btn.dataset.editId && Number(btn.dataset.editId) === id) {
+    btn.textContent = '登録';
+    delete btn.dataset.editId;
+    comboIngredients = [];
+    document.getElementById('comboName').value = '';
+    renderComboIngredients();
+  }
+  saveCustom();
+  renderComboFoodList();
+  showUndoToast(`「${removed.name}」を複合食品DBから削除しました`, () => {
+    comboFoods.splice(Math.min(idx, comboFoods.length), 0, removed);
+    saveCustom(); renderComboFoodList();
+  });
 }
 
 function renderComboFoodList() {
@@ -3214,6 +3238,7 @@ function takeAiBackup(label) {
     label,
     entries: JSON.parse(JSON.stringify(entries)),
     customFoods: JSON.parse(JSON.stringify(customFoods)),
+    comboFoods: JSON.parse(JSON.stringify(comboFoods)),
     timestamp: new Date().toISOString(),
   });
   if (aiBackups.length > AI_BACKUP_MAX) aiBackups.shift();
@@ -3225,8 +3250,10 @@ function restoreAiBackup(idx) {
   if (!bk) return;
   entries = JSON.parse(JSON.stringify(bk.entries));
   if (bk.customFoods) customFoods = JSON.parse(JSON.stringify(bk.customFoods));
+  if (bk.comboFoods)  comboFoods  = JSON.parse(JSON.stringify(bk.comboFoods));
   save(); saveCustom(); renderRecord(); renderCalendar();
   if (typeof renderCustomFoodList === 'function') renderCustomFoodList();
+  if (typeof renderComboFoodList === 'function') renderComboFoodList();
   appendAiMessage('ai', `♻️ バックアップを復元しました\n「${bk.label}」（${fmtBackupTime(bk.timestamp)}）`);
   renderAiBackupList();
 }
@@ -3392,6 +3419,10 @@ function buildFullContext() {
   // ── カスタム食品DB（名前のみ・トークン節約） ──
   if (customFoods.length) {
     lines.push('【カスタム食品】' + customFoods.map(f => f.name).join('、'));
+  }
+  // ── 複合食品DB（名前のみ・トークン節約） ──
+  if (comboFoods.length) {
+    lines.push('【複合食品】' + comboFoods.map(f => f.name).join('、'));
   }
 
   // ── 食事記録 ──
@@ -3730,6 +3761,17 @@ function executeAiCommands(commands, backupLabel) {
       changed = true;
     }
 
+    // ── DELETE_COMBO_FOOD ──（複合食品DBから削除）
+    else if (cmd.type === 'delete_combo_food') {
+      const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
+      const before = comboFoods.length;
+      comboFoods = comboFoods.filter(f => !names.some(n => normFoodName(n) === normFoodName(f.name)));
+      saveCustom();
+      renderComboFoodList();
+      log.push(`🗑️ 複合食品 ${before - comboFoods.length}件削除`);
+      changed = true;
+    }
+
     // ── DELETE_CUSTOM_FOOD ──（カスタム食品DBからの削除）
     else if (cmd.type === 'delete_custom_food') {
       const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
@@ -3962,6 +4004,13 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "「自家製プロテインオートミール」を複合食品として登録しました"
 }
 
+11. delete_combo_food — 複合食品DBから削除（名前で指定）
+{
+  "commands": [{"type": "delete_combo_food", "names": ["自家製プロテインオートミール"]}],
+  "backup_label": "複合食品削除",
+  "message": "削除しました"
+}
+
 【コマンド選択の判断基準（重要）】
 - 「〇〇を食べた」「〇〇を追加して」→ add（食事記録に追加）
 - 「（今日/昨日/〇月〇日の）朝食/昼食/夕食の〇〇を食品DBに登録して」「さっき記録した〇〇を保存して」など、既に記録済みの食品を指す依頼 → register_logged_food（コンテキストの食事記録からid付きで該当項目を探し、その id を entry_id に使う。栄養値は絶対に自分で計算し直さない）
@@ -3973,7 +4022,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 「〇〇（オートミール・プロテイン・豆乳など複数の材料）を混ぜたものを複合食品として登録して」のように、
   まだ記録していないレシピを材料の内訳を保持したまま登録したい依頼 → add_combo_food（各材料のper・amountを指定し、
   材料ごとの内訳がDB上でも残る。単に合計の栄養値だけでよく内訳が不要なら add_custom_food で十分）
-- 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal
+- 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal（ただし対象がコンテキストの【複合食品】一覧にある名前なら delete_combo_food、【カスタム食品】一覧にある名前なら delete_custom_food）
 - 「カスタム食品の〇〇のカロリーを△△に直して」「〇〇の名前を△△に変更して」など、既存のカスタム食品の内容を修正したい依頼 → edit_custom_food（updatesには変更したいフィールドだけを入れる。対象がコンテキストの【カスタム食品】一覧に見当たらない場合は無理に実行せず確認する）
 - 「〇〇に変えて」「〇〇で置き換えて」→ replace
 - 「今週の〇〇を全部〇〇にして」→ replace を dates に全日付列挙して1コマンドで
