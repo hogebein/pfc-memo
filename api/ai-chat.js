@@ -13,6 +13,13 @@ module.exports = async (req, res) => {
   if (req.method === 'OPTIONS') return res.status(204).end();
   if (req.method !== 'POST') return json(res, 405, { error: 'Method Not Allowed' });
 
+  // 任意の簡易認証: APP_ACCESS_TOKEN が設定されている場合のみ、
+  // クライアントの X-App-Token ヘッダーとの一致を要求する（無料枠の乱用対策）
+  const requiredToken = process.env.APP_ACCESS_TOKEN;
+  if (requiredToken && req.headers['x-app-token'] !== requiredToken) {
+    return json(res, 401, { error: 'Unauthorized' });
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return json(res, 500, { error: 'GEMINI_API_KEY が設定されていません。Vercel の環境変数を確認してください。' });
@@ -121,7 +128,7 @@ module.exports = async (req, res) => {
 
 function setCors(res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-App-Token');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
 }
 function json(res, status, obj) {

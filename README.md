@@ -147,7 +147,7 @@ Netlify ダッシュボード → Site settings → Environment variables：
 
 - 食事記録（朝食・昼食・夕食・間食）
 - 食品検索（内蔵DB + Open Food Facts API + カスタム登録）
-- **TDEE計算**（国立健康・栄養研究所式BMR × 気温補正 × 活動係数）
+- **TDEE計算**（Mifflin-St Jeor式BMR × 気温補正 × 活動係数）
 - **エネルギー収支**（DIT補正・食物繊維補正後の正味摂取カロリー vs TDEE）
 - **補正前/補正後/収支グラフ**の切り替え
 - ビタミン・ミネラル・食物繊維の集計と達成度表示
@@ -188,6 +188,18 @@ Netlify ダッシュボード → Site configuration → Environment variables �
 
 デプロイ完了後、AIタブを開いて話しかけてみてください。
 `GEMINI_API_KEY が設定されていません` と表示される場合は環境変数の設定と再デプロイを確認してください。
+
+### 3.5-4. （任意）AIチャットの乱用防止
+
+`/.netlify/functions/ai-chat` はURLさえ分かれば誰でも呼び出せるため、URLが漏れると無料枠を消費される可能性があります。気になる場合は以下で簡易的な認証を追加できます（未設定時は今まで通り無制限で動作します）。
+
+1. Netlify環境変数に `APP_ACCESS_TOKEN`（好きな文字列）を追加して再デプロイ
+2. ブラウザでアプリを開き、開発者ツールのコンソールで以下を実行：
+   ```js
+   localStorage.setItem('appAccessToken', 'ここに1と同じ文字列')
+   ```
+
+これでAIチャットのリクエストにトークンが自動で付与されるようになります。
 
 ---
 

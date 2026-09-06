@@ -8,7 +8,7 @@ exports.handler = async (event) => {
   const siteUrl      = process.env.URL || 'http://localhost:8888';
 
   if (error) {
-    return { statusCode: 302, headers: { Location: `/?gh_error=${encodeURIComponent(error)}` } };
+    return { statusCode: 302, headers: { Location: `/#gh_error=${encodeURIComponent(error)}` } };
   }
   if (!code) {
     return { statusCode: 400, body: JSON.stringify({ error: 'Missing code' }) };
@@ -21,7 +21,7 @@ exports.handler = async (event) => {
       .filter(([k]) => k)
   );
   if (cookies['gh_state'] !== state) {
-    return { statusCode: 302, headers: { Location: '/?gh_error=state_mismatch' } };
+    return { statusCode: 302, headers: { Location: '/#gh_error=state_mismatch' } };
   }
 
   const redirectUri = `${siteUrl}/.netlify/functions/google-health-auth-callback`;
@@ -42,7 +42,7 @@ exports.handler = async (event) => {
   if (!tokenRes.ok) {
     const err = await tokenRes.text();
     console.error('Token exchange failed:', err);
-    return { statusCode: 302, headers: { Location: '/?gh_error=token_exchange_failed' } };
+    return { statusCode: 302, headers: { Location: '/#gh_error=token_exchange_failed' } };
   }
 
   const tokens = await tokenRes.json();
@@ -58,7 +58,8 @@ exports.handler = async (event) => {
   return {
     statusCode: 302,
     headers: {
-      Location: `/?gh_token=${encodeURIComponent(combined)}`,
+      // フラグメント(#)で渡すことで、サーバーのアクセスログ等にトークンが残らないようにする
+      Location: `/#gh_token=${encodeURIComponent(combined)}`,
       'Set-Cookie': 'gh_state=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
     }
   };

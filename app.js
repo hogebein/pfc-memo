@@ -2858,19 +2858,28 @@ function addComboIngredient(i, src) {
   box.style.display='none'; document.getElementById('comboSearch').value=''; showSp('comboSpinner','comboSearchIcon',false); renderComboIngredients();
 }
 function updateComboAmt(i, val) {
-  const f=comboIngredients[i], amt=parseFloat(val)||100, r=amt/(f.per||100);
+  const f = comboIngredients[i];
+  const amt = parseFloat(val);
+  // 入力途中の空欄・無効値では amount を勝手に上書きしない（100gへの巻き戻りを防止）
+  if (isNaN(amt) || amt <= 0) { updateComboTotal(); return; }
+  const r = amt/(f.per||100);
   comboIngredients[i]={...f,amount:amt,_cal:r1(f.cal*r),_p:r1(f.p*r),_f:r1(f.f*r),_c:r1(f.c*r),
     _fiber:r1((f.fiber||0)*r),_iron:r1((f.iron||0)*r),_calcium:r1((f.calcium||0)*r),
     _vitc:r1((f.vitc||0)*r),_vitd:r1((f.vitd||0)*r),_salt:r2((f.salt||0)*r)};
-  renderComboIngredients();
+  // 合計表示だけ更新し、入力欄のDOMは再生成しない（再生成すると入力中にフォーカスが外れてしまう）
+  updateComboTotal();
+}
+function updateComboTotal() {
+  if (!comboIngredients.length) { document.getElementById('comboTotal').textContent=''; return }
+  const tot=comboIngredients.reduce((a,f)=>({cal:a.cal+f._cal,p:a.p+f._p,f:a.f+f._f,c:a.c+f._c,fiber:a.fiber+f._fiber,iron:a.iron+f._iron,calcium:a.calcium+f._calcium}),{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0});
+  document.getElementById('comboTotal').textContent=`合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)} 繊${r1(tot.fiber)}g`;
 }
 function removeComboIngredient(i){comboIngredients.splice(i,1);renderComboIngredients()}
 function renderComboIngredients() {
   const cont=document.getElementById('comboIngredients');
   if(!comboIngredients.length){cont.innerHTML=`<div style="font-size:12px;color:var(--text-sub);padding:4px 0">食材を検索して追加してください</div>`;document.getElementById('comboTotal').textContent='';return}
   cont.innerHTML=comboIngredients.map((f,i)=>`<div class="combo-ingredient"><span style="font-weight:500;flex:1">${f.name}</span><input type="number" value="${f.amount}" min="1" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateComboAmt(${i},this.value)"><span style="font-size:10px;color:var(--text-sub);margin-right:5px">g</span><button class="btn btn-sm btn-danger" onclick="removeComboIngredient(${i})">✕</button></div>`).join('');
-  const tot=comboIngredients.reduce((a,f)=>({cal:a.cal+f._cal,p:a.p+f._p,f:a.f+f._f,c:a.c+f._c,fiber:a.fiber+f._fiber,iron:a.iron+f._iron,calcium:a.calcium+f._calcium}),{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0});
-  document.getElementById('comboTotal').textContent=`合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)} 繊${r1(tot.fiber)}g`;
+  updateComboTotal();
 }
 function editComboFood(id) {
   const f = comboFoods.find(f => f.id === id);
@@ -2997,18 +3006,18 @@ async function connectGoogleHealth() {
 }
 
 (function checkGoogleHealthCallback() {
-  const params = new URLSearchParams(window.location.search);
+  const params = new URLSearchParams(window.location.hash.replace(/^#/, ''));
   const token = params.get('gh_token');
   const err   = params.get('gh_error');
   if (err) {
     console.warn('Google Health auth error:', err);
-    history.replaceState({}, '', window.location.pathname);
+    history.replaceState({}, '', window.location.pathname + window.location.search);
     return;
   }
   if (token) {
     ghToken = token;
     localStorage.setItem('ghToken', token);
-    history.replaceState({}, '', window.location.pathname);
+    history.replaceState({}, '', window.location.pathname + window.location.search);
     renderGhStatus();
     syncGoogleHealth();
   }
@@ -3018,7 +3027,8 @@ async function syncGoogleHealth() {
   if (!ghToken) return;
   try {
     const res = await fetch(
-      `/.netlify/functions/google-health-daily?date=${currentDate}&token=${encodeURIComponent(ghToken)}`
+      `/.netlify/functions/google-health-daily?date=${currentDate}`,
+      { headers: { 'X-Gh-Token': ghToken } }
     );
     if (!res.ok) throw new Error('sync failed');
     const data = await res.json();
@@ -3663,6 +3673,63 @@ function executeAiCommands(commands, backupLabel) {
       changed = true;
     }
 
+    // ── ADD_COMBO_FOOD ──（まだ記録していないレシピを、材料リストから複合食品として新規登録。手動の「複合食品登録」タブと同じデータ構造）
+    else if (cmd.type === 'add_combo_food') {
+      const combos = Array.isArray(cmd.combos) ? cmd.combos : [cmd];
+      combos.forEach(combo => {
+        const name = (combo.name || '').trim();
+        if (!name) { log.push('⚠️ 複合食品名が指定されていません'); return; }
+        if (comboFoods.some(f => normFoodName(f.name) === normFoodName(name))) {
+          log.push(`ℹ️ 「${name}」は既に複合食品として登録済みです`);
+          return;
+        }
+        const rawIngredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
+        if (!rawIngredients.length) { log.push(`⚠️ 「${name}」の材料が指定されていません`); return; }
+
+        const ingredients = rawIngredients.map(ing => {
+          const per    = parseFloat(ing.per) || 100;
+          const amount = parseFloat(ing.amount) || per;
+          const r      = amount / per;
+          const cal = parseFloat(ing.cal) || 0, p = parseFloat(ing.p) || 0, f = parseFloat(ing.f) || 0, c = parseFloat(ing.c) || 0;
+          const fiber = parseFloat(ing.fiber) || 0, iron = parseFloat(ing.iron) || 0, calcium = parseFloat(ing.calcium) || 0;
+          const vitc = parseFloat(ing.vitc) || 0, vitd = parseFloat(ing.vitd) || 0, salt = parseFloat(ing.salt) || 0;
+          return {
+            name: ing.name || '材料', amount, per, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt,
+            _cal: r1(cal*r), _p: r1(p*r), _f: r1(f*r), _c: r1(c*r),
+            _fiber: r1(fiber*r), _iron: r1(iron*r), _calcium: r1(calcium*r),
+            _vitc: r1(vitc*r), _vitd: r1(vitd*r), _salt: r2(salt*r),
+          };
+        });
+        const totalAmt = ingredients.reduce((a,f) => a + f.amount, 0);
+        if (totalAmt <= 0) { log.push(`⚠️ 「${name}」の材料の量が不正です`); return; }
+        const tot = ingredients.reduce((a,f) => ({
+          cal: a.cal+f._cal, p: a.p+f._p, f: a.f+f._f, c: a.c+f._c,
+          fiber: a.fiber+f._fiber, iron: a.iron+f._iron, calcium: a.calcium+f._calcium,
+          vitc: a.vitc+f._vitc, vitd: a.vitd+f._vitd, salt: a.salt+f._salt,
+        }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+        const sc = v => r1(v / totalAmt * 100);
+
+        comboFoods.push({
+          id: Date.now() + Math.random(),
+          name, per: 100,
+          cal: sc(tot.cal), p: sc(tot.p), f: sc(tot.f), c: sc(tot.c),
+          fiber: sc(tot.fiber), iron: sc(tot.iron), calcium: sc(tot.calcium),
+          vitc: sc(tot.vitc), vitd: sc(tot.vitd), salt: r2(tot.salt / totalAmt * 100),
+          ingredients: ingredients.map(f => ({
+            name: f.name, amount: f.amount, per: f.per,
+            cal: f.cal, p: f.p, f: f.f, c: f.c,
+            fiber: f.fiber, iron: f.iron, calcium: f.calcium,
+            vitc: f.vitc, vitd: f.vitd, salt: f.salt,
+          })),
+          _src: 'combo',
+        });
+        log.push(`📦 複合食品「${name}」を${ingredients.length}品目・合計${r1(totalAmt)}gで登録`);
+      });
+      saveCustom();
+      renderComboFoodList();
+      changed = true;
+    }
+
     // ── DELETE_CUSTOM_FOOD ──（カスタム食品DBからの削除）
     else if (cmd.type === 'delete_custom_food') {
       const names = Array.isArray(cmd.names) ? cmd.names : [cmd.name];
@@ -3879,6 +3946,22 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "削除しました"
 }
 
+10. add_combo_food — まだ記録していないレシピ・料理を、複数の材料から「複合食品」として新規登録する（「記録」タブの複合食品登録と同じデータ構造。材料の内訳を保持したまま複合食品リストに保存される）。
+    ingredients の各要素は「その食材のamount(g)における実量」ではなく、per(基準量。省略時100g)あたりの値を指定する（=食品DBの1件と同じ形式）。
+{
+  "commands": [{
+    "type": "add_combo_food",
+    "name": "自家製プロテインオートミール",
+    "ingredients": [
+      {"name": "オートミール", "amount": 50, "per": 100, "cal": 380, "p": 13.7, "f": 5.7, "c": 69.1, "fiber": 9.4},
+      {"name": "ホエイプロテイン", "amount": 30, "per": 100, "cal": 400, "p": 80, "f": 5, "c": 8},
+      {"name": "無調整豆乳", "amount": 200, "per": 100, "cal": 46, "p": 3.6, "f": 2, "c": 3.1}
+    ]
+  }],
+  "backup_label": "複合食品登録",
+  "message": "「自家製プロテインオートミール」を複合食品として登録しました"
+}
+
 【コマンド選択の判断基準（重要）】
 - 「〇〇を食べた」「〇〇を追加して」→ add（食事記録に追加）
 - 「（今日/昨日/〇月〇日の）朝食/昼食/夕食の〇〇を食品DBに登録して」「さっき記録した〇〇を保存して」など、既に記録済みの食品を指す依頼 → register_logged_food（コンテキストの食事記録からid付きで該当項目を探し、その id を entry_id に使う。栄養値は絶対に自分で計算し直さない）
@@ -3887,6 +3970,9 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   該当しそうにない品目まで巻き込まない。判断に自信が持てない場合は無理に実行せず、
   message で対象候補を確認する質問を返す）
 - まだ記録されていない食品を新しくDBに登録したい依頼（「〇〇という商品をDBに登録して」等）→ add_custom_food（栄養値を推定して入力）
+- 「〇〇（オートミール・プロテイン・豆乳など複数の材料）を混ぜたものを複合食品として登録して」のように、
+  まだ記録していないレシピを材料の内訳を保持したまま登録したい依頼 → add_combo_food（各材料のper・amountを指定し、
+  材料ごとの内訳がDB上でも残る。単に合計の栄養値だけでよく内訳が不要なら add_custom_food で十分）
 - 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal
 - 「カスタム食品の〇〇のカロリーを△△に直して」「〇〇の名前を△△に変更して」など、既存のカスタム食品の内容を修正したい依頼 → edit_custom_food（updatesには変更したいフィールドだけを入れる。対象がコンテキストの【カスタム食品】一覧に見当たらない場合は無理に実行せず確認する）
 - 「〇〇に変えて」「〇〇で置き換えて」→ replace
@@ -3926,6 +4012,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 既に記録した食事から登録したい場合は register_logged_food（記録値そのまま使う・最も正確）
 - 複数の記録済み品目を1つにまとめたい場合は register_combo_from_log（対象の判断はあなたの食品知識で行う）
 - まだ記録していない新しい商品を登録したい場合は add_custom_food（per は商品1個・1食分・100g など最も使いやすい単位を選ぶ。栄養成分表示がある場合はその数値を使用、なければ標準的な値を推定）
+- まだ記録していないレシピを、材料の内訳を残したまま登録したい場合は add_combo_food（各材料の栄養値は search_food_db で確認するか、あなたの知識で推定）
 - 登録後は「記録タブの食品検索から追加できます」と案内する
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -3937,7 +4024,10 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     for (let loop = 0; loop <= MAX_TOOL_LOOPS; loop++) {
       const res = await fetch('/.netlify/functions/ai-chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(localStorage.getItem('appAccessToken') ? { 'X-App-Token': localStorage.getItem('appAccessToken') } : {}),
+        },
         body: JSON.stringify({
           system: systemPrompt,
           messages: workingMessages,

@@ -8,7 +8,7 @@ module.exports = async (req, res) => {
   const siteUrl      = `https://${req.headers['x-forwarded-host'] || req.headers.host}`;
 
   if (error) {
-    return res.redirect(302, `/?gh_error=${encodeURIComponent(error)}`);
+    return res.redirect(302, `/#gh_error=${encodeURIComponent(error)}`);
   }
   if (!code) {
     res.status(400).setHeader('Content-Type', 'application/json');
@@ -22,7 +22,7 @@ module.exports = async (req, res) => {
       .filter(([k]) => k)
   );
   if (cookies['gh_state'] !== state) {
-    return res.redirect(302, '/?gh_error=state_mismatch');
+    return res.redirect(302, '/#gh_error=state_mismatch');
   }
 
   const redirectUri = `${siteUrl}/api/google-health-auth-callback`;
@@ -43,7 +43,7 @@ module.exports = async (req, res) => {
   if (!tokenRes.ok) {
     const err = await tokenRes.text();
     console.error('Token exchange failed:', err);
-    return res.redirect(302, '/?gh_error=token_exchange_failed');
+    return res.redirect(302, '/#gh_error=token_exchange_failed');
   }
 
   const tokens = await tokenRes.json();
@@ -57,5 +57,6 @@ module.exports = async (req, res) => {
   })).toString('base64');
 
   res.setHeader('Set-Cookie', 'gh_state=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT');
-  return res.redirect(302, `/?gh_token=${encodeURIComponent(combined)}`);
+  // フラグメント(#)で渡すことで、サーバーのアクセスログ等にトークンが残らないようにする
+  return res.redirect(302, `/#gh_token=${encodeURIComponent(combined)}`);
 };

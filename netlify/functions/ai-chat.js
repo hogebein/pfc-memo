@@ -16,6 +16,16 @@ exports.handler = async (event) => {
     return json(405, { error: 'Method Not Allowed' });
   }
 
+  // 任意の簡易認証: APP_ACCESS_TOKEN が設定されている場合のみ、
+  // クライアントの X-App-Token ヘッダーとの一致を要求する（無料枠の乱用対策）
+  const requiredToken = process.env.APP_ACCESS_TOKEN;
+  if (requiredToken) {
+    const provided = event.headers && (event.headers['x-app-token'] || event.headers['X-App-Token']);
+    if (provided !== requiredToken) {
+      return json(401, { error: 'Unauthorized' });
+    }
+  }
+
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return json(500, { error: 'GEMINI_API_KEY が設定されていません。Netlify の環境変数を確認してください。' });
@@ -126,7 +136,7 @@ exports.handler = async (event) => {
 function corsHeaders() {
   return {
     'Access-Control-Allow-Origin':  '*',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, X-App-Token',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
   };
 }

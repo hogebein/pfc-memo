@@ -14,7 +14,8 @@
 const BASE_URL = 'https://health.googleapis.com/v4';
 
 exports.handler = async (event) => {
-  const { date, token: tokenB64 } = event.queryStringParameters || {};
+  const { date } = event.queryStringParameters || {};
+  const tokenB64 = (event.headers && (event.headers['x-gh-token'] || event.headers['X-Gh-Token']));
   const clientId     = process.env.GOOGLE_HEALTH_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_HEALTH_CLIENT_SECRET;
 

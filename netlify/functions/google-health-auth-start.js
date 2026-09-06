@@ -7,6 +7,8 @@
 //   GOOGLE_HEALTH_CLIENT_SECRET - Google Cloud Console で発行
 //   URL                         - Netlifyが自動設定するサイトURL
 
+const crypto = require('crypto');
+
 exports.handler = async (event) => {
   const clientId = process.env.GOOGLE_HEALTH_CLIENT_ID;
   const siteUrl  = process.env.URL || 'http://localhost:8888';
@@ -22,13 +24,13 @@ exports.handler = async (event) => {
 
   // Google Health API に必要なスコープ
   const scopes = [
-    'https://www.googleapis.com/auth/health.activity_and_fitness',      // 歩数・消費カロリー・運動
-    'https://www.googleapis.com/auth/health.health_metrics_and_measurements', // 心拍数・体重・体脂肪
-    'https://www.googleapis.com/auth/health.sleep',                     // 睡眠
+    'https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly',      // 歩数・消費カロリー・運動
+    'https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly', // 心拍数・体重・体脂肪
+    'https://www.googleapis.com/auth/googlehealth.sleep.readonly',                     // 睡眠
   ].join(' ');
 
-  // PKCE用 code_verifier を生成（サーバーレスなのでシンプルにstate管理）
-  const state = Math.random().toString(36).substring(2, 15);
+  // CSRF対策用 state を暗号学的に安全な乱数で生成
+  const state = crypto.randomBytes(16).toString('hex');
 
   const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
   authUrl.searchParams.set('client_id', clientId);
