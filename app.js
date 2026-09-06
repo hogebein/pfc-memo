@@ -2932,16 +2932,17 @@ function saveComboFood() {
     vitc: a.vitc+(f._vitc||0), vitd: a.vitd+(f._vitd||0), salt: a.salt+(f._salt||0),
   }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
   const totalAmt = comboIngredients.reduce((a,f) => a + f.amount, 0);
-  const sc = v => r1(v / totalAmt * 100);
 
   const editId = btn.dataset.editId ? Number(btn.dataset.editId) : null;
 
+  // 100gあたりに正規化せず、実際に作った総重量を基準量(per)にする
+  // → 記録タブで選ぶ際のデフォルト量が「100g」ではなく「作った分そのまま」になる
   const foodData = {
     id: editId || Date.now(),
-    name, per: 100,
-    cal: sc(tot.cal), p: sc(tot.p), f: sc(tot.f), c: sc(tot.c),
-    fiber: sc(tot.fiber), iron: sc(tot.iron), calcium: sc(tot.calcium),
-    vitc: sc(tot.vitc), vitd: sc(tot.vitd), salt: r2(tot.salt / totalAmt * 100),
+    name, per: r1(totalAmt), serving: r1(totalAmt),
+    cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
+    fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
+    vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
     ingredients: comboIngredients.map(f => ({
       name: f.name, amount: f.amount,
       per: f.per || 100, cal: f.cal, p: f.p, f: f.f, c: f.c,
@@ -3003,7 +3004,7 @@ function renderComboFoodList() {
     `<div class="custom-item">
       <div style="flex:1;min-width:0">
         <div style="font-weight:500">${f.name}</div>
-        <div style="font-size:10px;color:var(--text-sub)">100gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div>
+        <div style="font-size:10px;color:var(--text-sub)">全量${f.per}gで ${ri(f.cal)}kcal P${r1(f.p)} F${r1(f.f)} C${r1(f.c)}${f.fiber?' 繊'+r1(f.fiber):''}</div>
         <div style="font-size:10px;color:var(--text-sub)">${(f.ingredients||[]).map(i=>`${i.name}(${i.amount}g)`).join('、')}</div>
       </div>
       <button class="btn btn-sm" onclick="editComboFood(${f.id})"
@@ -3738,14 +3739,15 @@ function executeAiCommands(commands, backupLabel) {
           fiber: a.fiber+f._fiber, iron: a.iron+f._iron, calcium: a.calcium+f._calcium,
           vitc: a.vitc+f._vitc, vitd: a.vitd+f._vitd, salt: a.salt+f._salt,
         }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
-        const sc = v => r1(v / totalAmt * 100);
 
+        // 100gあたりに正規化せず、材料の総重量を基準量(per)にする
+        // → 記録タブで選ぶ際のデフォルト量が「作った分そのまま」になる
         comboFoods.push({
           id: Date.now() + Math.random(),
-          name, per: 100,
-          cal: sc(tot.cal), p: sc(tot.p), f: sc(tot.f), c: sc(tot.c),
-          fiber: sc(tot.fiber), iron: sc(tot.iron), calcium: sc(tot.calcium),
-          vitc: sc(tot.vitc), vitd: sc(tot.vitd), salt: r2(tot.salt / totalAmt * 100),
+          name, per: r1(totalAmt), serving: r1(totalAmt),
+          cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
+          fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
+          vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
           ingredients: ingredients.map(f => ({
             name: f.name, amount: f.amount, per: f.per,
             cal: f.cal, p: f.p, f: f.f, c: f.c,
@@ -3990,6 +3992,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 
 10. add_combo_food — まだ記録していないレシピ・料理を、複数の材料から「複合食品」として新規登録する（「記録」タブの複合食品登録と同じデータ構造。材料の内訳を保持したまま複合食品リストに保存される）。
     ingredients の各要素は「その食材のamount(g)における実量」ではなく、per(基準量。省略時100g)あたりの値を指定する（=食品DBの1件と同じ形式）。
+    登録後は100gあたりに正規化されず、材料の総重量そのものが基準量になる（例: 材料合計550gなら「550gあたり」として保存され、記録タブで選ぶ際のデフォルト量も550gになる）。
 {
   "commands": [{
     "type": "add_combo_food",
