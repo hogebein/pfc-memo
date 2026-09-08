@@ -844,6 +844,16 @@
         <div class="row"><div class="field"><label>体脂肪率 (%) — 任意</label><input type="number" id="pBF" placeholder="例: 20" min="3" max="60" step="0.1" onchange="saveProfile()"></div></div>
       </div>
       <div class="card">
+        <div class="sl">基礎代謝(BMR)の計算式</div>
+        <div class="toggle-group" id="bmrFormulaToggle">
+          <button class="toggle-btn active" data-formula="mifflin" onclick="setBmrFormula(this)">Mifflin-St Jeor</button>
+          <button class="toggle-btn" data-formula="katch" onclick="setBmrFormula(this)">Katch-McArdle</button>
+        </div>
+        <p style="font-size:10px;color:var(--text-sub);margin-top:6px;line-height:1.6" id="bmrFormulaDesc">
+          Mifflin-St Jeor式：体重・身長・年齢・性別から算出する一般的な式です。
+        </p>
+      </div>
+      <div class="card">
         <div class="sl">活動レベル（かんたん設定）</div>
         <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数の入力・Garmin/Google Health連携が無い日はこちらの係数を使用</p>
         <div class="toggle-group" id="activityToggle">
@@ -857,16 +867,20 @@
       <div class="card">
         <div class="sl">NEATレベル（詳細設定・職種ベース）</div>
         <p style="font-size:11px;color:var(--text-sub);margin-bottom:8px">歩数を入力した日、またはGarmin/Google Health連携がある日はこちらを使用。歩数分の消費とは別に、日常の姿勢・こまごまとした動き（デスクワークか、立ち歩きが多い仕事か等）の差を反映します</p>
-        <div class="toggle-group" id="neatToggle">
-          <button class="toggle-btn" data-neat="low" onclick="setNeatTier(this)">座り仕事中心</button>
-          <button class="toggle-btn active" data-neat="mid" onclick="setNeatTier(this)">立ち仕事が多い</button>
-          <button class="toggle-btn" data-neat="high" onclick="setNeatTier(this)">肉体労働・重作業</button>
+        <div style="padding:4px 2px 10px">
+          <input type="range" id="neatSlider" min="5" max="35" step="1" value="20"
+                 style="width:100%" oninput="setNeatPct(this.value)">
+          <div style="display:flex;justify-content:space-between;font-size:9px;color:var(--text-sub);margin-top:2px">
+            <span>座り仕事中心 10%</span><span>立ち仕事が多い 20%</span><span>肉体労働 30%</span>
+          </div>
         </div>
-        <p style="font-size:10px;color:var(--text-sub);margin-top:6px;line-height:1.6">
-          例）座り仕事中心：デスクワーク・在宅勤務で座っている時間が長い／
-          立ち仕事が多い：接客・販売・教員・看護など、勤務中に立ったり歩き回ったりする時間が長い／
-          肉体労働・重作業：建設・引っ越し・農作業など身体を使う作業が中心<br>
-          迷ったら「座り仕事中心」を選んでおくのが無難です（歩数分の消費は別途加算されるため、ここは"歩数に含まれない普段の動き"だけを表します）
+        <div id="neatSliderLabel" style="text-align:center;font-size:13px;font-weight:600;margin-bottom:8px">+20%（立ち仕事が多い）・目安 約+320kcal/日</div>
+        <p style="font-size:10px;color:var(--text-sub);margin-top:6px;line-height:1.7">
+          例）座り仕事中心（〜13%）：デスクワーク・在宅勤務で座っている時間が長い／
+          立ち仕事が多い（17〜23%）：接客・販売・教員・看護など、勤務中に立ったり歩き回ったりする時間が長い／
+          肉体労働・重作業（27%〜）：建設・引っ越し・農作業など身体を使う作業が中心<br><br>
+          歩数に換算されない動き（家事・立ち姿勢・重い荷物・筋トレ・走行など）は、この%を少し上げることでまとめて近似できます。目安として、家事を1〜2時間／日なら+3〜5%程度、電車で長時間立つ・重いリュックを背負う習慣があるなら+2〜3%程度、筋トレや軽いランニングを週数回するなら+3〜5%程度を、座り仕事中心(10%)に上乗せするイメージです（走行など運動そのものの消費は、運動記録タブで別途記録した方が精度は出ます。ここはあくまで「歩数に含まれない、日常のこまごまとした動き」の目安です）。<br><br>
+          迷ったら「座り仕事中心」寄りから始めて、体重の増減トレンドを見ながら数週間おきに微調整するのが確実です（歩数分の消費は別途加算されるため、ここは"歩数に含まれない普段の動き"だけを表します）
         </p>
       </div>
       <div class="card">
