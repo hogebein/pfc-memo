@@ -178,6 +178,7 @@ async function saveToCloud() {
       exercises,
       customFoods,
       comboFoods,
+      quickSeasonings,
       profile,
       updatedAt: new Date().toISOString(),
     });
@@ -974,6 +975,10 @@ function renderRecord() {
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
           html += `<div class="edit-form" id="editForm_${e.id}">
             <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:8px;gap:4px">
+              <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="flex:1;height:32px">保存</button>
+              <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="flex:1;height:32px">取消</button>
+            </div>
             <div class="row" style="margin-bottom:2px;gap:8px;align-items:center"><input type="range" id="easlider${e.id}" min="0" max="${Math.max(200, r1(e.amount*3))}" step="1" value="${e.amount}" style="flex:1" oninput="syncAmountFromSlider(${e.id}, this.value)"></div>
             <div class="row" style="margin-bottom:4px;gap:3px">${[-10,-5,-1,1,5,10].map(d=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:10px" onclick="nudgeEditAmount(${e.id},${d})">${d>0?'+':''}${d}g</button>`).join('')}</div>
             <div class="row" style="margin-bottom:5px;gap:4px">
@@ -1143,24 +1148,35 @@ function selectAddResult(i, src, meal) {
 }
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
-const SEASONING_MASTER = {
-  '醤油（濃口）小さじ1':   { name:'醤油（濃口）',      amount:6,  cal:4,   p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2,  vitc:0,   vitd:0, salt:0.9 },
-  '味噌（米みそ）小さじ1': { name:'味噌（米みそ）',    amount:6,  cal:12,  p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8,  vitc:0,   vitd:0, salt:0.7 },
-  '鶏ガラスープの素小さじ1':{ name:'鶏ガラスープの素',  amount:3,  cal:7,   p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.3 },
-  '米油小さじ1':           { name:'米油',              amount:4,  cal:37,  p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  'みりん小さじ1':         { name:'みりん',            amount:6,  cal:14,  p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  'にんにく小さじ1':       { name:'にんにく',          amount:5,  cal:7,   p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1,  vitc:0.6, vitd:0, salt:0   },
-  '白だし小さじ1':         { name:'白だし',            amount:6,  cal:7,   p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3,  vitc:0,   vitd:0, salt:1.0 },
-  'カレー粉小さじ1':       { name:'カレー粉',          amount:2,  cal:7,   p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5,  vitc:0,   vitd:0, salt:0   },
-  '酢小さじ1':             { name:'酢（穀物酢）',       amount:5,  cal:1,   p:0,   f:0,   c:0.1, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  '砂糖小さじ1':           { name:'砂糖（上白糖）',     amount:3,  cal:12,  p:0,   f:0,   c:3.0, fiber:0,   iron:0,   calcium:0,  vitc:0,   vitd:0, salt:0   },
-  'ウスターソース小さじ1': { name:'ウスターソース',    amount:6,  cal:7,   p:0.1, f:0,   c:1.6, fiber:0,   iron:0.1, calcium:4,  vitc:0,   vitd:0, salt:0.5 },
-  'ケチャップ小さじ1':     { name:'ケチャップ',         amount:5,  cal:6,   p:0.1, f:0,   c:1.4, fiber:0.1, iron:0,   calcium:1,  vitc:0.5, vitd:0, salt:0.2 },
-};
+// ユーザーが自由に追加・削除できるよう配列で管理する（初回起動時はこの12種を初期値として使う）
+const DEFAULT_QUICK_SEASONINGS = [
+  { label:'しょうゆ',  name:'醤油（濃口）',     amount:6, cal:4,  p:0.5, f:0,   c:0.6, fiber:0,   iron:0.1, calcium:2, vitc:0,   vitd:0, salt:0.9 },
+  { label:'味噌',      name:'味噌（米みそ）',   amount:6, cal:12, p:0.7, f:0.4, c:1.3, fiber:0.3, iron:0.2, calcium:8, vitc:0,   vitd:0, salt:0.7 },
+  { label:'鶏ガラ',    name:'鶏ガラスープの素', amount:3, cal:7,  p:0.6, f:0.2, c:0.8, fiber:0,   iron:0.1, calcium:3, vitc:0,   vitd:0, salt:1.3 },
+  { label:'米油',      name:'米油',             amount:4, cal:37, p:0,   f:4.0, c:0,   fiber:0,   iron:0,   calcium:0, vitc:0,   vitd:0, salt:0   },
+  { label:'みりん',    name:'みりん',           amount:6, cal:14, p:0,   f:0,   c:3.1, fiber:0,   iron:0,   calcium:0, vitc:0,   vitd:0, salt:0   },
+  { label:'にんにく',  name:'にんにく',         amount:5, cal:7,  p:0.3, f:0,   c:1.4, fiber:0.3, iron:0,   calcium:1, vitc:0.6, vitd:0, salt:0   },
+  { label:'白だし',    name:'白だし',           amount:6, cal:7,  p:0.4, f:0,   c:1.4, fiber:0,   iron:0.1, calcium:3, vitc:0,   vitd:0, salt:1.0 },
+  { label:'カレー粉',  name:'カレー粉',         amount:2, cal:7,  p:0.3, f:0.3, c:1.0, fiber:0.6, iron:0.3, calcium:5, vitc:0,   vitd:0, salt:0   },
+  { label:'酢',        name:'酢（穀物酢）',     amount:5, cal:1,  p:0,   f:0,   c:0.1, fiber:0,   iron:0,   calcium:0, vitc:0,   vitd:0, salt:0   },
+  { label:'砂糖',      name:'砂糖（上白糖）',   amount:3, cal:12, p:0,   f:0,   c:3.0, fiber:0,   iron:0,   calcium:0, vitc:0,   vitd:0, salt:0   },
+  { label:'ウスター',  name:'ウスターソース',   amount:6, cal:7,  p:0.1, f:0,   c:1.6, fiber:0,   iron:0.1, calcium:4, vitc:0,   vitd:0, salt:0.5 },
+  { label:'ケチャ',    name:'ケチャップ',       amount:5, cal:6,  p:0.1, f:0,   c:1.4, fiber:0.1, iron:0,   calcium:1, vitc:0.5, vitd:0, salt:0.2 },
+];
+let quickSeasonings = [];
+try {
+  const qs = JSON.parse(localStorage.getItem('pfcQuickSeasonings') || 'null');
+  quickSeasonings = qs || JSON.parse(JSON.stringify(DEFAULT_QUICK_SEASONINGS));
+} catch(e) { quickSeasonings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SEASONINGS)); }
+quickSeasonings.forEach(s => { if (s.id == null) s.id = Date.now() + Math.random(); });
+function saveQuickSeasonings() {
+  try { localStorage.setItem('pfcQuickSeasonings', JSON.stringify(quickSeasonings)); } catch(e) {}
+  queueCloudSave();
+}
 
 let _seasoningMsgTimer = null;
-function addSeasoning(key) {
-  const s = SEASONING_MASTER[key];
+function addSeasoning(id) {
+  const s = quickSeasonings.find(x => x.id === id);
   if (!s) return;
   const meal = document.getElementById('seasoningMeal')?.value || '昼食';
   const { merged } = addOrMergeEntry({
@@ -1183,7 +1199,73 @@ function addSeasoning(key) {
   });
   save();
   renderRecord();
-  showToast(merged ? `✅ ${s.name}（${s.amount}g）を${meal}に合算しました` : `✅ ${s.name}（小さじ1・${s.amount}g）を${meal}に追加`);
+  showToast(merged ? `✅ ${s.name}（${s.amount}g）を${meal}に合算しました` : `✅ ${s.name}（${s.amount}g）を${meal}に追加`);
+}
+function renderQuickSeasonings() {
+  const cont = document.getElementById('quickSeasoningBtns');
+  if (!cont) return;
+  cont.innerHTML = quickSeasonings.map(s =>
+    `<button onclick="addSeasoning(${s.id})" class="seasoning-btn" style="flex:0 0 auto;white-space:nowrap">${s.label}</button>`
+  ).join('') + `<button onclick="toggleQsManager()" class="seasoning-btn" style="flex:0 0 auto;white-space:nowrap;opacity:.75">⚙️ 管理</button>`;
+}
+function toggleQsManager() {
+  const el = document.getElementById('quickSeasoningManager');
+  if (!el) return;
+  const show = el.style.display === 'none';
+  el.style.display = show ? '' : 'none';
+  if (show) renderQsExistingList();
+}
+function onQsSearch(q) {
+  const box = document.getElementById('qsResultsBox');
+  if (!q.trim()) { box.style.display = 'none'; return; }
+  const local = localSearch(q);
+  box.innerHTML = local.length
+    ? local.map((f,i) => `<div class="ri" onclick="pickQsSeasoning(${i})"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.serving||f.per}gで登録されます</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')
+    : `<div class="no-result">見つかりませんでした</div>`;
+  box._local = local;
+  box.style.display = 'block';
+}
+function pickQsSeasoning(i) {
+  const box = document.getElementById('qsResultsBox');
+  const f = box._local && box._local[i];
+  if (!f) return;
+  const per = f.per || 100, amt = f.serving || per, r = amt / per;
+  quickSeasonings.push({
+    id: Date.now() + Math.random(),
+    label: f.name.length > 8 ? f.name.slice(0,8) : f.name,
+    name: f.name, amount: r1(amt),
+    cal: r1(f.cal*r), p: r1(f.p*r), f: r1(f.f*r), c: r1(f.c*r),
+    fiber: r1((f.fiber||0)*r), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
+    vitc: r1((f.vitc||0)*r), vitd: r1((f.vitd||0)*r), salt: r2((f.salt||0)*r),
+  });
+  saveQuickSeasonings();
+  renderQuickSeasonings();
+  renderQsExistingList();
+  box.style.display = 'none';
+  document.getElementById('qsSearch').value = '';
+}
+function renderQsExistingList() {
+  const el = document.getElementById('qsExistingList');
+  if (!el) return;
+  el.innerHTML = quickSeasonings.map(s =>
+    `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <span style="flex:1">${s.label}<span style="color:var(--text-sub)"> — ${s.name} ${s.amount}g・${s.cal}kcal</span></span>
+      <button class="btn btn-sm btn-danger" onclick="deleteQuickSeasoning(${s.id})">✕</button>
+    </div>`
+  ).join('') || `<div style="font-size:12px;color:var(--text-sub);padding:6px 0">まだありません</div>`;
+}
+function deleteQuickSeasoning(id) {
+  const idx = quickSeasonings.findIndex(s => s.id === id);
+  if (idx === -1) return;
+  const removed = quickSeasonings[idx];
+  quickSeasonings.splice(idx, 1);
+  saveQuickSeasonings();
+  renderQuickSeasonings();
+  renderQsExistingList();
+  showUndoToast(`「${removed.label}」をクイック登録から削除しました`, () => {
+    quickSeasonings.splice(Math.min(idx, quickSeasonings.length), 0, removed);
+    saveQuickSeasonings(); renderQuickSeasonings(); renderQsExistingList();
+  });
 }
 
 
@@ -3179,6 +3261,7 @@ async function pullFromCloud() {
       if (data.exercises)   { exercises   = data.exercises;   saveLocal(); }
       if (data.customFoods) { customFoods = data.customFoods; saveLocal(); }
       if (data.comboFoods)  { comboFoods  = data.comboFoods;  saveLocal(); }
+      if (data.quickSeasonings) { quickSeasonings = data.quickSeasonings; saveQuickSeasonings(); renderQuickSeasonings(); }
       if (data.profile)     { profile = migrateNeatTier({ ...profile, ...data.profile }); localStorage.setItem('pfcProfile', JSON.stringify(profile)); }
     } else {
       // 初回ログイン：ローカルデータをクラウドにアップロード
@@ -3252,6 +3335,7 @@ function takeAiBackup(label) {
     entries: JSON.parse(JSON.stringify(entries)),
     customFoods: JSON.parse(JSON.stringify(customFoods)),
     comboFoods: JSON.parse(JSON.stringify(comboFoods)),
+    quickSeasonings: JSON.parse(JSON.stringify(quickSeasonings)),
     timestamp: new Date().toISOString(),
   });
   if (aiBackups.length > AI_BACKUP_MAX) aiBackups.shift();
@@ -3264,9 +3348,11 @@ function restoreAiBackup(idx) {
   entries = JSON.parse(JSON.stringify(bk.entries));
   if (bk.customFoods) customFoods = JSON.parse(JSON.stringify(bk.customFoods));
   if (bk.comboFoods)  comboFoods  = JSON.parse(JSON.stringify(bk.comboFoods));
-  save(); saveCustom(); renderRecord(); renderCalendar();
+  if (bk.quickSeasonings) quickSeasonings = JSON.parse(JSON.stringify(bk.quickSeasonings));
+  save(); saveCustom(); saveQuickSeasonings(); renderRecord(); renderCalendar();
   if (typeof renderCustomFoodList === 'function') renderCustomFoodList();
   if (typeof renderComboFoodList === 'function') renderComboFoodList();
+  renderQuickSeasonings();
   appendAiMessage('ai', `♻️ バックアップを復元しました\n「${bk.label}」（${fmtBackupTime(bk.timestamp)}）`);
   renderAiBackupList();
 }
@@ -3436,6 +3522,10 @@ function buildFullContext() {
   // ── 複合食品DB（名前のみ・トークン節約） ──
   if (comboFoods.length) {
     lines.push('【複合食品】' + comboFoods.map(f => f.name).join('、'));
+  }
+  // ── 調味料クイック登録（ラベルのみ・トークン節約） ──
+  if (quickSeasonings.length) {
+    lines.push('【調味料クイック登録】' + quickSeasonings.map(s => s.label).join('、'));
   }
 
   // ── 食事記録 ──
@@ -3717,6 +3807,57 @@ function executeAiCommands(commands, backupLabel) {
       changed = true;
     }
 
+    // ── COMBO_FOOD_FROM_LOG ──（既に記録済みの複数エントリを、材料の内訳を保持したまま複合食品として登録する。
+    //     register_combo_from_logとの違い：あちらは内訳を持たない1件のカスタム食品に合算するだけだが、
+    //     こちらは各エントリをそのまま「材料」として複合食品(comboFoods)に保存するため、後から複合食品タブで内訳を編集できる）
+    else if (cmd.type === 'combo_food_from_log') {
+      const ids = Array.isArray(cmd.entry_ids) ? cmd.entry_ids : (Array.isArray(cmd.ids) ? cmd.ids : []);
+      const name = (cmd.name || '').trim();
+      const deleteOriginals = !!cmd.delete_originals;
+      if (!name) { log.push('⚠️ 複合食品名が指定されていません'); }
+      else if (comboFoods.some(f => normFoodName(f.name) === normFoodName(name))) {
+        log.push(`ℹ️ 「${name}」は既に複合食品として登録済みです`);
+      } else {
+        const srcs = ids.map(id => entries.find(e => e.id === id)).filter(Boolean);
+        const totalAmt = srcs.reduce((a, e) => a + Math.max(0, e.amount || 0), 0);
+        if (!srcs.length || totalAmt <= 0) {
+          log.push('⚠️ 対象の記録が見つからないため、複合食品として登録できませんでした');
+        } else {
+          const tot = srcs.reduce((a,e) => ({
+            cal: a.cal+(e.cal||0), p: a.p+(e.p||0), f: a.f+(e.f||0), c: a.c+(e.c||0),
+            fiber: a.fiber+(e.fiber||0), iron: a.iron+(e.iron||0), calcium: a.calcium+(e.calcium||0),
+            vitc: a.vitc+(e.vitc||0), vitd: a.vitd+(e.vitd||0), salt: a.salt+(e.salt||0),
+          }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+          // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
+          comboFoods.push({
+            id: Date.now() + Math.random(),
+            name, per: r1(totalAmt), serving: r1(totalAmt),
+            cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
+            fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
+            vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
+            // 各記録エントリはamount=perとして扱う（既に実量で記録されているため、r=amount/per=1で値をそのまま材料として使う）
+            ingredients: srcs.map(e => ({
+              name: e.name, amount: e.amount, per: e.amount,
+              cal: e.cal||0, p: e.p||0, f: e.f||0, c: e.c||0,
+              fiber: e.fiber||0, iron: e.iron||0, calcium: e.calcium||0,
+              vitc: e.vitc||0, vitd: e.vitd||0, salt: e.salt||0,
+            })),
+            _src: 'combo',
+          });
+          log.push(`📦 「${name}」を${srcs.length}件の記録（合計${r1(totalAmt)}g）から複合食品として登録`);
+          if (deleteOriginals) {
+            const srcIds = new Set(srcs.map(e => e.id));
+            entries = entries.filter(e => !srcIds.has(e.id));
+            log.push(`🗑️ 元になった記録 ${srcs.length}件を食事記録から削除`);
+          }
+        }
+      }
+      save();
+      saveCustom();
+      renderComboFoodList();
+      changed = true;
+    }
+
     // ── ADD_COMBO_FOOD ──（まだ記録していないレシピを、材料リストから複合食品として新規登録。手動の「複合食品登録」タブと同じデータ構造）
     else if (cmd.type === 'add_combo_food') {
       const combos = Array.isArray(cmd.combos) ? cmd.combos : [cmd];
@@ -3783,6 +3924,47 @@ function executeAiCommands(commands, backupLabel) {
       saveCustom();
       renderComboFoodList();
       log.push(`🗑️ 複合食品 ${before - comboFoods.length}件削除`);
+      changed = true;
+    }
+
+    // ── ADD_QUICK_SEASONING ──（記録タブの「調味料クイック登録」ボタンを新規追加。食品DBの1件を指定量で登録する）
+    else if (cmd.type === 'add_quick_seasoning') {
+      const items = Array.isArray(cmd.items) ? cmd.items : [cmd];
+      items.forEach(item => {
+        const foodName = (item.food_name || item.name || '').trim();
+        if (!foodName) { log.push('⚠️ 対象の食品名が指定されていません'); return; }
+        const f = getAllFoods().find(x => normFoodName(x.name) === normFoodName(foodName));
+        if (!f) { log.push(`⚠️ 「${foodName}」が食品DBに見つかりません（先にsearch_food_dbで確認してください）`); return; }
+        const label = (item.label || f.name).trim().slice(0, 8);
+        if (quickSeasonings.some(s => s.label === label)) {
+          log.push(`ℹ️ 「${label}」は既にクイック登録済みです`);
+          return;
+        }
+        const per = f.per || 100;
+        const amt = parseFloat(item.amount) || f.serving || per;
+        const r = amt / per;
+        quickSeasonings.push({
+          id: Date.now() + Math.random(),
+          label, name: f.name, amount: r1(amt),
+          cal: r1(f.cal*r), p: r1(f.p*r), f: r1(f.f*r), c: r1(f.c*r),
+          fiber: r1((f.fiber||0)*r), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
+          vitc: r1((f.vitc||0)*r), vitd: r1((f.vitd||0)*r), salt: r2((f.salt||0)*r),
+        });
+        log.push(`🧂 「${label}」（${f.name} ${r1(amt)}g）をクイック登録に追加`);
+      });
+      saveQuickSeasonings();
+      renderQuickSeasonings();
+      changed = true;
+    }
+
+    // ── DELETE_QUICK_SEASONING ──（調味料クイック登録から削除。ラベル名で指定）
+    else if (cmd.type === 'delete_quick_seasoning') {
+      const labels = Array.isArray(cmd.labels) ? cmd.labels : [cmd.label];
+      const before = quickSeasonings.length;
+      quickSeasonings = quickSeasonings.filter(s => !labels.includes(s.label));
+      saveQuickSeasonings();
+      renderQuickSeasonings();
+      log.push(`🗑️ クイック登録 ${before - quickSeasonings.length}件削除`);
       changed = true;
     }
 
@@ -3967,7 +4149,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "登録しました"
 }
 
-7. register_combo_from_log — 複数の記録済みエントリを合算して1つのカスタム食品として登録する。
+7. register_combo_from_log — 複数の記録済みエントリを合算して1つのカスタム食品として登録する（材料の内訳は残らず、合計値のみの1件になる）。
    「〇〇（料理名）の材料をまとめてカスタム食品登録して」のように、対象が個別に指定されず
    曖昧な依頼の場合、コンテキストの食事記録一覧から対象となる品目をあなたの食品知識で判断し、
    その entry_id を全て entry_ids に列挙する。name は既存のカスタム食品と重複しない、
@@ -3980,6 +4162,22 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   }],
   "backup_label": "合算カスタム食品登録",
   "message": "3件の記録を合算して登録しました"
+}
+
+7.5. combo_food_from_log — 複数の記録済みエントリを「複合食品」（comboFoods。材料の内訳を保持し、後から複合食品タブで編集できる）として登録する。
+    「さっき記録した〇〇の材料を複合食品として登録して」のように、既に記録した食事を複合食品にしたい依頼はこちらを使う
+    （register_combo_from_logと違い、各記録が「材料」としてそのまま保持される）。
+    delete_originals: true を指定すると、複合食品として登録すると同時に、元になった記録済みエントリ(entry_ids)を食事記録から削除する
+    （二重計上を避けたい場合。ユーザーが削除を望まない場合は false のままでよい）。
+{
+  "commands": [{
+    "type": "combo_food_from_log",
+    "entry_ids": [1234567890, 1234567891, 1234567892],
+    "name": "豆スープ（自家製）",
+    "delete_originals": false
+  }],
+  "backup_label": "複合食品登録（記録から）",
+  "message": "「豆スープ（自家製）」を複合食品として登録しました"
 }
 
 8. edit_custom_food — カスタム食品DBの既存項目の値を修正する（栄養価の間違い修正、名前変更など）。
@@ -4026,13 +4224,35 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "削除しました"
 }
 
+12. add_quick_seasoning — 記録タブの「調味料クイック登録」に、既存の食品DB(内蔵/カスタム/複合いずれか)の1件をワンタップ登録ボタンとして追加する。
+    food_name はコンテキストの食品DB・カスタム食品・複合食品のいずれかに実在する名前と完全一致させる必要がある（存在が不確かなら先にsearch_food_dbで確認する）。
+    amountを省略すると、その食品自体のserving（無ければper）がそのまま使われる。
+{
+  "commands": [{
+    "type": "add_quick_seasoning",
+    "items": [{"food_name": "オリーブオイル", "label": "オリーブ油", "amount": 12}]
+  }],
+  "backup_label": "調味料クイック登録追加",
+  "message": "「オリーブ油」をクイック登録に追加しました"
+}
+
+13. delete_quick_seasoning — 調味料クイック登録から削除（表示ラベルで指定。コンテキストの【調味料クイック登録】一覧を参照）
+{
+  "commands": [{"type": "delete_quick_seasoning", "labels": ["オリーブ油"]}],
+  "backup_label": "調味料クイック登録削除",
+  "message": "削除しました"
+}
+
 【コマンド選択の判断基準（重要）】
 - 「〇〇を食べた」「〇〇を追加して」→ add（食事記録に追加）
+- 「〇〇をクイック登録に追加して」「〇〇をワンタップで登録できるようにして」など、食品DBの何かをボタン化したい依頼 → add_quick_seasoning（対象の食品がコンテキストの食品DBに実在するか不確かならsearch_food_dbで先に確認する）
 - 「（今日/昨日/〇月〇日の）朝食/昼食/夕食の〇〇を食品DBに登録して」「さっき記録した〇〇を保存して」など、既に記録済みの食品を指す依頼 → register_logged_food（コンテキストの食事記録からid付きで該当項目を探し、その id を entry_id に使う。栄養値は絶対に自分で計算し直さない）
 - 「〇〇（料理名）の材料をまとめて登録して」など、複数の記録済み品目をひとまとめにしたい・
   かつどの品目が対象か曖昧な依頼 → register_combo_from_log（対象の特定はあなたの食品知識で行い、
   該当しそうにない品目まで巻き込まない。判断に自信が持てない場合は無理に実行せず、
   message で対象候補を確認する質問を返す）
+  ※ただし依頼の中で明示的に「複合食品として登録して」「材料の内訳を残して」と言われた場合は、
+  register_combo_from_logではなく combo_food_from_log を使う（内訳を保持したまま複合食品タブに登録される）
 - まだ記録されていない食品を新しくDBに登録したい依頼（「〇〇という商品をDBに登録して」等）→ add_custom_food（栄養値を推定して入力）
 - 「〇〇（オートミール・プロテイン・豆乳など複数の材料）を混ぜたものを複合食品として登録して」のように、
   まだ記録していないレシピを材料の内訳を保持したまま登録したい依頼 → add_combo_food（各材料のper・amountを指定し、
@@ -4051,7 +4271,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - amount は必ず正の数値。単位はg（人前ではなくg換算で記入）
 - 複数の食品を同じ meal に追加する場合は items 配列を使い、コマンドは1つにまとめる
 - add と add_custom_food を混同しない。食べた記録は add、DBへの保存は add_custom_food
-- register_logged_food / register_combo_from_log の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
+- register_logged_food / register_combo_from_log / combo_food_from_log の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
 - register_combo_from_log の name は必ずコンテキストの【カスタム食品】一覧と重複しないこと。似た名前になりそうな場合は「（自家製）」「（〇月〇日）」等を付けて区別する
 - カスタム食品DBへの登録・編集・削除系コマンド（add_custom_food / register_logged_food / register_combo_from_log / edit_custom_food / delete_custom_food）は、ユーザーの明示的な依頼がある場合のみ実行する。他の会話の流れから先回りして実行しない
 - "今週" は ${weekDates[0]}〜${weekDates[6]}（${weekDates.length}日間）
@@ -4199,6 +4419,7 @@ document.addEventListener('click', e => {
 updateDateHeader();
 renderCalendar();
 renderRecord();
+renderQuickSeasonings();
 renderExerciseItems();
 renderAuthUI();
 initFirebase(); // Firebase設定がある場合に認証・同期を開始

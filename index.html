@@ -609,27 +609,20 @@
 
       <!-- ⑤ 調味料クイック登録（折りたたみ） -->
       <details style="margin-bottom:8px">
-        <summary>🧂 調味料 クイック登録（小さじ1）</summary>
+        <summary>🧂 調味料 クイック登録</summary>
         <div style="padding-top:10px">
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px">
-            <button onclick="addSeasoning('醤油（濃口）小さじ1')" class="seasoning-btn">しょうゆ</button>
-            <button onclick="addSeasoning('味噌（米みそ）小さじ1')" class="seasoning-btn">味噌</button>
-            <button onclick="addSeasoning('鶏ガラスープの素小さじ1')" class="seasoning-btn">鶏ガラ</button>
-            <button onclick="addSeasoning('米油小さじ1')" class="seasoning-btn">米油</button>
-            <button onclick="addSeasoning('みりん小さじ1')" class="seasoning-btn">みりん</button>
-            <button onclick="addSeasoning('にんにく小さじ1')" class="seasoning-btn">にんにく</button>
-            <button onclick="addSeasoning('白だし小さじ1')" class="seasoning-btn">白だし</button>
-            <button onclick="addSeasoning('カレー粉小さじ1')" class="seasoning-btn">カレー粉</button>
-            <button onclick="addSeasoning('酢小さじ1')" class="seasoning-btn">酢</button>
-            <button onclick="addSeasoning('砂糖小さじ1')" class="seasoning-btn">砂糖</button>
-            <button onclick="addSeasoning('ウスターソース小さじ1')" class="seasoning-btn">ウスター</button>
-            <button onclick="addSeasoning('ケチャップ小さじ1')" class="seasoning-btn">ケチャ</button>
-          </div>
+          <div id="quickSeasoningBtns" style="display:flex;gap:6px;margin-bottom:8px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch"></div>
           <div style="display:flex;align-items:center;gap:8px">
             <label style="font-size:11px;color:var(--text-sub);white-space:nowrap">登録先</label>
             <select id="seasoningMeal" style="font-size:12px;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);flex:1">
               <option>朝食</option><option selected>昼食</option><option>夕食</option><option>間食</option>
             </select>
+          </div>
+          <div id="quickSeasoningManager" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+            <div class="search-wrap" style="margin-bottom:8px"><input type="text" id="qsSearch" placeholder="食品を検索してクイック登録に追加…" oninput="onQsSearch(this.value)" autocomplete="off"></div>
+            <div class="results-box" id="qsResultsBox" style="display:none"></div>
+            <div class="sl" style="margin-top:4px">登録済みのクイック登録</div>
+            <div id="qsExistingList"></div>
           </div>
         </div>
       </details>
