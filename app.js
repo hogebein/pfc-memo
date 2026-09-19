@@ -33,38 +33,97 @@ const MEALS_ORDER = ['朝食','昼食','夕食','間食'];
 // ── タンパク質吸収率 ──
 // ① 食品カテゴリ別の消化率（真の消化率に近い値。豆類は十分な加熱・水さらし等で
 //    トリプシンインヒビター等の抗栄養素がほぼ失活している前提で高めの値を採用）
-const DIGEST_ANIMAL = 0.97; // 肉・魚・卵・乳（消化性が最も高い）
-const DIGEST_LEGUME = 0.90; // 豆類・大豆製品（十分に加熱・下処理された前提）
-const DIGEST_GRAIN  = 0.87; // 穀物
-const DIGEST_NUT    = 0.80; // ナッツ・種子（脂質・食物繊維に囲まれ消化率がやや低め）
-const DIGEST_OTHER  = 0.78; // 野菜など、上記に当てはまらないもの
+const DIGEST_ISOLATE = 0.98; // プロテインパウダー等の分離・精製タンパク質（消化性が最も高い）
+const DIGEST_ANIMAL  = 0.97; // 肉・魚・卵・乳
+const DIGEST_MIXED   = 0.90; // 複数食材からなる合わせ料理・加工食品・外食メニュー（内訳は不明だが、
+                              // 多くは動物性+穀物が主体のため、野菜単品(DIGEST_OTHER)より高めに見積もる）
+const DIGEST_LEGUME  = 0.90; // 豆類・大豆製品（十分に加熱・下処理された前提）
+const DIGEST_GRAIN   = 0.87; // 穀物
+const DIGEST_NUT     = 0.80; // ナッツ・種子（脂質・食物繊維に囲まれ消化率がやや低め）
+const DIGEST_OTHER   = 0.78; // 野菜など、上記に当てはまらないもの
+const DIGEST_BY_CATEGORY = {
+  isolate: DIGEST_ISOLATE, animal: DIGEST_ANIMAL, mixed: DIGEST_MIXED,
+  legume: DIGEST_LEGUME, grain: DIGEST_GRAIN, nut: DIGEST_NUT, other: DIGEST_OTHER,
+};
 
-const P_ABS_ANIMAL_PATTERN = /鶏|豚|牛|羊|合いびき|ひき肉|ベーコン|ハム|ソーセージ|ウインナー|サラミ|いわし|さば|さんま|あじ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|えび|いか|ほたて|あさり|カニ|かに|ぶり|たい|鯛|たら|タラ|さわら|しじみ|ホッケ|ホタルイカ|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|ささみ|チキン|ポーク|ビーフ|シーフード|チーズ|ヨーグルト|牛乳|ミルク|ホエイ|プロテイン|seafood|chicken|pork|beef|fish|salmon|tuna|egg|shrimp|whey|cheese|milk|yogurt/i;
-const P_ABS_LEGUME_PATTERN = /豆腐|納豆|豆乳|大豆|えだまめ|枝豆|きな粉|小豆|ひよこ豆|レンズ豆|黒豆|そら豆|いんげん豆|インゲン豆|ミックスビーンズ|油揚げ|厚揚げ|がんもどき|湯葉|テンペ|白和え|けんちん|えんどう豆プロテイン/i;
-const P_ABS_GRAIN_PATTERN  = /米|ごはん|ご飯|パン|うどん|パスタ|そば|ラーメン|マカロニ|ビーフン|そうめん|ひやむぎ|中華麺|オートミール|小麦粉|とうもろこし|コーン|キヌア|もち|シリアル|ミューズリー|グラノーラ|白玉粉|上新粉/i;
-const P_ABS_NUT_PATTERN    = /アーモンド|くるみ|カシューナッツ|ピーナッツ|ナッツ|ごま|松の実|ひまわりの種|かぼちゃの種|フラックスシード|チアシード|ピーナッツバター/i;
+const P_ABS_ISOLATE_PATTERN = /プロテイン|ホエイ|カゼイン|ソイプロテイン|WPI|WPC|EAA|BCAA|アミノ酸パウダー|コラーゲンペプチド|SOYLENT/i;
+const P_ABS_ANIMAL_PATTERN = /鶏|豚|牛|羊|ラム|合いびき|ひき肉|ミンチ|ベーコン|ハム|ソーセージ|ウインナー|サラミ|チャーシュー|ローストビーフ|ステーキ|ロース|バラ肉|もも肉|むね肉|ささみ|ヒレ|ひれ|レバー|ハツ|軟骨|ホルモン|つくね|ミートボール|ハンバーグ|しゃぶしゃぶ|焼肉|生姜焼き|唐揚げ|から揚げ|竜田揚げ|とんかつ|カツ丼|カツサンド|チキン|ポーク|ビーフ|マトン|フランクフルト|ジャーキー|コンビーフ|スパム|チョリソー|鴨|馬肉|鹿肉|いわし|マイワシ|さば|マサバ|さんま|あじ|マアジ|さけ|鮭|サーモン|まぐろ|マグロ|ツナ|かつお|カツオ|ぶり|ブリ|たい|鯛|たら|タラ|さわら|ひらめ|かれい|うなぎ|穴子|あなご|しらす|ししゃも|ほっけ|ホッケ|はまち|メカジキ|すずき|メバル|しじみ|あさり|はまぐり|かき|カキ|牡蠣|えび|海老|エビ|いか|イカ|たこ|タコ|ほたて|ホタテ|かに|カニ|さざえ|うに|明太子|たらこ|いくら|魚肉ソーセージ|さつま揚げ|ちくわ|かまぼこ|はんぺん|卵|たまご|タマゴ|ゆで卵|目玉焼き|スクランブル|オムレツ|温泉卵|チーズ|ヨーグルト|牛乳|ミルク|生クリーム|カッテージ|モッツァレラ|クリームチーズ|だし|ほんだし|ラテ|ケフィア|ホットチョコレート|seafood|chicken|pork|beef|fish|salmon|tuna|egg|shrimp|cheese|milk|yogurt|steak/i;
+const P_ABS_LEGUME_PATTERN = /豆腐|冷奴|納豆|豆乳|大豆|えだまめ|枝豆|きな粉|小豆|ひよこ豆|レンズ豆|黒豆|そら豆|いんげん豆|インゲン豆|ミックスビーンズ|油揚げ|厚揚げ|がんもどき|湯葉|テンペ|白和え|けんちん|えんどう豆|ダール|ダル|ひら豆/i;
+const P_ABS_GRAIN_PATTERN  = /米|ごはん|ご飯|パン|うどん|パスタ|そば|ラーメン|マカロニ|ビーフン|そうめん|ひやむぎ|中華麺|オートミール|小麦粉|強力粉|薄力粉|とうもろこし|コーン|キヌア|もち|餅|シリアル|ミューズリー|グラノーラ|白玉粉|上新粉|麩/i;
+const P_ABS_NUT_PATTERN    = /アーモンド|くるみ|カシューナッツ|ピーナッツ|ナッツ|ごま|松の実|ひまわりの種|かぼちゃの種|フラックスシード|チアシード|ピーナッツバター|マカダミア|ピスタチオ|ヘーゼルナッツ|ペカン/i;
+
+// 食品名からタンパク質消化率カテゴリを推定する（digestフィールドが無い食品向けのフォールバック）
+// DB(foods-db.js)側は全件digestフィールドを持たせているのでこの推定は基本的に不要だが、
+// カスタム食品・複合食品・外部API検索結果など、DB外の食品には引き続き使われる
+function classifyDigestCategory(name, proteinG) {
+  if (P_ABS_ISOLATE_PATTERN.test(name)) return 'isolate';
+  if (P_ABS_ANIMAL_PATTERN.test(name))  return 'animal';
+  if (P_ABS_LEGUME_PATTERN.test(name))  return 'legume';
+  if (P_ABS_GRAIN_PATTERN.test(name))   return 'grain';
+  if (P_ABS_NUT_PATTERN.test(name))     return 'nut';
+  // どのパターンにも一致しないが、タンパク質量がそれなりにある（8g以上）場合は
+  // 単品というより複数食材からなる合わせ料理・加工食品である可能性が高いと推定する
+  if ((proteinG || 0) >= 8) return 'mixed';
+  return 'other';
+}
 
 function foodDigestibility(e) {
-  if (P_ABS_ANIMAL_PATTERN.test(e.name)) return DIGEST_ANIMAL;
-  if (P_ABS_LEGUME_PATTERN.test(e.name)) return DIGEST_LEGUME;
-  if (P_ABS_GRAIN_PATTERN.test(e.name))  return DIGEST_GRAIN;
-  if (P_ABS_NUT_PATTERN.test(e.name))    return DIGEST_NUT;
-  return DIGEST_OTHER;
+  if (e.digest && DIGEST_BY_CATEGORY[e.digest] != null) return DIGEST_BY_CATEGORY[e.digest];
+  return DIGEST_BY_CATEGORY[classifyDigestCategory(e.name, e.p)];
 }
 
 // ② WHO/FAO/UNU(2007) 成人必須アミノ酸参照パターン（gアミノ酸 / gたんぱく質）
 //    食事全体で消化されたアミノ酸をプールし、このパターンと比較して制限アミノ酸を判定する
 const AA_REFERENCE = { his:0.015, ile:0.030, leu:0.059, lys:0.045, met:0.022, thr:0.023, trp:0.006, val:0.039 };
 
-// ③ 食事（同じmeal区分）単位でアミノ酸を合算し、食べ合わせによる補完効果を反映する
+function parseTimeToMinutes(hhmm) {
+  if (!hhmm || typeof hhmm !== 'string') return null;
+  const m = hhmm.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (isNaN(h) || isNaN(min) || h > 24 || min > 59) return null;
+  return h * 60 + min;
+}
+// アミノ酸補完が起こりうる「同じ食事機会」とみなす時間の幅（分）。
+// 消化管内でアミノ酸プールが実際に混ざり合うのはこの程度の時間スケールという大まかな目安で、
+// 生理学的に厳密な値ではない
+const AA_POOLING_WINDOW_MIN = 180;
+
+// ③ アミノ酸を合算する単位（＝食べ合わせによる補完効果を反映する範囲）を決める。
+//    摂取時刻が記録されている項目は、時刻が近い（AA_POOLING_WINDOW_MIN以内）もの同士をまとめる
+//    （mealのラベルが違っても、例えば夕食直後の間食は夕食と補完し合う）。
+//    時刻が未記録の古い記録は、従来通りmeal区分でグループ化する（後方互換）。
+function groupForAaPooling(list) {
+  const withTime = [], withoutTime = [];
+  list.forEach(e => (parseTimeToMinutes(e.time) != null ? withTime : withoutTime).push(e));
+
+  const groups = [];
+  withTime
+    .slice()
+    .sort((a, b) => parseTimeToMinutes(a.time) - parseTimeToMinutes(b.time))
+    .forEach(e => {
+      const t = parseTimeToMinutes(e.time);
+      const last = groups[groups.length - 1];
+      if (last && t - last._lastT <= AA_POOLING_WINDOW_MIN) {
+        last.push(e); last._lastT = t;
+      } else {
+        const g = [e]; g._lastT = t; groups.push(g);
+      }
+    });
+
+  const byMeal = {};
+  withoutTime.forEach(e => { (byMeal[e.meal || '_'] = byMeal[e.meal || '_'] || []).push(e); });
+  return groups.concat(Object.values(byMeal));
+}
+
+// ④ 食事（アミノ酸補完の単位）ごとにアミノ酸を合算し、食べ合わせによる補完効果を反映する
 //    例: 白米（リジンが制限）＋ 豆類（メチオニンが制限だがリジンは豊富）を同じ食事で摂ると、
 //        単品ごとのスコアより食事全体のスコアが上がる（アミノ酸補完効果）
 function calcAbsorbedProtein(list) {
-  const meals = {};
-  list.forEach(e => { (meals[e.meal || '_'] = meals[e.meal || '_'] || []).push(e); });
+  const groups = groupForAaPooling(list);
 
   let totalAbsorbed = 0;
-  Object.values(meals).forEach(mealList => {
+  groups.forEach(mealList => {
     let digestedProtein = 0;
     let hasAaData = false;
     const aaSum = { his:0, ile:0, leu:0, lys:0, met:0, thr:0, trp:0, val:0 };
@@ -482,12 +541,13 @@ function calcBMR() {
 function usingKatchFallback() {
   return profile.bmrFormula === 'katch' && !(profile.bf != null && profile.bf > 0);
 }
-function getTdeeBreakdown() {
+function getTdeeBreakdown(date) {
+  date = date || currentDate;
   const bmr = calcBMR();
 
   // その日の歩数（Garmin/Google Health実測 または 手動入力）が分かれば、
   // NEATレベルで補正したBMR＋実際の活動カロリーで精緻に算出する
-  const detail = getDetailedActivity(currentDate);
+  const detail = getDetailedActivity(date);
   const base = detail
     ? bmr * getNeatMult() + detail.activeCal
     : bmr * (profile.activityFactor || 1.2);
@@ -496,8 +556,8 @@ function getTdeeBreakdown() {
 
   return { bmr, detail, base, tdee };
 }
-function calcTDEE() {
-  return getTdeeBreakdown().tdee;
+function calcTDEE(date) {
+  return getTdeeBreakdown(date).tdee;
 }
 function goals() {
   // カスタム目標が有効な場合はそちらを優先
@@ -1087,7 +1147,7 @@ function showSp(spId, iconId, on) {
 function renderResultsFor(local, api, loading, meal) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
   let html='';
-  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'local','${meal}')"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
+  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'local','${meal}')"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
   if(loading){html+=`<div class="rs-label">Open Food Facts 検索中…</div><div class="no-result"><div class="spinner" style="display:inline-block"></div></div>`}
   else if(api&&api.length){html+=`<div class="rs-label">Open Food Facts</div>`;html+=api.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'api','${meal}')"><div><div class="ri-name">${f.name.length>26?f.name.slice(0,26)+'…':f.name}<span class="badge badge-api">外部</span></div><div class="ri-sub">100gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
   else if(!loading&&!local.length){html+=`<div class="no-result">見つかりませんでした</div>`}
@@ -1132,6 +1192,7 @@ function selectAddResult(i, src, meal) {
     salt:    r2((f.salt||0)*r),
     fa:      f.fa || null,
     aa:      f.aa || null,
+    digest:  f.digest || classifyDigestCategory(f.name, r1((f.p||0)*r)),
   };
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
   const { merged } = addOrMergeEntry(newEntry);
@@ -1196,6 +1257,9 @@ function addSeasoning(id) {
     vitc:    s.vitc,
     vitd:    s.vitd,
     salt:    s.salt,
+    fa:      s.fa || null,
+    aa:      s.aa || null,
+    digest:  s.digest || classifyDigestCategory(s.name, s.p || 0),
   });
   save();
   renderRecord();
@@ -1237,6 +1301,8 @@ function pickQsSeasoning(i) {
     cal: r1(f.cal*r), p: r1(f.p*r), f: r1(f.f*r), c: r1(f.c*r),
     fiber: r1((f.fiber||0)*r), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
     vitc: r1((f.vitc||0)*r), vitd: r1((f.vitd||0)*r), salt: r2((f.salt||0)*r),
+    fa: f.fa || null, aa: f.aa || null,
+    digest: f.digest || classifyDigestCategory(f.name, r1(f.p*r)),
   });
   saveQuickSeasonings();
   renderQuickSeasonings();
@@ -1519,6 +1585,7 @@ function addOrMergeEntry(newEntry, excludeId) {
     if (!dup.fa && newEntry.fa) dup.fa = newEntry.fa;
     if (!dup.aa && newEntry.aa) dup.aa = newEntry.aa;
     if (!dup._fa && newEntry._fa) dup._fa = newEntry._fa;
+    if (!dup.digest && newEntry.digest) dup.digest = newEntry.digest;
     return { entry: dup, merged: true };
   }
   entries.push(newEntry);
@@ -1566,6 +1633,7 @@ function addEntry(meal) {
     fa: window._addBase?.[meal]?.fa || null,
     aa: window._addBase?.[meal]?.aa || null,
     _fa: window._addBase?.[meal]?.fa || null,
+    digest: window._addBase?.[meal]?.digest || classifyDigestCategory(name, gv('addP_'+meal)),
   };
   // faもaaも未設定なら名前から推定
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
@@ -1952,6 +2020,10 @@ const FA_PAT_MAP = [
 // 食品名から fa/aa を推定して付与
 function enrichFoodProfile(entry) {
   const name = entry.name || '';
+  // digest 推定
+  if (!entry.digest) {
+    entry.digest = classifyDigestCategory(name, entry.p || 0);
+  }
   // fa 推定
   if (!entry.fa && (entry.f || 0) >= 0.5) {
     for (const [pat, prof] of FA_PAT_MAP) {
@@ -2791,6 +2863,7 @@ function renderCharts() {
 
 // ── CSV ──
 const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt'];
+const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal'];
 function exportCSV() {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
   let data=[...entries];
@@ -2798,6 +2871,31 @@ function exportCSV() {
   if(to) data=data.filter(e=>e.date<=to);
   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
   const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0)].join(','))];
+
+  // ── 消費カロリー詳細（日別、1行1日）──
+  // 食事記録の対象日を軸に、その日のTDEE内訳・運動消費・摂取との差引をまとめる。
+  // ※ BMRは現在のプロフィール設定（体重・年齢等）で計算するため、過去に体重や設定を
+  //    変えている場合、当時の実際の値とは異なる（このアプリは体組成の履歴を保持していない）
+  const dates = [...new Set(data.map(e => e.date))].sort();
+  if (dates.length) {
+    rows.push('');
+    rows.push(TDEE_CSV_HEADERS.join(','));
+    dates.forEach(d => {
+      const tb = getTdeeBreakdown(d);
+      const activityDesc = tb.detail
+        ? `NEAT ${getNeatPct()}%（${(tb.detail.source==='google_health')?'Google Health実測':'歩数入力'}）`
+        : `活動係数 ${profile.activityFactor || 1.2}`;
+      const exCal = exercises.filter(x => x.date === d).reduce((a,x) => a + (x.cal||0), 0);
+      const intake = r1(sumEntries(getDayEntries(d)).cal);
+      const totalBurn = r1(tb.tdee + exCal);
+      rows.push([
+        d, ri(tb.bmr), `"${activityDesc}"`, tb.detail ? ri(tb.detail.activeCal) : '',
+        tb.detail ? (tb.detail.steps||0) : '', tb.tdee, ri(exCal), ri(totalBurn),
+        intake, r1(intake - totalBurn),
+      ].join(','));
+    });
+  }
+
   const blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a'); a.href=url; a.download=`pfc_export_${toDateStr(new Date())}.csv`; a.click(); URL.revokeObjectURL(url);
@@ -3043,6 +3141,7 @@ function saveComboFood() {
       fiber: f.fiber||0, iron: f.iron||0, calcium: f.calcium||0,
       vitc: f.vitc||0, vitd: f.vitd||0, salt: f.salt||0,
     })),
+    digest: 'mixed',
     _src: 'combo',
   };
 
@@ -3721,6 +3820,7 @@ function executeAiCommands(commands, backupLabel) {
           vitc:    parseFloat(food.vitc)    || 0,
           vitd:    parseFloat(food.vitd)    || 0,
           salt:    parseFloat(food.salt)    || 0,
+          digest:  classifyDigestCategory(food.name, parseFloat(food.p) || 0),
           _src:    'ai',
         });
         log.push(`📦 カスタム食品「${food.name}」を登録（${per}gあたり ${Math.round(food.cal)}kcal）`);
@@ -3761,6 +3861,7 @@ function executeAiCommands(commands, backupLabel) {
           salt:    r2((src.salt    || 0) * scale),
           fa:      src.fa || null,
           aa:      src.aa || null,
+          digest:  src.digest || classifyDigestCategory(name, src.p || 0),
           _src:    'log',
         });
         log.push(`📦 「${name}」を記録済みデータ(100gあたり ${r1((src.cal||0)*scale)}kcal)からDBに登録`);
@@ -3798,6 +3899,7 @@ function executeAiCommands(commands, backupLabel) {
             vitd:    r2(sum.vitd*scale),    vita:    r1(sum.vita*scale),
             vite:    r2(sum.vite*scale),    vitk:    r1(sum.vitk*scale),
             iodine:  r1(sum.iodine*scale),  salt:    r2(sum.salt*scale),
+            digest:  'mixed',
             _src:    'combo_log',
           });
           log.push(`📦 「${name}」を${srcs.length}件の記録（合計${r1(totalAmount)}g）から合算してDBに登録`);
@@ -3842,7 +3944,8 @@ function executeAiCommands(commands, backupLabel) {
               fiber: e.fiber||0, iron: e.iron||0, calcium: e.calcium||0,
               vitc: e.vitc||0, vitd: e.vitd||0, salt: e.salt||0,
             })),
-            _src: 'combo',
+            digest: 'mixed',
+          _src: 'combo',
           });
           log.push(`📦 「${name}」を${srcs.length}件の記録（合計${r1(totalAmt)}g）から複合食品として登録`);
           if (deleteOriginals) {
@@ -3907,6 +4010,7 @@ function executeAiCommands(commands, backupLabel) {
             fiber: f.fiber, iron: f.iron, calcium: f.calcium,
             vitc: f.vitc, vitd: f.vitd, salt: f.salt,
           })),
+          digest: 'mixed',
           _src: 'combo',
         });
         log.push(`📦 複合食品「${name}」を${ingredients.length}品目・合計${r1(totalAmt)}gで登録`);
@@ -3949,6 +4053,8 @@ function executeAiCommands(commands, backupLabel) {
           cal: r1(f.cal*r), p: r1(f.p*r), f: r1(f.f*r), c: r1(f.c*r),
           fiber: r1((f.fiber||0)*r), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
           vitc: r1((f.vitc||0)*r), vitd: r1((f.vitd||0)*r), salt: r2((f.salt||0)*r),
+          fa: f.fa || null, aa: f.aa || null,
+          digest: f.digest || classifyDigestCategory(f.name, r1(f.p*r)),
         });
         log.push(`🧂 「${label}」（${f.name} ${r1(amt)}g）をクイック登録に追加`);
       });
