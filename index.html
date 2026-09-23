@@ -326,7 +326,6 @@
     .search-wrap input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(50,102,173,.12); }
     .search-icon-box { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; pointer-events: none; color: var(--text-sub); }
     .search-icon-box svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
-    .spin-box { position: absolute; right: 10px; top: 50%; transform: translateY(-50%); display: none; width: 16px; height: 16px; align-items: center; justify-content: center; }
     .spinner { width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
     .results-box {
@@ -345,7 +344,6 @@
     .ri-cal { font-size: 12px; color: var(--accent); font-weight: 700; white-space: nowrap; margin-left: 6px; }
     .badge { font-size: 9px; padding: 1px 5px; border-radius: 4px; margin-left: 4px; font-weight: 600; }
     .badge-local { background: var(--green-light); color: var(--green); }
-    .badge-api { background: var(--accent-light); color: var(--accent-mid); }
     .badge-custom { background: var(--amber-light); color: #c67c00; }
     .badge-combo { background: #f3e5f5; color: #6a1b9a; }
     .no-result { padding: 14px; font-size: 13px; color: var(--text-sub); text-align: center; }
@@ -781,6 +779,7 @@
         <div class="card">
           <div class="sl">基本栄養素</div>
           <div class="row"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="csFoodName" placeholder="自家製プロテインバー など"></div><div class="field"><label>基準量(g)</label><input type="number" id="csPer" value="100" min="1"></div></div>
+          <div class="field" style="margin-bottom:10px"><label>読み（任意・ひらがな可）</label><input type="text" id="csFoodYomi" placeholder="空欄なら食品名から自動で推定します" autocomplete="off"></div>
           <div class="macro-row"><div class="field"><label>kcal</label><input type="number" id="csCal" placeholder="0" step="0.1"></div><div class="field"><label>P(g)</label><input type="number" id="csP" placeholder="0" step="0.1"></div><div class="field"><label>F(g)</label><input type="number" id="csF" placeholder="0" step="0.1"></div><div class="field"><label>C(g)</label><input type="number" id="csC" placeholder="0" step="0.1"></div></div>
           <div class="sl" style="margin-top:6px">ミクロ栄養素（任意）</div>
           <div class="macro-row"><div class="field"><label>食物繊維(g)</label><input type="number" id="csFib" placeholder="0" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="csFe" placeholder="0" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="csCa" placeholder="0" step="0.1"></div></div>
@@ -793,9 +792,10 @@
       <div id="csComboPanel" style="display:none">
         <div class="card">
           <div class="sl">複合食品名</div>
-          <div class="field" style="margin-bottom:10px"><input type="text" id="comboName" placeholder="例：自家製プロテインオートミール"></div>
+          <div class="field" style="margin-bottom:6px"><input type="text" id="comboName" placeholder="例：自家製プロテインオートミール"></div>
+          <div class="field" style="margin-bottom:10px"><input type="text" id="comboYomi" placeholder="読み（任意・ひらがな可。空欄なら自動推定）" autocomplete="off"></div>
           <div class="sl">食材を検索して追加</div>
-          <div class="search-wrap"><input type="text" id="comboSearch" placeholder="食材を検索…" oninput="onComboSearch(this.value)" autocomplete="off"><div class="search-icon-box" id="comboSearchIcon"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div><div class="spin-box" id="comboSpinner"><div class="spinner"></div></div></div>
+          <div class="search-wrap"><input type="text" id="comboSearch" placeholder="食材を検索…" oninput="onComboSearch(this.value)" autocomplete="off"><div class="search-icon-box" id="comboSearchIcon"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div></div>
           <div class="results-box" id="comboResultsBox"></div>
           <div class="sl">追加済み食材</div>
           <div id="comboIngredients"></div>
@@ -823,8 +823,22 @@
         <div id="csvImportMsg" class="status-msg"></div>
       </div>
       <div class="card">
+        <div class="sl">食品DBエクスポート</div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">カスタム食品・複合食品をJSONファイルとして書き出します（他の端末への移行、外部LLMでのデータ拡充・見直しなどにご利用ください）</p>
+        <button class="btn btn-primary btn-block" onclick="exportFoodDb()">📥 食品DBダウンロード</button>
+      </div>
+      <div class="card">
+        <div class="sl">食品DBインポート</div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">エクスポートしたJSON、または同じ形式のデータを取り込みます（同名の食品は上書き更新、新規は追加）</p>
+        <input type="file" id="fooddbFileInput" accept="application/json,.json" style="font-size:12px;margin-bottom:8px" onchange="handleFoodDbFileSelect(event)">
+        <textarea class="csv-area" id="fooddbImportArea" placeholder="食品DBのJSONをここに貼り付け、または上でファイルを選択してください…"></textarea>
+        <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-success" onclick="importFoodDb()" style="flex:1">📤 インポート実行</button><button class="btn" onclick="document.getElementById('fooddbImportArea').value='';document.getElementById('fooddbFileInput').value=''">クリア</button></div>
+        <div id="fooddbImportMsg" class="status-msg"></div>
+      </div>
+      <div class="card">
         <div class="sl">フォーマット</div>
         <p style="font-size:11px;color:var(--text-sub);line-height:1.7">date, meal, name, amount, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt</p>
+        <p style="font-size:11px;color:var(--text-sub);line-height:1.7;margin-top:8px">食品DB: {"customFoods":[{"name":..,"yomi":..,"per":..,"cal":..,"p":..,"f":..,"c":..,"fiber":..,"fa":{...},"aa":{...}}],"comboFoods":[{"name":..,"ingredients":[...]}]}（食品DBエクスポートで書き出したJSONと同じ形式）</p>
       </div>
     </div>
 

@@ -21,6 +21,35 @@ const MICRO_GOALS = {
   salt:    { label:'塩分',     unit:'g',  goal:7.5,  color:'#9e9e9e', reverse:true },
 };
 const MICRO_KEYS = Object.keys(MICRO_GOALS);
+// ミクロ栄養素の丸め桁（鉄・VitD・VitE・塩分は2桁、それ以外は1桁）
+function microRound(k, v) { const d = (k==='iron'||k==='vitd'||k==='vite'||k==='salt') ? 100 : 10; return Math.round((v||0)*d)/d; }
+// AI・インポート等の外部入力から、ミクロ栄養素(MICRO_KEYS)を数値として取り出す（不正値・負数は0）
+function pickMicros(obj) {
+  const o = {};
+  MICRO_KEYS.forEach(k => { const v = parseFloat(obj && obj[k]); o[k] = (isFinite(v) && v > 0) ? v : 0; });
+  return o;
+}
+// 脂肪酸比率(fa)・アミノ酸プロファイル(aa)の検証。不正・不自然な値は null（→ 名前からの自動推定に任せる）
+function sanitizeFa(fa) {
+  if (!fa || typeof fa !== 'object') return null;
+  const o = {}; let sum = 0;
+  for (const k of ['sat','mufa','n3','n6','trans']) {
+    const v = parseFloat(fa[k]); if (!isFinite(v) || v < 0 || v > 1) return null;
+    o[k] = Math.round(v*1000)/1000; sum += v;
+  }
+  return (sum >= 0.5 && sum <= 1.2) ? o : null;
+}
+function sanitizeAa(aa) {
+  if (!aa || typeof aa !== 'object') return null;
+  const o = {};
+  for (const k of ['leu','ile','val','lys','met','thr','trp','his']) {
+    const v = parseFloat(aa[k]); if (!isFinite(v) || v < 0 || v > 0.3) return null;
+    o[k] = Math.round(v*1000)/1000;
+  }
+  const sc = parseFloat(aa.score); if (!isFinite(sc) || sc < 0 || sc > 1.5) return null;
+  o.score = Math.round(sc*100)/100;
+  return o;
+}
 
 const MEAL_META = {
   朝食:{ icon:'🌅', bg:'#fff8e6' },
@@ -54,7 +83,7 @@ const P_ABS_NUT_PATTERN    = /アーモンド|くるみ|カシューナッツ|�
 
 // 食品名からタンパク質消化率カテゴリを推定する（digestフィールドが無い食品向けのフォールバック）
 // DB(foods-db.js)側は全件digestフィールドを持たせているのでこの推定は基本的に不要だが、
-// カスタム食品・複合食品・外部API検索結果など、DB外の食品には引き続き使われる
+// カスタム食品・複合食品など、DB外の食品には引き続き使われる
 function classifyDigestCategory(name, proteinG) {
   if (P_ABS_ISOLATE_PATTERN.test(name)) return 'isolate';
   if (P_ABS_ANIMAL_PATTERN.test(name))  return 'animal';
@@ -160,16 +189,182 @@ function calcAbsorbedProtein(list) {
 
 // ── 内蔵DB ──
 // 食品データ本体は foods-db.js に分離（index.htmlでこのファイルより先に読み込む）
-LOCAL_DB.forEach(f => {
-  f._search = normalize(f.name)+' '+normalize(f.yomi||'')+' '+normalize(f.tags||'')+' '+(f.en||'').toLowerCase();
-  f._src = 'local';
-});
+// ── 読み仮名・ローマ字検索 ──
+// 検索は「表記(name)」「カタカナ読み(yomi)」「ローマ字→カナ変換」の3経路で行う。
+//   ひらがな入力 : normalize() でカタカナ化して name / yomi / tags と照合
+//   ローマ字入力 : romajiToKana() でカタカナ化し、_kana（ゆるく正規化した読み）と照合
+//   読みが無い食品(カスタム/複合): 手入力の yomi があればそれを、無ければ内蔵DBの読みから guessYomi() で推定
+const KANJI_CH = '\\u4E00-\\u9FFF\\u3400-\\u4DBF\\u3005\\u3006';
+const KANJI_RUN_RE = new RegExp('([' + KANJI_CH + ']+)|([^' + KANJI_CH + ']+)', 'g');
+function toKata(s) { return String(s || '').replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60)); }
+// 読みとして有効な文字（カタカナ・長音・空白）だけを残す
+function sanitizeYomi(s) { return toKata(s).replace(/[^\u30A1-\u30FA\u30FC\s]/g, '').replace(/\s+/g, ' ').trim(); }
+
+// ローマ字→カタカナ（ヘボン式・訓令式・IME入力の混在を許容）。ローマ字として解釈できなければ null
+const ROMAJI_TABLE = (() => {
+  const T = {};
+  const rows = { '':'アイウエオ', k:'カキクケコ', g:'ガギグゲゴ', s:'サシスセソ', z:'ザジズゼゾ', t:'タチツテト', d:'ダヂヅデド',
+    n:'ナニヌネノ', h:'ハヒフヘホ', b:'バビブベボ', p:'パピプペポ', m:'マミムメモ', r:'ラリルレロ', l:'ラリルレロ', v:'バビブベボ' };
+  Object.keys(rows).forEach(c => 'aiueo'.split('').forEach((v, i) => { T[c + v] = rows[c][i]; }));
+  Object.assign(T, { ya:'ヤ', yu:'ユ', yo:'ヨ', wa:'ワ', wi:'ウィ', wu:'ウ', we:'ウェ', wo:'ヲ',
+    ca:'カ', ci:'シ', cu:'ク', ce:'セ', co:'コ',
+    sha:'シャ', shi:'シ', shu:'シュ', she:'シェ', sho:'ショ', cha:'チャ', chi:'チ', chu:'チュ', che:'チェ', cho:'チョ',
+    ja:'ジャ', ji:'ジ', ju:'ジュ', je:'ジェ', jo:'ジョ', tsu:'ツ', tsa:'ツァ', tsi:'ツィ', tse:'ツェ', tso:'ツォ',
+    fa:'ファ', fi:'フィ', fu:'フ', fe:'フェ', fo:'フォ', thi:'ティ', dhi:'ディ', twu:'トゥ', dwu:'ドゥ' });
+  ['k','g','s','z','t','d','n','h','b','p','m','r','l'].forEach(c => {
+    const base = rows[c][1];
+    T[c + 'ya'] = base + 'ャ'; T[c + 'yu'] = base + 'ュ'; T[c + 'yo'] = base + 'ョ';
+  });
+  return T;
+})();
+function romajiToKana(input) {
+  let s = String(input || '').toLowerCase().replace(/ā/g,'aa').replace(/ī/g,'ii').replace(/ū/g,'uu').replace(/ē/g,'ee').replace(/ō/g,'ou');
+  s = s.replace(/[\s_]+/g, '');
+  if (!s || !/^[a-z'\-]+$/.test(s)) return null;
+  const CONS = /[bcdfghjklmpqrstvwxyz]/;
+  let out = '', i = 0;
+  while (i < s.length) {
+    const c = s[i];
+    if (c === "'") { i++; continue; }
+    if (c === '-') { out += 'ー'; i++; continue; }
+    if (c === 'n') {
+      const nx = s[i + 1];
+      if (nx === undefined) { out += 'ン'; i++; continue; }
+      if (nx === "'") { out += 'ン'; i += 2; continue; }
+      if (nx === 'n') { out += 'ン'; i += /[aiueoy]/.test(s[i + 2] || '') ? 1 : 2; continue; }
+      if (!/[aiueoy]/.test(nx)) { out += 'ン'; i++; continue; }
+    }
+    let hit = false;
+    for (let L = 3; L >= 1; L--) {
+      const k = s.substr(i, L);
+      if (k.length === L && ROMAJI_TABLE[k]) { out += ROMAJI_TABLE[k]; i += L; hit = true; break; }
+    }
+    if (hit) continue;
+    // 促音（kk, tt, ss…／tch）。語尾で子音が重なっているだけなら入力途中とみなす
+    if (CONS.test(c) && c !== 'n' && ((c === s[i + 1] && i + 2 < s.length) || (c === 't' && s.substr(i + 1, 2) === 'ch'))) { out += 'ッ'; i++; continue; }
+    // 入力途中の末尾の子音（sh, ky など）は無視
+    if (/^[bcdfghjklmpqrstvwxyz]{1,2}$/.test(s.slice(i))) break;
+    return null;
+  }
+  return out;
+}
+// 読みのゆらぎを吸収した比較用の形：長音/母音の連続・濁点半濁点・ヲ/ヂ/ヅなどを丸める
+// （tofu / toufu / とうふ・ドウフ のどれでも同じ形になる）
+function looseKana(s, unvoice) {
+  const UNV = { ガ:'カ',ギ:'キ',グ:'ク',ゲ:'ケ',ゴ:'コ',ザ:'サ',ジ:'シ',ズ:'ス',ゼ:'セ',ゾ:'ソ',ダ:'タ',ヂ:'チ',ヅ:'ツ',デ:'テ',ド:'ト',
+    バ:'ハ',ビ:'ヒ',ブ:'フ',ベ:'ヘ',ボ:'ホ',パ:'ハ',ピ:'ヒ',プ:'フ',ペ:'ヘ',ポ:'ホ',ヴ:'ウ',ヲ:'オ',ヰ:'イ',ヱ:'エ' };
+  return String(s || '').replace(/ー/g, '')
+    .replace(/([アカサタナハマヤラワガザダバパャ])ア/g, '$1').replace(/([イキシチニヒミリギジヂビピ])イ/g, '$1')
+    .replace(/([ウクスツヌフムユルグズヅブプュ])ウ/g, '$1').replace(/([エケセテネヘメレゲゼデベペ])[イエ]/g, '$1')
+    .replace(/([オコソトノホモヨロゴゾドボポョヲ])[ウオ]/g, '$1')
+    .replace(/[ヲヰヱ]/g, c => UNV[c])
+    .replace(/[ガ-ヂヅ-ヴ]/g, c => (unvoice ? UNV[c] : null) || c);
+}
+function kanaOnly(s) { return String(s || '').replace(/[^\u30A1-\u30FA\u30FC ]+/g, ' '); }
+
+// よく使う食品用の漢字→読み（内蔵DBから学習できない語を補う。同じ語がDBにもある場合はこちらを優先）
+const YOMI_SEED = {
+  鶏:'トリ', 鳥:'トリ', 豚:'ブタ', 牛:'ギュウ', 羊:'ヒツジ', 肉:'ニク', 挽肉:'ヒキニク', 卵:'タマゴ', 玉子:'タマゴ', 米:'コメ', 飯:'メシ', 麺:'メン', 麦:'ムギ',
+  魚:'サカナ', 鮭:'サケ', 鯖:'サバ', 鰯:'イワシ', 鮪:'マグロ', 鰹:'カツオ', 鯵:'アジ', 鱈:'タラ', 鰻:'ウナギ', 海老:'エビ', 蟹:'カニ', 貝:'カイ', 烏賊:'イカ', 蛸:'タコ', 帆立:'ホタテ',
+  野菜:'ヤサイ', 果物:'クダモノ', 豆:'マメ', 大豆:'ダイズ', 納豆:'ナットウ', 豆腐:'トウフ', 乳:'ニュウ', 牛乳:'ギュウニュウ', 豆乳:'トウニュウ', 味噌:'ミソ', 醤油:'ショウユ',
+  塩:'シオ', 砂糖:'サトウ', 酢:'ス', 油:'アブラ', 胡麻:'ゴマ', 蜂蜜:'ハチミツ', 生姜:'ショウガ', 葱:'ネギ', 玉葱:'タマネギ', 人参:'ニンジン', 大根:'ダイコン', 薯:'イモ', 芋:'イモ',
+  南瓜:'カボチャ', 茄子:'ナス', 胡瓜:'キュウリ', 白菜:'ハクサイ', 蒟蒻:'コンニャク', 海苔:'ノリ', 昆布:'コンブ', 若布:'ワカメ', 椎茸:'シイタケ', 茸:'キノコ', 林檎:'リンゴ', 蜜柑:'ミカン', 苺:'イチゴ', 檸檬:'レモン',
+  焼:'ヤ', 炒:'イタ', 煮:'ニ', 揚:'ア', 茹:'ユ', 蒸:'ム', 生:'ナマ', 冷:'ヒ', 冷凍:'レイトウ', 缶:'カン', 干:'ホ', 漬:'ツ', 粉:'コナ', 粉末:'フンマツ', 高野豆腐:'コウヤドウフ', 粥:'カユ', 汁:'シル', 鍋:'ナベ', 丼:'ドン',
+  定食:'テイショク', 弁当:'ベントウ', 寿司:'スシ', 蕎麦:'ソバ', 饂飩:'ウドン', 餃子:'ギョウザ', 焼売:'シュウマイ', 唐揚:'カラアゲ', 天麩羅:'テンプラ', 味醂:'ミリン', 出汁:'ダシ',
+  胸:'ムネ', 腿:'モモ', 皮:'カワ', 身:'ミ', 白:'シロ', 黒:'クロ', 赤:'アカ', 青:'アオ', 茶:'チャ', 緑茶:'リョクチャ', 紅茶:'コウチャ', 麦茶:'ムギチャ', 珈琲:'コーヒー', 水:'ミズ', 酒:'サケ',
+  自家製:'ジカセイ', 手作:'テヅク', 半熟:'ハンジュク', 無糖:'ムトウ', 無塩:'ムエン', 低脂肪:'テイシボウ', 無脂肪:'ムシボウ', 高:'コウ', 低:'テイ', 糖質:'トウシツ', 盛:'モ', 全粒粉:'ゼンリュウフン',
+  和:'ワ', 洋:'ヨウ', 中華:'チュウカ', 特製:'トクセイ', 濃厚:'ノウコウ', 新:'シン', 具:'グ', 入:'イ', 抜:'ヌ', 風:'フウ', 味:'アジ', 甘:'アマ', 辛:'カラ', 大:'オオ', 小:'コ', 中:'チュウ',
+  朝:'アサ', 昼:'ヒル', 夜:'ヨル', 夕:'ユウ', 食:'ショク', 間食:'カンショク', 菓子:'カシ', 飴:'アメ', 餅:'モチ', 団子:'ダンゴ', 饅頭:'マンジュウ', 麹:'コウジ', 酵素:'コウソ',
+};
+// 内蔵DBの「表記→読み」から、漢字連続部分ごとの読み辞書を作る（例: 鶏むね肉/トリムネニク → 鶏=トリ, 肉=ニク）
+const YOMI_LEX = (() => {
+  const counts = new Map();
+  const ONLY_JP = new RegExp('^[' + KANJI_CH + '\\u3040-\\u309F\\u30A0-\\u30FF\\u30FC]+$');
+  const IS_KANJI = new RegExp('^[' + KANJI_CH + ']+$');
+  const add = (run, reading) => {
+    if (!run || !reading) return;
+    const m = counts.get(run) || new Map();
+    m.set(reading, (m.get(reading) || 0) + 1); counts.set(run, m);
+  };
+  LOCAL_DB.forEach(f => {
+    const yomi = f.yomi;
+    if (!f.name || !yomi || !/^[\u30A0-\u30FF\u30FC]+$/.test(yomi)) return;
+    // （…）の補足は読みに含まれないことが多いので落として照合する
+    const hadParen = /[（(]/.test(f.name);
+    const name = f.name.replace(/[（(][^）)]*[）)]/g, '').replace(/[\s\u3000・]+/g, '');
+    if (!name || !ONLY_JP.test(name)) return;
+    const toks = name.match(KANJI_RUN_RE) || [];
+    if (hadParen && toks.length === 1) return; // 手掛かり(かな)が無く、補足の読みが混ざっている可能性が高い
+    let pos = 0, prevKanji = false, ok = true;
+    const found = [];
+    for (let t = 0; t < toks.length && ok; t++) {
+      const tok = toks[t];
+      if (IS_KANJI.test(tok)) {
+        if (t === toks.length - 1) {
+          const r = yomi.slice(pos);
+          if (!r || r.length > (tok.length === 1 ? 4 : 3.2 * tok.length)) ok = false; else found.push([tok, r]);
+        }
+        prevKanji = true; continue;
+      }
+      const k = toKata(tok);
+      const idx = yomi.indexOf(k, pos + (prevKanji ? 1 : 0));
+      if (idx < 0 || (!prevKanji && idx !== pos)) { ok = false; break; }
+      if (prevKanji) found.push([toks[t - 1], yomi.slice(pos, idx)]);
+      pos = idx + k.length; prevKanji = false;
+    }
+    if (ok) found.forEach(([run, r]) => add(run, r));
+  });
+  const lex = new Map();
+  counts.forEach((m, run) => {
+    let best = '', n = 0;
+    m.forEach((c, r) => { if (c > n || (c === n && r.length < best.length)) { n = c; best = r; } });
+    lex.set(run, best);
+  });
+  Object.keys(YOMI_SEED).forEach(k => lex.set(k, YOMI_SEED[k]));
+  return lex;
+})();
+function readKanjiRun(run) {
+  let i = 0, res = '';
+  while (i < run.length) {
+    let hit = false;
+    for (let L = Math.min(8, run.length - i); L >= 1; L--) {
+      const r = YOMI_LEX.get(run.substr(i, L));
+      if (r) { res += r; i += L; hit = true; break; }
+    }
+    if (!hit) i++; // 辞書に無い漢字は読みなし（残りの部分で検索できるようにする）
+  }
+  return res;
+}
+const _yomiCache = new Map();
+// 食品名からカタカナの読みを推定する（かな・カタカナ部分はそのまま、漢字は内蔵DB由来の辞書で補う）
+function guessYomi(name) {
+  name = String(name || '');
+  if (_yomiCache.has(name)) return _yomiCache.get(name);
+  let out = '';
+  (name.match(KANJI_RUN_RE) || []).forEach(tok => {
+    out += new RegExp('^[' + KANJI_CH + ']').test(tok) ? readKanjiRun(tok) : toKata(tok).replace(/[^\u30A1-\u30FA\u30FC]/g, '');
+  });
+  _yomiCache.set(name, out);
+  return out;
+}
+// 検索用フィールド（_search / _kana）を付与する。yomi 未設定のカスタム/複合食品は推定読みを使う
+function withSearchFields(f, src) {
+  const yomi = normalize(f.yomi || guessYomi(f.name));
+  const nameN = normalize(f.name);
+  f._search = nameN + ' ' + yomi + ' ' + normalize(f.tags || '') + ' ' + (f.en || '').toLowerCase();
+  const kana = kanaOnly(yomi + ' ' + nameN + ' ' + normalize(f.tags || '')); // 読みを先頭に置く（前方一致の判定用）
+  f._kana = looseKana(kana);          // 長音・ウ/オ・ヲなどのゆらぎだけ吸収
+  f._kanaU = looseKana(kana, true);   // さらに濁点・半濁点も無視（rendaku: 豆腐=トウフ/ドウフ 等）
+  if (src) f._src = src;
+  return f;
+}
+
+LOCAL_DB.forEach(f => withSearchFields(f, 'local'));
 
 // ── State ──
 let entries = [], customFoods = [], comboFoods = [], exercises = [];
 let userWeight = 65, statsPeriod = 'today', chartMode = 'raw';
 let calChart = null, pfcChart = null, vitdStockChart = null;
-let searchTimer = null, comboTimer = null, apiAbort = null;
 let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen = false;
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
 let currentDate = toDateStr(new Date());
@@ -466,8 +661,8 @@ updateHeader();
 function getAllFoods() {
   return [
     ...LOCAL_DB,
-    ...customFoods.map(f => ({...f, _search: normalize(f.name), _src:'custom'})),
-    ...comboFoods.map(f => ({...f, _search: normalize(f.name), _src:'combo'})),
+    ...customFoods.map(f => withSearchFields({...f}, 'custom')),
+    ...comboFoods.map(f => withSearchFields({...f}, 'combo')),
   ];
 }
 // エントリ名から食品DBを引いて密度(g/ml)を取得する。見つからない/未設定の場合は
@@ -1070,7 +1265,6 @@ function renderRecord() {
           <div class="search-wrap" style="flex:1;margin-bottom:0">
             <input type="text" id="addSearch_${meal}" placeholder="いわし、chicken, egg…" oninput="onAddSearch(this.value,'${meal}')" autocomplete="off">
             <div class="search-icon-box" id="addSearchIcon_${meal}"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div>
-            <div class="spin-box" id="addSpinner_${meal}"><div class="spinner"></div></div>
           </div>
           <button type="button" class="btn btn-sm" onclick="toggleAddPanel('${meal}')" aria-label="閉じる" style="height:38px;padding:0 13px;flex-shrink:0">✕</button>
         </div>
@@ -1108,61 +1302,132 @@ function renderRecord() {
 }
 
 // ── Search ──
-function searchScore(food, query) {
+// 検索対象は 内蔵DB・カスタム食品・複合食品 のみ（外部の食品DB(Open Food Facts)は参照しない）
+// クエリは「そのまま/ひらがな→カタカナ」と「ローマ字→カナ」の両方の解釈で照合し、良い方のスコアを採用する
+function queryVariants(query) {
+  const raw = String(query || '').toLowerCase().trim();
+  const norm = normalize(raw);
+  let roma = null, romaU = null, kana = null, kanaU = null;
+  const k = romajiToKana(raw);
+  if (k && k.replace(/ー/g, '').length >= 2) { roma = looseKana(k); romaU = looseKana(k, true); }
+  // かな入力でも、長音・ウ/オ・濁点の表記ゆれ（とうふ/トーフ、やきざかな/ヤキサカナ）は吸収して当てる
+  if (/^[\u30A1-\u30FA\u30FC]{2,}$/.test(norm)) { kana = looseKana(norm); kanaU = looseKana(norm, true); }
+  return { raw, norm, roma, romaU, kana, kanaU };
+}
+// 読み(_kana/_kanaU)との照合。読みの先頭一致 > 読み内の語頭一致 > 部分一致。濁点まで無視した一致は低めに評価
+function kanaTier(kn, q, hi, mid, lo) {
+  if (!q || !kn) return 0;
+  if (kn.startsWith(q)) return hi;
+  if (kn.split(' ').some(t => t.startsWith(q))) return mid;
+  return kn.includes(q) ? lo : 0;
+}
+function kanaScore(food, qv) {
+  return Math.max(
+    kanaTier(food._kana,  qv.roma,  95, 80, 72), kanaTier(food._kanaU, qv.romaU, 70, 62, 55),
+    kanaTier(food._kana,  qv.kana,  66, 60, 58), kanaTier(food._kanaU, qv.kanaU, 50, 46, 42));
+}
+function searchScore(food, query, qv) {
   const q=query.toLowerCase().trim(); if(!q) return 0;
-  const s=food._search||'', nameNorm=normalize(food.name), qNorm=normalize(q);
+  qv = qv || queryVariants(q);
+  const s=food._search||'', nameNorm=normalize(food.name), qNorm=qv.norm;
+  let score = kanaScore(food, qv);
   if (nameNorm===qNorm||s.startsWith(qNorm)) return 100;
-  if (nameNorm.includes(qNorm)) return 90;
-  if (s.includes(qNorm)) return 70;
+  if (nameNorm.includes(qNorm)) return Math.max(score, 90);
+  if (s.includes(qNorm)) return Math.max(score, 70);
   const en=(food.en||'').toLowerCase();
-  if (en===q) return 85; if (en.startsWith(q)) return 80; if (en.includes(q)) return 65;
+  if (en===q) return Math.max(score, 85); if (en.startsWith(q)) return Math.max(score, 80); if (en.includes(q)) return Math.max(score, 65);
+  if (score) return score;
   let qi=0; for(let i=0;i<s.length&&qi<qNorm.length;i++) if(s[i]===qNorm[qi]) qi++;
   if (qi===qNorm.length) return 30;
   return 0;
 }
 function localSearch(q) {
   if (!q.trim()) return [];
-  return getAllFoods().map(f=>({...f,_score:searchScore(f,q)})).filter(f=>f._score>0).sort((a,b)=>b._score-a._score).slice(0,9);
-}
-async function apiSearch(q) {
-  if (apiAbort) apiAbort.abort(); apiAbort = new AbortController();
-  try {
-    const res = await fetch(`https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(q)}&search_simple=1&action=process&json=1&fields=product_name,product_name_ja,nutriments&page_size=5&lc=ja,en`,{signal:apiAbort.signal});
-    const data = await res.json();
-    return (data.products||[]).filter(p=>(p.product_name||p.product_name_ja)&&(p.nutriments||{})['energy-kcal_100g']!=null).map(p=>{
-      const n=p.nutriments||{};
-      const entry = {name:p.product_name_ja||p.product_name||'不明',cal:r1(n['energy-kcal_100g']||0),p:r1(n['proteins_100g']||0),f:r1(n['fat_100g']||0),c:r1(n['carbohydrates_100g']||0),per:100,
-        fiber:r1(n['fiber_100g']||0),iron:r1(n['iron_100g']!=null?n['iron_100g']*1000:0),calcium:r1(n['calcium_100g']!=null?n['calcium_100g']*1000:0),
-        vitc:r1(n['vitamin-c_100g']!=null?n['vitamin-c_100g']*1000:0),vitd:r1(n['vitamin-d_100g']!=null?n['vitamin-d_100g']*1000000:0),salt:r1(n['salt_100g']||0),_src:'api'};
-      return enrichFoodProfile(entry);
-    });
-  } catch(e) { return e.name==='AbortError'?null:[]; }
+  const qv = queryVariants(q);
+  return getAllFoods().map(f=>({...f,_score:searchScore(f,q,qv)})).filter(f=>f._score>0).sort((a,b)=>b._score-a._score).slice(0,9);
 }
 
-const SRC_LABEL = {local:'内蔵',custom:'カスタム',combo:'複合',api:'外部'};
-function showSp(spId, iconId, on) {
-  const sp=document.getElementById(spId), ic=document.getElementById(iconId);
-  if(sp) sp.style.display=on?'flex':'none'; if(ic) ic.style.display=on?'none':'flex';
-}
-function renderResultsFor(local, api, loading, meal) {
+const SRC_LABEL = {local:'内蔵',custom:'カスタム',combo:'複合'};
+function renderResultsFor(local, meal) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
   let html='';
-  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'local','${meal}')"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
-  if(loading){html+=`<div class="rs-label">Open Food Facts 検索中…</div><div class="no-result"><div class="spinner" style="display:inline-block"></div></div>`}
-  else if(api&&api.length){html+=`<div class="rs-label">Open Food Facts</div>`;html+=api.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'api','${meal}')"><div><div class="ri-name">${f.name.length>26?f.name.slice(0,26)+'…':f.name}<span class="badge badge-api">外部</span></div><div class="ri-sub">100gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
-  else if(!loading&&!local.length){html+=`<div class="no-result">見つかりませんでした</div>`}
-  box.innerHTML=html; box._local=local; box._api=api; box.style.display='block';
+  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="selectAddResult(${i},'${meal}')"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
+  else {html+=`<div class="no-result">見つかりませんでした</div>`}
+  box.innerHTML=html; box._local=local; box.style.display='block';
 }
 if (!window._addBase) window._addBase = {};
 function onAddSearch(q, meal) {
-  clearTimeout(searchTimer); const box=document.getElementById('addResultsBox_'+meal);
+  const box=document.getElementById('addResultsBox_'+meal);
   if(!q.trim()){if(box)box.style.display='none';return}
-  renderResultsFor(localSearch(q),[],true,meal); showSp('addSpinner_'+meal,'addSearchIcon_'+meal,true);
-  searchTimer=setTimeout(async()=>{const api=await apiSearch(q);showSp('addSpinner_'+meal,'addSearchIcon_'+meal,false);if(api!==null)renderResultsFor(localSearch(q),api,false,meal)},600);
+  renderResultsFor(localSearch(q),meal);
 }
-function selectAddResult(i, src, meal) {
+// ── 複合食品の分量調整（記録タブ） ──
+// 検索結果で複合食品をタップした際、即登録せずここで材料ごとの量を微調整できるようにする（コンパクトな内蔵パネル。追加のUI領域は使わず検索結果ボックスをそのまま差し替える）
+if (!window._comboAdjust) window._comboAdjust = {};
+function openComboAdjust(f, meal) {
+  window._comboAdjust[meal] = { food: f, ings: f.ingredients.map(ing => ({ ...ing, per: ing.per || 100, amount: ing.amount || ing.per || 100 })) };
+  renderComboAdjust(meal);
+}
+function renderComboAdjust(meal) {
+  const box = document.getElementById('addResultsBox_'+meal); const st = window._comboAdjust[meal]; if (!box || !st) return;
+  const rows = st.ings.map((ing, idx) => `<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateComboAdjustAmt('${meal}',${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('');
+  box.innerHTML = `<div style="padding:2px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12.5px;font-weight:600">${st.food.name}の量を調整</span><button type="button" class="btn btn-sm" onclick="closeComboAdjust('${meal}')" style="padding:2px 8px">戻る</button></div>
+    ${rows}
+    <div id="comboAdjustTotal_${meal}" style="font-size:12px;color:var(--text-sub);margin:6px 2px"></div>
+    <button type="button" class="btn btn-primary btn-block" onclick="confirmComboAdjust('${meal}')" style="margin-top:2px">この内容で追加</button>
+  </div>`;
+  box.style.display = 'block';
+  updateComboAdjustTotal(meal);
+}
+function updateComboAdjustAmt(meal, idx, val) {
+  const st = window._comboAdjust[meal]; if (!st) return;
+  const amt = parseFloat(val);
+  if (!isNaN(amt) && amt >= 0) st.ings[idx].amount = amt; // 空欄・入力途中は無視し、合計欄だけ据え置く
+  updateComboAdjustTotal(meal);
+}
+function updateComboAdjustTotal(meal) {
+  const st = window._comboAdjust[meal]; const el = document.getElementById('comboAdjustTotal_'+meal); if (!st || !el) return;
+  const tot = comboTotals(st.ings.map(ing => comboScaled(ing, ing.amount)));
+  el.textContent = `合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)}${tot.fiber ? ' 繊'+r1(tot.fiber)+'g' : ''}`;
+}
+function closeComboAdjust(meal) {
+  delete window._comboAdjust[meal];
+  const q = document.getElementById('addSearch_'+meal);
+  if (q && q.value.trim()) { onAddSearch(q.value, meal); return; }
+  const box = document.getElementById('addResultsBox_'+meal);
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+}
+function confirmComboAdjust(meal) {
+  const st = window._comboAdjust[meal]; if (!st) return;
+  const totalAmt = st.ings.reduce((a, ing) => a + (ing.amount || 0), 0);
+  if (totalAmt <= 0) { showToast('分量を入力してください'); return; }
+  const tot = comboTotals(st.ings.map(ing => comboScaled(ing, ing.amount)));
+  const newEntry = {
+    id: Date.now() + Math.random(), date: currentDate, meal, time: nowTimeStr(),
+    name: st.food.name, amount: r1(totalAmt),
+    cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
+    ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
+    fa: st.food.fa || null, aa: st.food.aa || null,
+    digest: st.food.digest || 'mixed',
+    ingredients: st.ings.map(ing => ({ name: ing.name, amount: ing.amount, per: ing.per || 100, cal: ing.cal, p: ing.p, f: ing.f, c: ing.c,
+      ...Object.fromEntries(MICRO_KEYS.map(k => [k, ing[k] || 0])) })),
+  };
+  if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
+  const { merged } = addOrMergeEntry(newEntry);
+  save();
+  delete window._comboAdjust[meal];
+  const box = document.getElementById('addResultsBox_'+meal); if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  const searchEl = document.getElementById('addSearch_'+meal); if (searchEl) searchEl.value = '';
+  const cont = document.getElementById('amtQuickPick_'+meal); if (cont) cont.style.display = 'none';
+  renderRecord(); renderCalendar();
+  showToast(merged ? `✅「${st.food.name}」は既存の記録に合算しました` : `✅「${st.food.name}」を登録しました`);
+}
+function selectAddResult(i, meal) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
-  const f=src==='local'?box._local[i]:box._api[i]; if(!f) return;
+  const f=box._local && box._local[i]; if(!f) return;
+  // 複合食品は、材料の分量をその場で調整できるコンパクトなパネルを挟む（内訳の無いものはこれまで通り即登録）
+  if (f._src === 'combo' && Array.isArray(f.ingredients) && f.ingredients.length) { openComboAdjust(f, meal); return; }
   window._addBase[meal]={...f};
 
   // ── 検索結果タップ＝即登録。量やその他の栄養素はあとで記録欄のインライン編集で調整する ──
@@ -1576,16 +1841,13 @@ function addOrMergeEntry(newEntry, excludeId) {
     dup.p       = r1((dup.p       || 0) + (newEntry.p       || 0));
     dup.f       = r1((dup.f       || 0) + (newEntry.f       || 0));
     dup.c       = r1((dup.c       || 0) + (newEntry.c       || 0));
-    dup.fiber   = r1((dup.fiber   || 0) + (newEntry.fiber   || 0));
-    dup.iron    = r2((dup.iron    || 0) + (newEntry.iron    || 0));
-    dup.calcium = r1((dup.calcium || 0) + (newEntry.calcium || 0));
-    dup.vitc    = r1((dup.vitc    || 0) + (newEntry.vitc    || 0));
-    dup.vitd    = r2((dup.vitd    || 0) + (newEntry.vitd    || 0));
-    dup.salt    = r2((dup.salt    || 0) + (newEntry.salt    || 0));
+    MICRO_KEYS.forEach(k => { dup[k] = microRound(k, (dup[k] || 0) + (newEntry[k] || 0)); });
     if (!dup.fa && newEntry.fa) dup.fa = newEntry.fa;
     if (!dup.aa && newEntry.aa) dup.aa = newEntry.aa;
     if (!dup._fa && newEntry._fa) dup._fa = newEntry._fa;
     if (!dup.digest && newEntry.digest) dup.digest = newEntry.digest;
+    // 複合食品の内訳(ingredients)は、同じ食品を同じ食事に重ねて記録した場合も失われないよう連結する
+    if (newEntry.ingredients) dup.ingredients = (dup.ingredients || []).concat(newEntry.ingredients);
     return { entry: dup, merged: true };
   }
   entries.push(newEntry);
@@ -1947,7 +2209,7 @@ function copyMeal(date, meal) {
 
 // ── Stats ──
 // ── 食品プロファイル自動付与 ──
-// 外部API・AI・手動登録食品に fa/aa を自動推定して付与する
+// AI・手動登録食品に fa/aa を自動推定して付与する
 const AA_PROFILES_MAP = {
   whey:    {leu:.11,ile:.07,val:.06,lys:.10,met:.02,thr:.07,trp:.02,his:.02,score:1.09},
   egg:     {leu:.09,ile:.06,val:.07,lys:.09,met:.03,thr:.06,trp:.02,his:.03,score:1.13},
@@ -2940,6 +3202,100 @@ function parseCsvLine(line) {
   result.push(cur); return result;
 }
 
+// ── 食品DBのエクスポート・インポート（カスタム食品・複合食品） ──
+// CSVは食事記録用で1行=1食品に丸めてしまうため、fa/aa/ingredientsなど構造を保てるJSONを別に用意する。
+// 端末間の移行や、docs/llm-food-db-prompt.md のような外部LLMでのデータ拡充・見直しに使う想定。
+const FOOD_DB_EXPORT_KIND = 'pfc-app-food-db';
+function exportFoodDb() {
+  const payload = {
+    kind: FOOD_DB_EXPORT_KIND, version: 1, exportedAt: new Date().toISOString(),
+    customFoods: JSON.parse(JSON.stringify(customFoods)),
+    comboFoods: JSON.parse(JSON.stringify(comboFoods)),
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `pfc_fooddb_${toDateStr(new Date())}.json`; a.click();
+  URL.revokeObjectURL(url);
+}
+function handleFoodDbFileSelect(ev) {
+  const file = ev.target.files && ev.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => { document.getElementById('fooddbImportArea').value = String(reader.result || ''); };
+  reader.onerror = () => {
+    const msg = document.getElementById('fooddbImportMsg');
+    msg.className = 'status-msg status-err'; msg.textContent = 'ファイルの読み込みに失敗しました';
+  };
+  reader.readAsText(file, 'utf-8');
+}
+// 1件の食品オブジェクトを取り込み用に検証・整形する。cal/p/f/c/per が数値でない、または name が無いものは null（スキップ）
+function sanitizeImportedFood(raw, kind) {
+  if (!raw || typeof raw !== 'object') return null;
+  const name = String(raw.name || '').trim();
+  const per = parseFloat(raw.per);
+  const cal = parseFloat(raw.cal), p = parseFloat(raw.p), f = parseFloat(raw.f), c = parseFloat(raw.c);
+  if (!name || !isFinite(per) || per <= 0 || ![cal, p, f, c].every(isFinite)) return null;
+  const yomi = sanitizeYomi(raw.yomi || '');
+  const serving = parseFloat(raw.serving);
+  const food = {
+    id: Date.now() + Math.random(),
+    name, ...(yomi ? { yomi } : {}), per,
+    ...(isFinite(serving) && serving > 0 ? { serving } : {}),
+    cal: Math.max(0, cal), p: Math.max(0, p), f: Math.max(0, f), c: Math.max(0, c),
+    ...pickMicros(raw),
+  };
+  const fa = sanitizeFa(raw.fa), aa = sanitizeAa(raw.aa);
+  if (fa) food.fa = fa; if (aa) food.aa = aa;
+  if (typeof raw.en === 'string' && raw.en.trim()) food.en = raw.en.trim().slice(0, 120);
+  if (typeof raw.tags === 'string' && raw.tags.trim()) food.tags = raw.tags.trim().slice(0, 200);
+  if (raw.digest) food.digest = raw.digest; else food.digest = classifyDigestCategory(name, p || 0);
+  if (kind === 'combo' && Array.isArray(raw.ingredients)) {
+    food.ingredients = raw.ingredients.map(ing => {
+      const ip = parseFloat(ing.per) || 100, ia = parseFloat(ing.amount) || ip;
+      return { name: String(ing.name || '材料'), amount: ia, per: ip,
+        cal: parseFloat(ing.cal) || 0, p: parseFloat(ing.p) || 0, f: parseFloat(ing.f) || 0, c: parseFloat(ing.c) || 0,
+        ...pickMicros(ing) };
+    });
+  }
+  return food;
+}
+function importFoodDb() {
+  const text = document.getElementById('fooddbImportArea').value.trim();
+  const msg = document.getElementById('fooddbImportMsg');
+  if (!text) { msg.className = 'status-msg status-err'; msg.textContent = 'JSONデータを入力してください'; return; }
+  let data;
+  try { data = JSON.parse(text); } catch (e) {
+    msg.className = 'status-msg status-err'; msg.textContent = 'JSONの形式が正しくありません: ' + e.message; return;
+  }
+  // { customFoods, comboFoods } を含むオブジェクト、またはどちらか一方の配列そのものにも対応
+  const customList = Array.isArray(data.customFoods) ? data.customFoods : (Array.isArray(data) ? data : []);
+  const comboList = Array.isArray(data.comboFoods) ? data.comboFoods : [];
+  if (!customList.length && !comboList.length) {
+    msg.className = 'status-msg status-err'; msg.textContent = '食品データが見つかりませんでした（customFoods / comboFoods 配列が必要です）'; return;
+  }
+  takeAiBackup('食品DBインポート');
+  let added = 0, updated = 0, skipped = 0;
+  customList.forEach(raw => {
+    const food = sanitizeImportedFood(raw, 'custom');
+    if (!food) { skipped++; return; }
+    const idx = customFoods.findIndex(f => normFoodName(f.name) === normFoodName(food.name));
+    if (idx >= 0) { food.id = customFoods[idx].id; customFoods[idx] = food; updated++; }
+    else { customFoods.push(food); added++; }
+  });
+  comboList.forEach(raw => {
+    const food = sanitizeImportedFood(raw, 'combo');
+    if (!food || !food.ingredients || !food.ingredients.length) { skipped++; return; }
+    const idx = comboFoods.findIndex(f => normFoodName(f.name) === normFoodName(food.name));
+    if (idx >= 0) { food.id = comboFoods[idx].id; comboFoods[idx] = food; updated++; }
+    else { comboFoods.push(food); added++; }
+  });
+  saveCustom();
+  if (typeof renderCustomFoodList === 'function') renderCustomFoodList();
+  if (typeof renderComboFoodList === 'function') renderComboFoodList();
+  msg.className = 'status-msg status-ok';
+  msg.textContent = `追加${added}件・更新${updated}件${skipped ? `（スキップ${skipped}件）` : ''}を取り込みました`;
+}
+
 // ── Custom foods ──
 function setCustomMode(mode) {
   document.getElementById('csSinglePanel').style.display=mode==='single'?'block':'none';
@@ -2951,10 +3307,11 @@ function setCustomMode(mode) {
 function saveCustomFood() {
   const name=document.getElementById('csFoodName').value.trim(); const msg=document.getElementById('csSaveMsg');
   if(!name){msg.className='status-msg status-err';msg.textContent='食品名を入力してください';return}
-  customFoods.push({id:Date.now(),name,cal:gv('csCal'),p:gv('csP'),f:gv('csF'),c:gv('csC'),per:gv('csPer')||100,
+  const yomi=sanitizeYomi(document.getElementById('csFoodYomi').value);
+  customFoods.push({id:Date.now(),name,...(yomi?{yomi}:{}),cal:gv('csCal'),p:gv('csP'),f:gv('csF'),c:gv('csC'),per:gv('csPer')||100,
     fiber:gv('csFib'),iron:gv('csFe'),calcium:gv('csCa'),vitc:gv('csVc'),vitd:gv('csVd'),salt:gv('csSalt')});
   saveCustom(); msg.className='status-msg status-ok'; msg.textContent=`「${name}」を登録しました`;
-  ['csFoodName','csCal','csP','csF','csC','csFib','csFe','csCa','csVc','csVd','csSalt'].forEach(id=>document.getElementById(id).value='');
+  ['csFoodName','csFoodYomi','csCal','csP','csF','csC','csFib','csFe','csCa','csVc','csVd','csSalt'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('csPer').value='100'; renderCustomFoodList(); setTimeout(()=>{msg.textContent=''},2500);
 }
 function deleteCustomFood(id){
@@ -2993,6 +3350,8 @@ function saveEditCustomFood(id) {
     if (msg) { msg.className = 'status-msg status-err'; msg.textContent = `「${name}」は既に別のカスタム食品で使われています`; }
     return;
   }
+  const yomiEl = document.getElementById('ecfYomi'+id);
+  const yomi = yomiEl ? sanitizeYomi(yomiEl.value) : '';
   customFoods[idx] = {
     ...customFoods[idx],
     name,
@@ -3001,6 +3360,7 @@ function saveEditCustomFood(id) {
     fiber:   gvSuf('Fib'), iron: gvSuf('Fe'), calcium: gvSuf('Ca'),
     vitc:    gvSuf('Vc'),  vitd: gvSuf('Vd'), salt: gvSuf('Salt'),
   };
+  if (yomi) customFoods[idx].yomi = yomi; else delete customFoods[idx].yomi; // 空欄なら自動推定に戻す
   saveCustom();
   editingCustomFoodId = null;
   renderCustomFoodList();
@@ -3013,6 +3373,7 @@ function renderCustomFoodList() {
     if (editingCustomFoodId === f.id) {
       return `<div class="custom-item" style="flex-direction:column;align-items:stretch;gap:6px;padding:10px">
         <div class="row" style="margin-bottom:0"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="ecfName${f.id}" value="${f.name}"></div><div class="field" style="flex:1"><label>基準量(g)</label><input type="number" id="ecfPer${f.id}" value="${f.per}"></div></div>
+        <div class="row" style="margin-bottom:0"><div class="field"><label>読み（任意・空欄で自動推定）</label><input type="text" id="ecfYomi${f.id}" value="${f.yomi||''}" autocomplete="off"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>kcal</label><input type="number" id="ecfCal${f.id}" value="${f.cal}" step="0.1"></div><div class="field"><label>P</label><input type="number" id="ecfP${f.id}" value="${f.p}" step="0.1"></div><div class="field"><label>F</label><input type="number" id="ecfF${f.id}" value="${f.f}" step="0.1"></div><div class="field"><label>C</label><input type="number" id="ecfC${f.id}" value="${f.c}" step="0.1"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>食物繊維</label><input type="number" id="ecfFib${f.id}" value="${f.fiber||0}" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="ecfFe${f.id}" value="${f.iron||0}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="ecfCa${f.id}" value="${f.calcium||0}" step="0.1"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>VitC</label><input type="number" id="ecfVc${f.id}" value="${f.vitc||0}" step="0.1"></div><div class="field"><label>VitD</label><input type="number" id="ecfVd${f.id}" value="${f.vitd||0}" step="0.1"></div><div class="field"><label>塩分</label><input type="number" id="ecfSalt${f.id}" value="${f.salt||0}" step="0.01"></div></div>
@@ -3028,42 +3389,46 @@ function renderCustomFoodList() {
 
 // ── Combo foods ──
 function onComboSearch(q) {
-  clearTimeout(comboTimer); const box=document.getElementById('comboResultsBox');
+  const box=document.getElementById('comboResultsBox');
   if(!q.trim()){box.style.display='none';return}
-  const local=localSearch(q); renderComboResults(local,[],true); showSp('comboSpinner','comboSearchIcon',true);
-  comboTimer=setTimeout(async()=>{const api=await apiSearch(q);showSp('comboSpinner','comboSearchIcon',false);if(api!==null)renderComboResults(local,api,false)},600);
+  renderComboResults(localSearch(q));
 }
-function renderComboResults(local, api, loading) {
+function renderComboResults(local) {
   const box=document.getElementById('comboResultsBox'); let html='';
-  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="addComboIngredient(${i},'local')"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
-  if(loading){html+=`<div class="rs-label">Open Food Facts 検索中…</div><div class="no-result"><div class="spinner" style="display:inline-block"></div></div>`}
-  else if(api&&api.length){html+=`<div class="rs-label">Open Food Facts</div>`;html+=api.map((f,i)=>`<div class="ri" onclick="addComboIngredient(${i},'api')"><div><div class="ri-name">${f.name.length>26?f.name.slice(0,26)+'…':f.name}<span class="badge badge-api">外部</span></div><div class="ri-sub">100gあたり P${f.p} F${f.f} C${f.c}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
-  else if(!loading&&!local.length){html+=`<div class="no-result">見つかりませんでした</div>`}
-  box.innerHTML=html; box._local=local; box._api=api; box.style.display='block';
+  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="addComboIngredient(${i})"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
+  else {html+=`<div class="no-result">見つかりませんでした</div>`}
+  box.innerHTML=html; box._local=local; box.style.display='block';
 }
-function addComboIngredient(i, src) {
-  const box=document.getElementById('comboResultsBox'); const f=src==='local'?box._local[i]:box._api[i]; if(!f) return;
-  const per=f.per||100, amt=f.serving||per, r=amt/per;
-  comboIngredients.push({...f,amount:amt,_cal:r1(f.cal*r),_p:r1(f.p*r),_f:r1(f.f*r),_c:r1(f.c*r),
-    _fiber:r1((f.fiber||0)*r),_iron:r1((f.iron||0)*r),_calcium:r1((f.calcium||0)*r),
-    _vitc:r1((f.vitc||0)*r),_vitd:r1((f.vitd||0)*r),_salt:r2((f.salt||0)*r)});
-  box.style.display='none'; document.getElementById('comboSearch').value=''; showSp('comboSpinner','comboSearchIcon',false); renderComboIngredients();
+// 複合食品の材料1件について、実量(amt g)あたりの栄養素を _cal/_p/... の形で計算する（全ミクロ栄養素を含む）
+function comboScaled(f, amt) {
+  const r = amt / (f.per || 100);
+  const o = { amount: amt, _cal: r1((f.cal||0)*r), _p: r1((f.p||0)*r), _f: r1((f.f||0)*r), _c: r1((f.c||0)*r) };
+  MICRO_KEYS.forEach(k => { o['_'+k] = microRound(k, (f[k]||0)*r); });
+  return o;
+}
+function comboTotals(ings) {
+  const t = { cal:0, p:0, f:0, c:0 }; MICRO_KEYS.forEach(k => { t[k] = 0; });
+  ings.forEach(f => { ['cal','p','f','c',...MICRO_KEYS].forEach(k => { t[k] += (f['_'+k] || 0); }); });
+  return t;
+}
+function addComboIngredient(i) {
+  const box=document.getElementById('comboResultsBox'); const f=box._local && box._local[i]; if(!f) return;
+  const per=f.per||100, amt=f.serving||per;
+  comboIngredients.push({...f, per, ...comboScaled({...f, per}, amt)});
+  box.style.display='none'; document.getElementById('comboSearch').value=''; renderComboIngredients();
 }
 function updateComboAmt(i, val) {
   const f = comboIngredients[i];
   const amt = parseFloat(val);
   // 入力途中の空欄・無効値では amount を勝手に上書きしない（100gへの巻き戻りを防止）
   if (isNaN(amt) || amt <= 0) { updateComboTotal(); return; }
-  const r = amt/(f.per||100);
-  comboIngredients[i]={...f,amount:amt,_cal:r1(f.cal*r),_p:r1(f.p*r),_f:r1(f.f*r),_c:r1(f.c*r),
-    _fiber:r1((f.fiber||0)*r),_iron:r1((f.iron||0)*r),_calcium:r1((f.calcium||0)*r),
-    _vitc:r1((f.vitc||0)*r),_vitd:r1((f.vitd||0)*r),_salt:r2((f.salt||0)*r)};
+  comboIngredients[i]={...f, ...comboScaled(f, amt)};
   // 合計表示だけ更新し、入力欄のDOMは再生成しない（再生成すると入力中にフォーカスが外れてしまう）
   updateComboTotal();
 }
 function updateComboTotal() {
   if (!comboIngredients.length) { document.getElementById('comboTotal').textContent=''; return }
-  const tot=comboIngredients.reduce((a,f)=>({cal:a.cal+f._cal,p:a.p+f._p,f:a.f+f._f,c:a.c+f._c,fiber:a.fiber+f._fiber,iron:a.iron+f._iron,calcium:a.calcium+f._calcium}),{cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0});
+  const tot = comboTotals(comboIngredients);
   document.getElementById('comboTotal').textContent=`合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)} 繊${r1(tot.fiber)}g`;
 }
 function removeComboIngredient(i){comboIngredients.splice(i,1);renderComboIngredients()}
@@ -3078,26 +3443,12 @@ function editComboFood(id) {
   if (!f) return;
   // 編集対象をフォームに展開
   document.getElementById('comboName').value = f.name;
+  document.getElementById('comboYomi').value = f.yomi || '';
   // 食材リストを復元
   comboIngredients = (f.ingredients || []).map(ing => {
     const per = ing.per || 100;
     const amount = ing.amount || per;
-    const r = amount / per;
-    return {
-      ...ing,
-      per,
-      amount,
-      _cal:     r1((ing.cal     || 0) * r),
-      _p:       r1((ing.p       || 0) * r),
-      _f:       r1((ing.f       || 0) * r),
-      _c:       r1((ing.c       || 0) * r),
-      _fiber:   r1((ing.fiber   || 0) * r),
-      _iron:    r1((ing.iron    || 0) * r),
-      _calcium: r1((ing.calcium || 0) * r),
-      _vitc:    r1((ing.vitc    || 0) * r),
-      _vitd:    r1((ing.vitd    || 0) * r),
-      _salt:    r2((ing.salt    || 0) * r),
-    };
+    return { ...ing, per, ...comboScaled({ ...ing, per }, amount) };
   });
   renderComboIngredients();
   // 保存ボタンを「更新」モードにする
@@ -3118,28 +3469,23 @@ function saveComboFood() {
   if (!name) { msg.className='status-msg status-err'; msg.textContent='複合食品名を入力してください'; return }
   if (!comboIngredients.length) { msg.className='status-msg status-err'; msg.textContent='食材を追加してください'; return }
 
-  const tot = comboIngredients.reduce((a,f) => ({
-    cal: a.cal+f._cal, p: a.p+f._p, f: a.f+f._f, c: a.c+f._c,
-    fiber: a.fiber+f._fiber, iron: a.iron+f._iron, calcium: a.calcium+f._calcium,
-    vitc: a.vitc+(f._vitc||0), vitd: a.vitd+(f._vitd||0), salt: a.salt+(f._salt||0),
-  }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+  const tot = comboTotals(comboIngredients);
   const totalAmt = comboIngredients.reduce((a,f) => a + f.amount, 0);
 
   const editId = btn.dataset.editId ? Number(btn.dataset.editId) : null;
 
   // 100gあたりに正規化せず、実際に作った総重量を基準量(per)にする
   // → 記録タブで選ぶ際のデフォルト量が「100g」ではなく「作った分そのまま」になる
+  const yomi = sanitizeYomi(document.getElementById('comboYomi').value);
   const foodData = {
     id: editId || Date.now(),
-    name, per: r1(totalAmt), serving: r1(totalAmt),
+    name, ...(yomi ? { yomi } : {}), per: r1(totalAmt), serving: r1(totalAmt),
     cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
-    fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
-    vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
+    ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
     ingredients: comboIngredients.map(f => ({
       name: f.name, amount: f.amount,
       per: f.per || 100, cal: f.cal, p: f.p, f: f.f, c: f.c,
-      fiber: f.fiber||0, iron: f.iron||0, calcium: f.calcium||0,
-      vitc: f.vitc||0, vitd: f.vitd||0, salt: f.salt||0,
+      ...Object.fromEntries(MICRO_KEYS.map(k => [k, f[k]||0])),
     })),
     digest: 'mixed',
     _src: 'combo',
@@ -3158,6 +3504,7 @@ function saveComboFood() {
   delete btn.dataset.editId;
   comboIngredients = [];
   document.getElementById('comboName').value = '';
+  document.getElementById('comboYomi').value = '';
   renderComboIngredients();
   saveCustom();
   msg.className = 'status-msg status-ok';
@@ -3177,6 +3524,7 @@ function deleteComboFood(id) {
     delete btn.dataset.editId;
     comboIngredients = [];
     document.getElementById('comboName').value = '';
+    document.getElementById('comboYomi').value = '';
     renderComboIngredients();
   }
   saveCustom();
@@ -3806,23 +4154,28 @@ function executeAiCommands(commands, backupLabel) {
           return;
         }
         const per = parseFloat(food.per) || 100;
-        customFoods.push({
+        const aiYomi = sanitizeYomi(food.yomi);
+        const aiFa = sanitizeFa(food.fa), aiAa = sanitizeAa(food.aa);
+        const aiServing = parseFloat(food.serving);
+        const newFood = {
           id:      Date.now() + Math.random(),
           name:    food.name,
+          ...(aiYomi ? { yomi: aiYomi } : {}),
+          ...(typeof food.en === 'string' && food.en.trim() ? { en: food.en.trim().slice(0, 120) } : {}),
+          ...(typeof food.tags === 'string' && food.tags.trim() ? { tags: food.tags.trim().slice(0, 200) } : {}),
           per,
+          ...(aiServing > 0 ? { serving: aiServing } : {}),
           cal:     parseFloat(food.cal)     || 0,
           p:       parseFloat(food.p)       || 0,
           f:       parseFloat(food.f)       || 0,
           c:       parseFloat(food.c)       || 0,
-          fiber:   parseFloat(food.fiber)   || 0,
-          iron:    parseFloat(food.iron)    || 0,
-          calcium: parseFloat(food.calcium) || 0,
-          vitc:    parseFloat(food.vitc)    || 0,
-          vitd:    parseFloat(food.vitd)    || 0,
-          salt:    parseFloat(food.salt)    || 0,
+          ...pickMicros(food),
+          ...(aiFa ? { fa: aiFa } : {}),
+          ...(aiAa ? { aa: aiAa } : {}),
           digest:  classifyDigestCategory(food.name, parseFloat(food.p) || 0),
           _src:    'ai',
-        });
+        };
+        customFoods.push(newFood);
         log.push(`📦 カスタム食品「${food.name}」を登録（${per}gあたり ${Math.round(food.cal)}kcal）`);
       });
       saveCustom();
@@ -3853,12 +4206,7 @@ function executeAiCommands(commands, backupLabel) {
           p:       r1((src.p       || 0) * scale),
           f:       r1((src.f       || 0) * scale),
           c:       r1((src.c       || 0) * scale),
-          fiber:   r1((src.fiber   || 0) * scale),
-          iron:    r2((src.iron    || 0) * scale),
-          calcium: r1((src.calcium || 0) * scale),
-          vitc:    r1((src.vitc    || 0) * scale),
-          vitd:    r2((src.vitd    || 0) * scale),
-          salt:    r2((src.salt    || 0) * scale),
+          ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, (src[k] || 0) * scale)])),
           fa:      src.fa || null,
           aa:      src.aa || null,
           digest:  src.digest || classifyDigestCategory(name, src.p || 0),
@@ -3925,24 +4273,19 @@ function executeAiCommands(commands, backupLabel) {
         if (!srcs.length || totalAmt <= 0) {
           log.push('⚠️ 対象の記録が見つからないため、複合食品として登録できませんでした');
         } else {
-          const tot = srcs.reduce((a,e) => ({
-            cal: a.cal+(e.cal||0), p: a.p+(e.p||0), f: a.f+(e.f||0), c: a.c+(e.c||0),
-            fiber: a.fiber+(e.fiber||0), iron: a.iron+(e.iron||0), calcium: a.calcium+(e.calcium||0),
-            vitc: a.vitc+(e.vitc||0), vitd: a.vitd+(e.vitd||0), salt: a.salt+(e.salt||0),
-          }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+          const tot = { cal:0, p:0, f:0, c:0 }; MICRO_KEYS.forEach(k => { tot[k] = 0; });
+          srcs.forEach(e => { ['cal','p','f','c',...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
           // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
           comboFoods.push({
             id: Date.now() + Math.random(),
             name, per: r1(totalAmt), serving: r1(totalAmt),
             cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
-            fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
-            vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
+            ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
             // 各記録エントリはamount=perとして扱う（既に実量で記録されているため、r=amount/per=1で値をそのまま材料として使う）
             ingredients: srcs.map(e => ({
               name: e.name, amount: e.amount, per: e.amount,
               cal: e.cal||0, p: e.p||0, f: e.f||0, c: e.c||0,
-              fiber: e.fiber||0, iron: e.iron||0, calcium: e.calcium||0,
-              vitc: e.vitc||0, vitd: e.vitd||0, salt: e.salt||0,
+              ...Object.fromEntries(MICRO_KEYS.map(k => [k, e[k]||0])),
             })),
             digest: 'mixed',
           _src: 'combo',
@@ -3979,36 +4322,28 @@ function executeAiCommands(commands, backupLabel) {
           const amount = parseFloat(ing.amount) || per;
           const r      = amount / per;
           const cal = parseFloat(ing.cal) || 0, p = parseFloat(ing.p) || 0, f = parseFloat(ing.f) || 0, c = parseFloat(ing.c) || 0;
-          const fiber = parseFloat(ing.fiber) || 0, iron = parseFloat(ing.iron) || 0, calcium = parseFloat(ing.calcium) || 0;
-          const vitc = parseFloat(ing.vitc) || 0, vitd = parseFloat(ing.vitd) || 0, salt = parseFloat(ing.salt) || 0;
-          return {
-            name: ing.name || '材料', amount, per, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt,
-            _cal: r1(cal*r), _p: r1(p*r), _f: r1(f*r), _c: r1(c*r),
-            _fiber: r1(fiber*r), _iron: r1(iron*r), _calcium: r1(calcium*r),
-            _vitc: r1(vitc*r), _vitd: r1(vitd*r), _salt: r2(salt*r),
-          };
+          const mic = pickMicros(ing);
+          const o = { name: ing.name || '材料', amount, per, cal, p, f, c, ...mic,
+            _cal: r1(cal*r), _p: r1(p*r), _f: r1(f*r), _c: r1(c*r) };
+          MICRO_KEYS.forEach(k => { o['_'+k] = microRound(k, mic[k]*r); });
+          return o;
         });
         const totalAmt = ingredients.reduce((a,f) => a + f.amount, 0);
         if (totalAmt <= 0) { log.push(`⚠️ 「${name}」の材料の量が不正です`); return; }
-        const tot = ingredients.reduce((a,f) => ({
-          cal: a.cal+f._cal, p: a.p+f._p, f: a.f+f._f, c: a.c+f._c,
-          fiber: a.fiber+f._fiber, iron: a.iron+f._iron, calcium: a.calcium+f._calcium,
-          vitc: a.vitc+f._vitc, vitd: a.vitd+f._vitd, salt: a.salt+f._salt,
-        }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0});
+        const tot = comboTotals(ingredients);
 
         // 100gあたりに正規化せず、材料の総重量を基準量(per)にする
         // → 記録タブで選ぶ際のデフォルト量が「作った分そのまま」になる
+        const aiComboYomi = sanitizeYomi(combo.yomi);
         comboFoods.push({
           id: Date.now() + Math.random(),
-          name, per: r1(totalAmt), serving: r1(totalAmt),
+          name, ...(aiComboYomi ? { yomi: aiComboYomi } : {}), per: r1(totalAmt), serving: r1(totalAmt),
           cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
-          fiber: r1(tot.fiber), iron: r1(tot.iron), calcium: r1(tot.calcium),
-          vitc: r1(tot.vitc), vitd: r1(tot.vitd), salt: r2(tot.salt),
+          ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
           ingredients: ingredients.map(f => ({
             name: f.name, amount: f.amount, per: f.per,
             cal: f.cal, p: f.p, f: f.f, c: f.c,
-            fiber: f.fiber, iron: f.iron, calcium: f.calcium,
-            vitc: f.vitc, vitd: f.vitd, salt: f.salt,
+            ...Object.fromEntries(MICRO_KEYS.map(k => [k, f[k]])),
           })),
           digest: 'mixed',
           _src: 'combo',
@@ -4098,13 +4433,19 @@ function executeAiCommands(commands, backupLabel) {
         if (nameCollides) {
           log.push(`⚠️ 「${newName}」という名前は既に別のカスタム食品で使われています`);
         } else {
-          const numericKeys = ['per','cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'];
+          const numericKeys = ['per','serving','cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'];
           numericKeys.forEach(k => {
             if (updates[k] === undefined || updates[k] === null || updates[k] === '') return;
             const v = parseFloat(updates[k]);
             if (!isNaN(v)) customFoods[idx][k] = Math.max(0, v);
           });
           if (newName) customFoods[idx].name = newName;
+          ['en','tags'].forEach(k => { if (typeof updates[k] === 'string') { const v = updates[k].trim().slice(0, 200); if (v) customFoods[idx][k] = v; else delete customFoods[idx][k]; } });
+          // 読み: 指定があれば更新、名前だけ変えた場合は古い読みが残らないよう自動推定に戻す
+          if (updates.yomi != null) {
+            const y = sanitizeYomi(updates.yomi);
+            if (y) customFoods[idx].yomi = y; else delete customFoods[idx].yomi;
+          } else if (newName) delete customFoods[idx].yomi;
           saveCustom();
           log.push(`✏️ 「${customFoods[idx].name}」を更新しました`);
         }
@@ -4125,14 +4466,14 @@ function sendQuickAiPrompt(text) {
 function searchFoodDbForAi(query) {
   const q = normalize(String(query || '').trim());
   if (!q) return '検索キーワードが空です';
-  const matches = getAllFoods().filter(f => (f._search || normalize(f.name)).includes(q)).slice(0, 10);
+  const qv = queryVariants(query);
+  const matches = getAllFoods().filter(f => (f._search || normalize(f.name)).includes(q) || kanaScore(f, qv) > 0).slice(0, 10);
   if (!matches.length) return `「${query}」に一致する食品は見つかりませんでした`;
   const srcLabel = { local: '内蔵DB', custom: 'カスタムDB', combo: '複合食品' };
   return matches.map(f => {
     const src = srcLabel[f._src] || f._src || '';
     const extras = [];
-    if (f.fiber) extras.push(`繊維${f.fiber}g`);
-    if (f.salt) extras.push(`塩分${f.salt}g`);
+    MICRO_KEYS.forEach(k => { if (f[k]) extras.push(`${MICRO_GOALS[k].label}${f[k]}${MICRO_GOALS[k].unit}`); });
     return `${f.name}（${src}・${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${extras.length ? ' ' + extras.join(' ') : ''}）`;
   }).join('\n');
 }
@@ -4231,12 +4572,20 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 }
 
 5. add_custom_food — カスタム食品DBに食品を登録（食事記録への追加とは別・検索DBに保存。栄養成分は推定または表示値を使用）
+    【重要】cal/p/f/c だけでなく、可能な範囲で以下も必ず埋めること。ユーザーに数値を聞き返すのは禁止（パッケージの栄養成分表示に無い項目は、
+    同カテゴリの一般的な食品を参考に自分で推定する。本当に無視できる量（0扱いで妥当）ならそのフィールド自体を省略してよい）：
+    - fiber/iron/calcium/vitc/vitd/salt（MICRO_GOALSにある食物繊維・鉄・カルシウム・VitC・VitD・塩分。可能なら vita/vite/vitk/iodine も）
+    - fa（脂質が0.5g/100g相当以上ある場合）: {sat,mufa,n3,n6,trans}（脂質全体に対する比率。合計はおよそ0.8〜1.0）
+    - aa（タンパク質が1g/100g相当以上ある場合）: {leu,ile,val,lys,met,thr,trp,his,score}（gアミノ酸/gタンパク質比率とDIAAS近似スコア）
+    - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
+    - serving（よくある1食分の目安量g）、en（英語名）、tags（検索用キーワード、スペース区切り）も分かれば付ける
 {
   "commands": [{
     "type": "add_custom_food",
     "foods": [{
       "name": "サントリー角ハイボール缶350ml",
-      "per": 350,
+      "yomi": "サントリーカクハイボールカン",
+      "per": 350, "serving": 350,
       "cal": 154, "p": 0, "f": 0, "c": 10.5,
       "fiber": 0, "iron": 0, "calcium": 0, "vitc": 0, "vitd": 0, "salt": 0
     }]
@@ -4308,11 +4657,15 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 
 10. add_combo_food — まだ記録していないレシピ・料理を、複数の材料から「複合食品」として新規登録する（「記録」タブの複合食品登録と同じデータ構造。材料の内訳を保持したまま複合食品リストに保存される）。
     ingredients の各要素は「その食材のamount(g)における実量」ではなく、per(基準量。省略時100g)あたりの値を指定する（=食品DBの1件と同じ形式）。
+    各材料について、add_custom_food と同様に fiber/iron/calcium/vitc/vitd/salt（可能ならvita/vite/vitk/iodineも）を、
+    search_food_dbの結果があればその値を、無ければあなたの知識で推定して極力埋めること（cal/p/f/cだけにしない）。
+    yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は付ける（ひらがな・ローマ字検索用）。
     登録後は100gあたりに正規化されず、材料の総重量そのものが基準量になる（例: 材料合計550gなら「550gあたり」として保存され、記録タブで選ぶ際のデフォルト量も550gになる）。
 {
   "commands": [{
     "type": "add_combo_food",
     "name": "自家製プロテインオートミール",
+    "yomi": "ジカセイプロテインオートミール",
     "ingredients": [
       {"name": "オートミール", "amount": 50, "per": 100, "cal": 380, "p": 13.7, "f": 5.7, "c": 69.1, "fiber": 9.4},
       {"name": "ホエイプロテイン", "amount": 30, "per": 100, "cal": 400, "p": 80, "f": 5, "c": 8},

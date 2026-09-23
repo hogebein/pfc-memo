@@ -146,7 +146,7 @@ Netlify ダッシュボード → Site settings → Environment variables：
 ## 主な機能
 
 - 食事記録（朝食・昼食・夕食・間食）
-- 食品検索（内蔵DB + Open Food Facts API + カスタム登録）
+- 食品検索（内蔵DB + カスタム/複合食品。ひらがな・カタカナ・ローマ字対応。外部の食品DBは参照しません）
 - **TDEE計算**（Mifflin-St Jeor式BMR × 気温補正 × 活動係数）
 - **エネルギー収支**（DIT補正・食物繊維補正後の正味摂取カロリー vs TDEE）
 - **補正前/補正後/収支グラフ**の切り替え

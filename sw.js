@@ -39,7 +39,6 @@ self.addEventListener('fetch', e => {
       url.includes('firebaseapp.com') ||
       url.includes('firestore.googleapis.com') ||
       url.includes('gstatic.com/firebasejs') ||
-      url.includes('openfoodfacts') ||
       url.includes('.netlify/functions')) {
     return;
   }
