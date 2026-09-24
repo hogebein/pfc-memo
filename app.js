@@ -976,7 +976,11 @@ function detectAnomalies(date) {
     //    のは物理的にありえない（入力ミスの可能性が高い）ため、その方向のみ検出する。
     // ※ 野菜など低カロリー食品は、成分表の丸め等による数kcalの差でも%では大きく出てしまうため、
     //    相対的な閾値（15%超）に加えて絶対値の閾値（20kcal超）も満たす場合のみ検出する。
-    const calcCal = (e.p||0)*4 + (e.f||0)*9 + (e.c||0)*4;
+    // ※ 食物繊維は炭水化物(c)の内数だが、単純に4kcal/gでは計算しない（日本食品標準成分表の
+    //    八訂以降のエネルギー算出も同様の考え方）。海藻・きのこ・ふすま等、食物繊維が多い食品では
+    //    炭水化物を4kcal/gそのまま使うと実際のカロリーを大きく超えてしまい、正しい値でも
+    //    「入力ミスの可能性」と誤検出してしまうため、炭水化物から食物繊維分を除いてから計算する
+    const calcCal = (e.p||0)*4 + (e.f||0)*9 + Math.max(0, (e.c||0) - (e.fiber||0))*4;
     if (cal > 50 && calcCal > cal * 1.15 && (calcCal - cal) > 20) {
       issues.push({ sev: 'mid', msg: `「${e.name}」: P・F・Cから計算した値(${ri(calcCal)}kcal)が記録カロリー(${ri(cal)}kcal)を超えています。数値の入力ミスの可能性があります` });
     }
@@ -4864,13 +4868,23 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   inp.focus();
 }
 
+// 「外側クリックで閉じる」判定。box.contains(e.target) だと、複合食品の分量調整パネルのように
+// クリックされた要素自身をその場で innerHTML 差し替えで消してしまうケースで、クリック直後に
+// e.target がDOMから外れて「外側」と誤判定され、開いたばかりのパネルを同じクリックで
+// 閉じてしまう不具合があった。composedPath() はディスパッチ時点の経路を保持するため、
+// 要素が後から入れ替わっても正しく「内側からのクリックだったか」を判定できる。
+function clickWasInside(e, el) {
+  if (!el) return false;
+  if (e.composedPath) return e.composedPath().includes(el);
+  return el.contains(e.target);
+}
 document.addEventListener('click', e => {
   const cb = document.getElementById('comboResultsBox');
-  if (cb && !cb.contains(e.target) && e.target !== document.getElementById('comboSearch')) cb.style.display = 'none';
+  if (cb && !clickWasInside(e, cb) && e.target !== document.getElementById('comboSearch')) cb.style.display = 'none';
   MEALS_ORDER.forEach(meal => {
     const box=document.getElementById('addResultsBox_'+meal);
     const inp=document.getElementById('addSearch_'+meal);
-    if (box && !box.contains(e.target) && e.target !== inp) box.style.display = 'none';
+    if (box && !clickWasInside(e, box) && e.target !== inp) box.style.display = 'none';
   });
 });
 

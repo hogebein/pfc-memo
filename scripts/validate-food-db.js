@@ -103,8 +103,8 @@ newFoods.forEach((food, i) => {
     warnings.push(`${tag}: aa.score が${food.aa.score}で不自然です（通常0.4〜1.3程度）`);
   }
 
-  // カロリーとPFCの整合性（既存アプリの異常値チェックと同じ考え方）
-  const calcCal = (food.p||0)*4 + (food.f||0)*9 + (food.c||0)*4;
+  // カロリーとPFCの整合性（既存アプリの異常値チェックと同じ考え方。食物繊維は4kcal/gで計算しない）
+  const calcCal = (food.p||0)*4 + (food.f||0)*9 + Math.max(0, (food.c||0) - (food.fiber||0))*4;
   if ((food.cal||0) > 20 && calcCal > (food.cal||0) * 1.3) {
     warnings.push(`${tag}: P・F・Cから計算したカロリー(${calcCal.toFixed(0)}kcal)が記録値(${food.cal}kcal)を大きく超えています`);
   }
