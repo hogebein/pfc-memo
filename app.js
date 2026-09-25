@@ -1234,6 +1234,11 @@ function renderRecord() {
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
           html += `<div class="edit-form" id="editForm_${e.id}">
             <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id})"></div></div>
+            ${e.ingredients && e.ingredients.length ? `<div style="margin-bottom:8px">
+              <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">構成食品の分量</div>
+              ${e.ingredients.map((ing,idx)=>`<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateEditIngredientAmt(${e.id},${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('')}
+              <div id="editIngTotal${e.id}" style="font-size:11px;color:var(--text-sub);margin-top:2px">合計 ${ri(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?' 繊'+r1(e.fiber)+'g':''}</div>
+            </div>` : ''}
             <div class="row" style="margin-bottom:8px;gap:4px">
               <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="flex:1;height:32px">保存</button>
               <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="flex:1;height:32px">取消</button>
@@ -1365,73 +1370,9 @@ function onAddSearch(q, meal) {
   if(!q.trim()){if(box)box.style.display='none';return}
   renderResultsFor(localSearch(q),meal);
 }
-// ── 複合食品の分量調整（記録タブ） ──
-// 検索結果で複合食品をタップした際、即登録せずここで材料ごとの量を微調整できるようにする（コンパクトな内蔵パネル。追加のUI領域は使わず検索結果ボックスをそのまま差し替える）
-if (!window._comboAdjust) window._comboAdjust = {};
-function openComboAdjust(f, meal) {
-  window._comboAdjust[meal] = { food: f, ings: f.ingredients.map(ing => ({ ...ing, per: ing.per || 100, amount: ing.amount || ing.per || 100 })) };
-  renderComboAdjust(meal);
-}
-function renderComboAdjust(meal) {
-  const box = document.getElementById('addResultsBox_'+meal); const st = window._comboAdjust[meal]; if (!box || !st) return;
-  const rows = st.ings.map((ing, idx) => `<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateComboAdjustAmt('${meal}',${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('');
-  box.innerHTML = `<div style="padding:2px">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:12.5px;font-weight:600">${st.food.name}の量を調整</span><button type="button" class="btn btn-sm" onclick="closeComboAdjust('${meal}')" style="padding:2px 8px">戻る</button></div>
-    ${rows}
-    <div id="comboAdjustTotal_${meal}" style="font-size:12px;color:var(--text-sub);margin:6px 2px"></div>
-    <button type="button" class="btn btn-primary btn-block" onclick="confirmComboAdjust('${meal}')" style="margin-top:2px">この内容で追加</button>
-  </div>`;
-  box.style.display = 'block';
-  updateComboAdjustTotal(meal);
-}
-function updateComboAdjustAmt(meal, idx, val) {
-  const st = window._comboAdjust[meal]; if (!st) return;
-  const amt = parseFloat(val);
-  if (!isNaN(amt) && amt >= 0) st.ings[idx].amount = amt; // 空欄・入力途中は無視し、合計欄だけ据え置く
-  updateComboAdjustTotal(meal);
-}
-function updateComboAdjustTotal(meal) {
-  const st = window._comboAdjust[meal]; const el = document.getElementById('comboAdjustTotal_'+meal); if (!st || !el) return;
-  const tot = comboTotals(st.ings.map(ing => comboScaled(ing, ing.amount)));
-  el.textContent = `合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)}${tot.fiber ? ' 繊'+r1(tot.fiber)+'g' : ''}`;
-}
-function closeComboAdjust(meal) {
-  delete window._comboAdjust[meal];
-  const q = document.getElementById('addSearch_'+meal);
-  if (q && q.value.trim()) { onAddSearch(q.value, meal); return; }
-  const box = document.getElementById('addResultsBox_'+meal);
-  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
-}
-function confirmComboAdjust(meal) {
-  const st = window._comboAdjust[meal]; if (!st) return;
-  const totalAmt = st.ings.reduce((a, ing) => a + (ing.amount || 0), 0);
-  if (totalAmt <= 0) { showToast('分量を入力してください'); return; }
-  const tot = comboTotals(st.ings.map(ing => comboScaled(ing, ing.amount)));
-  const newEntry = {
-    id: Date.now() + Math.random(), date: currentDate, meal, time: nowTimeStr(),
-    name: st.food.name, amount: r1(totalAmt),
-    cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
-    ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
-    fa: st.food.fa || null, aa: st.food.aa || null,
-    digest: st.food.digest || 'mixed',
-    ingredients: st.ings.map(ing => ({ name: ing.name, amount: ing.amount, per: ing.per || 100, cal: ing.cal, p: ing.p, f: ing.f, c: ing.c,
-      ...Object.fromEntries(MICRO_KEYS.map(k => [k, ing[k] || 0])) })),
-  };
-  if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
-  const { merged } = addOrMergeEntry(newEntry);
-  save();
-  delete window._comboAdjust[meal];
-  const box = document.getElementById('addResultsBox_'+meal); if (box) { box.style.display = 'none'; box.innerHTML = ''; }
-  const searchEl = document.getElementById('addSearch_'+meal); if (searchEl) searchEl.value = '';
-  const cont = document.getElementById('amtQuickPick_'+meal); if (cont) cont.style.display = 'none';
-  renderRecord(); renderCalendar();
-  showToast(merged ? `✅「${st.food.name}」は既存の記録に合算しました` : `✅「${st.food.name}」を登録しました`);
-}
 function selectAddResult(i, meal) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
   const f=box._local && box._local[i]; if(!f) return;
-  // 複合食品は、材料の分量をその場で調整できるコンパクトなパネルを挟む（内訳の無いものはこれまで通り即登録）
-  if (f._src === 'combo' && Array.isArray(f.ingredients) && f.ingredients.length) { openComboAdjust(f, meal); return; }
   window._addBase[meal]={...f};
 
   // ── 検索結果タップ＝即登録。量やその他の栄養素はあとで記録欄のインライン編集で調整する ──
@@ -1463,6 +1404,14 @@ function selectAddResult(i, meal) {
     aa:      f.aa || null,
     digest:  f.digest || classifyDigestCategory(f.name, r1((f.p||0)*r)),
   };
+  // 複合食品は、材料の内訳を実量(g)に換算して記録に持たせておく（あとで記録の編集画面から材料ごとに分量を調整できるように）
+  if (f._src === 'combo' && Array.isArray(f.ingredients) && f.ingredients.length) {
+    newEntry.ingredients = f.ingredients.map(ing => {
+      const ip = ing.per || 100, ia = r1((ing.amount || ip) * r);
+      return { name: ing.name, amount: ia, per: ip, cal: ing.cal || 0, p: ing.p || 0, f: ing.f || 0, c: ing.c || 0,
+        ...Object.fromEntries(MICRO_KEYS.map(k => [k, ing[k] || 0])) };
+    });
+  }
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
   const { merged } = addOrMergeEntry(newEntry);
   save();
@@ -1976,6 +1925,37 @@ function recalcEditByCal(id, val) {
   if (!amtEl) return;
   amtEl.value = r1((base.per || 100) * ratio);
   recalcEdit(id);
+}
+// 記録済みの複合食品エントリで、材料ごとの分量(g)を編集する。
+// 変更のたびに材料の合計から量・カロリー・PFC・各ミクロ栄養素を再計算し、
+// 画面を再描画せずに編集フォームの各欄とスライダー基準値だけを同期する（入力中のフォーカスを保つため）
+function updateEditIngredientAmt(id, idx, val) {
+  const entryIdx = entries.findIndex(e => e.id === id);
+  if (entryIdx === -1) return;
+  const e = entries[entryIdx];
+  if (!e.ingredients || !e.ingredients[idx]) return;
+  const amt = parseFloat(val);
+  if (isNaN(amt) || amt < 0) return; // 空欄・入力途中は無視
+  e.ingredients[idx] = { ...e.ingredients[idx], amount: amt };
+  const tot = comboTotals(e.ingredients.map(ing => comboScaled(ing, ing.amount)));
+  const totalAmt = e.ingredients.reduce((a, ing) => a + (ing.amount || 0), 0);
+  e.amount = r1(totalAmt);
+  e.cal = r1(tot.cal); e.p = r1(tot.p); e.f = r1(tot.f); e.c = r1(tot.c);
+  MICRO_KEYS.forEach(k => { e[k] = microRound(k, tot[k]); });
+
+  window._editBase = window._editBase || {};
+  window._editBase[id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
+
+  const amtEl = document.getElementById('ea'+id); if (amtEl) amtEl.value = e.amount;
+  const sliderEl = document.getElementById('easlider'+id);
+  if (sliderEl) { if (e.amount > parseFloat(sliderEl.max)) sliderEl.max = e.amount; sliderEl.value = e.amount; }
+  const setVal = (elId, v, dec) => { const el = document.getElementById(elId+id); if (el) el.value = dec === 2 ? r2(v) : r1(v); };
+  setVal('ec', e.cal); setVal('ep', e.p); setVal('ef', e.f); setVal('ecc', e.c);
+  setVal('efib', e.fiber); setVal('efe', e.iron); setVal('eca', e.calcium);
+  setVal('evc', e.vitc); setVal('evd', e.vitd); setVal('esl', e.salt, 2);
+  const totalLineEl = document.getElementById('editIngTotal'+id);
+  if (totalLineEl) totalLineEl.textContent = `合計 ${ri(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber ? ' 繊'+r1(e.fiber)+'g' : ''}`;
+  saveDebounced();
 }
 function recalcEdit(id) {
   const base = window._editBase && window._editBase[id];
