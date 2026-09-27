@@ -363,6 +363,7 @@ LOCAL_DB.forEach(f => withSearchFields(f, 'local'));
 
 // ── State ──
 let entries = [], customFoods = [], comboFoods = [], exercises = [];
+let errorLog = []; // AI操作や通信の失敗を記録する永続ログ（設定タブから閲覧・書き出しできる）
 let userWeight = 65, statsPeriod = 'today', chartMode = 'raw';
 let calChart = null, pfcChart = null, vitdStockChart = null;
 let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen = false;
@@ -398,6 +399,41 @@ try { ghToken     = localStorage.getItem('ghToken') || null; } catch(e) {}
 try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
 try { dailyActivity = JSON.parse(localStorage.getItem('pfcDailyActivity') || '{}'); } catch(e) {}
 try { const p = JSON.parse(localStorage.getItem('pfcProfile') || 'null'); if(p) profile = migrateNeatTier({...profile, ...p}); } catch(e) {}
+try { errorLog = JSON.parse(localStorage.getItem('pfcErrorLog') || '[]'); } catch(e) {}
+
+// ── エラーログ ──
+// AIへの操作依頼が失敗した時に「理由が何も表示されない」ことがある問題への対応。
+// チャット欄への一時的な表示だけでなく、後から見返せる・書き出せる形で永続化しておく。
+function logError(context, message, detail) {
+  errorLog.push({ id: Date.now() + Math.random(), time: new Date().toISOString(), context, message: String(message || ''), detail: detail ? String(detail).slice(0, 1000) : '' });
+  if (errorLog.length > 200) errorLog = errorLog.slice(-200); // 肥大化対策
+  try { localStorage.setItem('pfcErrorLog', JSON.stringify(errorLog)); } catch (e) {}
+  renderErrorLogPanel();
+}
+function clearErrorLog() {
+  errorLog = [];
+  try { localStorage.setItem('pfcErrorLog', JSON.stringify(errorLog)); } catch (e) {}
+  renderErrorLogPanel();
+}
+function exportErrorLog() {
+  const lines = errorLog.slice().reverse().map(e => `[${e.time}] ${e.context}: ${e.message}${e.detail ? '\n  詳細: ' + e.detail : ''}`);
+  const blob = new Blob([lines.length ? lines.join('\n\n') : 'エラーログはありません'], { type: 'text/plain' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `pfc_errorlog_${toDateStr(new Date())}.txt`; a.click();
+  URL.revokeObjectURL(url);
+}
+function renderErrorLogPanel() {
+  const countEl = document.getElementById('errorLogCount'); if (countEl) countEl.textContent = errorLog.length;
+  const box = document.getElementById('errorLogPreview'); if (!box) return;
+  if (!errorLog.length) { box.innerHTML = '<div style="font-size:12px;color:var(--text-sub)">記録されたエラーはありません</div>'; return; }
+  box.innerHTML = errorLog.slice(-5).reverse().map(e =>
+    `<div style="font-size:11px;padding:6px 2px;border-bottom:1px solid var(--border)">
+      <div style="color:var(--text-sub)">${e.time.replace('T',' ').slice(0,16)}・${e.context}</div>
+      <div>${e.message}</div>
+    </div>`
+  ).join('');
+}
 
 function toDateStr(d) {
   // ローカルの年月日で組み立てる（toISOString()はUTC変換されるため、
@@ -473,10 +509,15 @@ function saveExercises() { saveLocal(); queueCloudSave(); }
 function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} }
 function saveDailyActivity() { try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch(e) {} }
 function saveProfile() {
+  const oldWeight = profile.weight;
   profile.sex    = document.getElementById('pSex').value;
   profile.age    = parseInt(document.getElementById('pAge').value)    || 30;
   profile.height = parseFloat(document.getElementById('pHeight').value) || 170;
   profile.weight = parseFloat(document.getElementById('pWeight').value) || 65;
+  // 体重が実際に変わった時だけ、その日の実測値として体重ログに記録する
+  // （「体重をあまり量らない」利用を前提に、設定画面の体重欄を更新したタイミング＝実測、として
+  //  裏で自動的に履歴を貯める。専用の入力UIを増やさずに済む）
+  if (profile.weight !== oldWeight) recordWeightLogEntry(toDateStr(new Date()), profile.weight);
   const bf = parseFloat(document.getElementById('pBF').value);
   profile.bf   = isNaN(bf) ? null : bf;
   profile.temp = parseFloat(document.getElementById('pTemp').value) || 22;
@@ -1231,12 +1272,13 @@ function renderRecord() {
         if (editingId === e.id) {
           // 編集フォーム用に100g基準値をstoreする
           window._editBase = window._editBase || {};
-          window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
+          window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
+            ingredients: (e.ingredients||[]).map(ing=>({...ing}))};
           html += `<div class="edit-form" id="editForm_${e.id}">
             <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id})"></div></div>
             ${e.ingredients && e.ingredients.length ? `<div style="margin-bottom:8px">
               <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">構成食品の分量</div>
-              ${e.ingredients.map((ing,idx)=>`<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateEditIngredientAmt(${e.id},${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('')}
+              ${e.ingredients.map((ing,idx)=>`<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" id="eIng${e.id}_${idx}" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateEditIngredientAmt(${e.id},${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('')}
               <div id="editIngTotal${e.id}" style="font-size:11px;color:var(--text-sub);margin-top:2px">合計 ${ri(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?' 繊'+r1(e.fiber)+'g':''}</div>
             </div>` : ''}
             <div class="row" style="margin-bottom:8px;gap:4px">
@@ -1944,7 +1986,8 @@ function updateEditIngredientAmt(id, idx, val) {
   MICRO_KEYS.forEach(k => { e[k] = microRound(k, tot[k]); });
 
   window._editBase = window._editBase || {};
-  window._editBase[id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount};
+  window._editBase[id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
+    ingredients: e.ingredients.map(ing=>({...ing}))};
 
   const amtEl = document.getElementById('ea'+id); if (amtEl) amtEl.value = e.amount;
   const sliderEl = document.getElementById('easlider'+id);
@@ -1982,6 +2025,20 @@ function recalcEdit(id) {
   set('evc', base.vitc);
   set('evd', base.vitd);
   set('esl', base.salt, 2);
+  // 複合食品の記録なら、全体量の変更に合わせて材料の分量(g)も同じ比率でスケールする
+  // （編集を開始した時点の材料構成＝base.ingredients を常に基準にして計算し、誤差の蓄積を防ぐ）
+  if (base.ingredients && base.ingredients.length) {
+    const entryIdx = entries.findIndex(en => en.id === id);
+    if (entryIdx !== -1 && entries[entryIdx].ingredients) {
+      entries[entryIdx].ingredients = base.ingredients.map((ing, i) => ({ ...ing, amount: r1((ing.amount || 0) * r) }));
+      base.ingredients.forEach((ing, i) => {
+        const ingEl = document.getElementById(`eIng${id}_${i}`);
+        if (ingEl) ingEl.value = r1((ing.amount || 0) * r);
+      });
+      const totalLineEl = document.getElementById('editIngTotal'+id);
+      if (totalLineEl) totalLineEl.textContent = `合計 ${ri(base.cal*r)}kcal P${r1(base.p*r)} F${r1(base.f*r)} C${r1(base.c*r)}${base.fiber ? ' 繊'+r1(base.fiber*r)+'g' : ''}`;
+    }
+  }
   autoSaveEdit(id);
 }
 // 保存ボタンを押さなくても、編集中の内容を都度バックグラウンドで確定させる
@@ -2474,6 +2531,75 @@ function renderFattyAcidPanel(list) {
 
 
 
+// ── 体重ログ（バーチャル体重計） ──
+// 体重をあまり量らない前提で、専用の入力UIは増やさず、設定画面の「体重」欄を実際に変更した
+// タイミングだけを実測アンカーとして記録する（recordWeightLogEntry参照）。
+// 代謝変動推定・体脂肪変化の各機能は、このログから求めた「推定体重」を使う。
+function recordWeightLogEntry(dateStr, weightVal) {
+  if (!isFinite(weightVal) || weightVal <= 0) return;
+  profile.weightLog = profile.weightLog || [];
+  const idx = profile.weightLog.findIndex(w => w.date === dateStr);
+  if (idx >= 0) profile.weightLog[idx].weight = weightVal;
+  else profile.weightLog.push({ date: dateStr, weight: weightVal });
+  profile.weightLog.sort((a, b) => a.date < b.date ? -1 : (a.date > b.date ? 1 : 0));
+  if (profile.weightLog.length > 500) profile.weightLog = profile.weightLog.slice(-500); // 万一の肥大化対策
+}
+function weightLogSorted() { return (profile.weightLog || []).slice(); } // 常にソート済みで保持しているのでそのまま返す
+// 体重変化のうち脂肪1kg=7200kcal・筋肉(除脂肪)1kg=4500kcalとして、体組成モードからkcal/kgを決める
+// （代謝変動推定カードの「体組成モード」設定をそのまま共用する）
+function kcalPerKgForEstimate() {
+  if (metaCompMode === 'fat') return 7200;
+  if (metaCompMode === 'mixed') return (7200 + 4500) / 2;
+  const fatRatio = (parseInt(document.getElementById('metaFatRatio')?.value) || 100) / 100;
+  return 7200 * fatRatio + 4500 * (1 - fatRatio);
+}
+// [fromDate, toDate] 区間・両端の体重(fromW→toW)から、その区間の実効TDEEを逆算する
+// （記録のある日だけを使う。記録が1日も無ければ計算式のTDEEにフォールバック）
+function actualTdeeBetween(fromDate, toDate, fromW, toW) {
+  const dates = []; let d = new Date(fromDate + 'T00:00:00'); const end = new Date(toDate + 'T00:00:00');
+  while (d <= end) { dates.push(toDateStr(d)); d.setDate(d.getDate() + 1); }
+  const recorded = dates.filter(ds => getDayEntries(ds).length);
+  if (!recorded.length) return calcTDEE();
+  const avgCal = recorded.reduce((s, ds) => s + sumEntries(getDayEntries(ds)).cal, 0) / recorded.length;
+  const kcalPerKg = kcalPerKgForEstimate();
+  return avgCal - (toW - fromW) * kcalPerKg / recorded.length;
+}
+// 指定日の推定体重（＝バーチャル体重計）。
+// ・実測ログが無ければ設定中の体重をそのまま返す（従来と同じ、推定のしようがない）
+// ・実測アンカーの間は、その区間で逆算した実効TDEEを使ってカロリー収支を積み上げて補間する
+// ・最後の実測より後（今日を含む）は、直前の区間で分かっている実効TDEE（無ければ計算式のTDEE）で延長する
+function estimateWeightOnDate(dateStr) {
+  const log = weightLogSorted();
+  if (!log.length) return profile.weight || null;
+  const exact = log.find(w => w.date === dateStr);
+  if (exact) return exact.weight;
+  if (log.length === 1 || dateStr <= log[0].date) return log[0].weight;
+  const last = log[log.length - 1];
+  let lo, hi, tdee;
+  if (dateStr <= last.date) {
+    lo = log[0]; hi = last;
+    for (let i = 0; i < log.length - 1; i++) { if (dateStr >= log[i].date && dateStr <= log[i+1].date) { lo = log[i]; hi = log[i+1]; break; } }
+    tdee = actualTdeeBetween(lo.date, hi.date, lo.weight, hi.weight);
+  } else {
+    hi = last; const prev = log.length >= 2 ? log[log.length - 2] : last;
+    tdee = log.length >= 2 ? actualTdeeBetween(prev.date, hi.date, prev.weight, hi.weight) : calcTDEE();
+    lo = last; // 延長は最後の実測地点を起点にする
+  }
+  const kcalPerKg = kcalPerKgForEstimate();
+  let d = new Date(lo.date + 'T00:00:00'); const target = new Date(dateStr + 'T00:00:00');
+  let balance = 0;
+  while (d < target) {
+    const ds = toDateStr(d);
+    const es = getDayEntries(ds);
+    const intake = es.length ? sumEntries(es).cal : tdee; // 記録の無い日はTDEE通り食べたとみなす（収支0）
+    balance += intake - tdee;
+    d.setDate(d.getDate() + 1);
+  }
+  return r1(lo.weight + balance / kcalPerKg);
+}
+// その日の体重が実測（ログにその日付そのものの記録がある）か推定かを返す
+function weightIsMeasured(dateStr) { return weightLogSorted().some(w => w.date === dateStr); }
+
 let metaCompMode = 'fat'; // fat / mixed / custom
 
 function toggleMetaHelp() {
@@ -2486,6 +2612,7 @@ function setMetaCompMode(mode, el) {
   document.querySelectorAll('.meta-comp-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
   const customPanel = document.getElementById('metaCustomComp');
   if (customPanel) customPanel.style.display = mode === 'custom' ? 'block' : 'none';
+  refreshMetaWeights();
   calcMetabolism();
 }
 
@@ -2497,12 +2624,27 @@ function initMetaInputs() {
   const fromEl = document.getElementById('metaFrom');
   if (toEl   && !toEl.value)   toEl.value   = toDateStr(to);
   if (fromEl && !fromEl.value) fromEl.value  = toDateStr(from);
-  // 体重はプロフィールからプリセット
-  const wFrom = document.getElementById('metaWFrom');
-  const wTo   = document.getElementById('metaWTo');
-  if (wFrom && !wFrom.value) wFrom.value = profile.weight || '';
-  if (wTo   && !wTo.value)   wTo.value   = profile.weight || '';
+  refreshMetaWeights();
 }
+// 開始日・終了日それぞれの推定体重を体重欄に入れ直す（体重をあまり量らない前提のデフォルト動作）。
+// ユーザーが体重欄を直接編集した場合はそちらを優先し、日付を変えるまでは上書きしない
+function refreshMetaWeights() {
+  const fromEl = document.getElementById('metaFrom'), toEl = document.getElementById('metaTo');
+  const wFrom  = document.getElementById('metaWFrom'), wTo = document.getElementById('metaWTo');
+  if (fromEl && fromEl.value && wFrom && !wFrom.dataset.userEdited) wFrom.value = estimateWeightOnDate(fromEl.value) ?? '';
+  if (toEl   && toEl.value   && wTo   && !wTo.dataset.userEdited)   wTo.value   = estimateWeightOnDate(toEl.value)   ?? '';
+  renderMetaWeightLabels();
+}
+function renderMetaWeightLabels() {
+  const fromEl = document.getElementById('metaFrom'), toEl = document.getElementById('metaTo');
+  const setLabel = (id, dateStr) => {
+    const el = document.getElementById(id); if (!el || !dateStr) return;
+    el.textContent = weightIsMeasured(dateStr) ? '実測' : (weightLogSorted().length ? '推定（記録から算出）' : '推定（体重ログなし・現在の設定値）');
+  };
+  setLabel('metaWFromLabel', fromEl && fromEl.value);
+  setLabel('metaWToLabel',   toEl   && toEl.value);
+}
+function markMetaWeightEdited(el) { el.dataset.userEdited = '1'; }
 
 function calcMetabolism() {
   const fromStr = document.getElementById('metaFrom')?.value;
@@ -2510,6 +2652,7 @@ function calcMetabolism() {
   const wFrom   = parseFloat(document.getElementById('metaWFrom')?.value);
   const wTo     = parseFloat(document.getElementById('metaWTo')?.value);
   const result  = document.getElementById('metaResult');
+  renderMetaWeightLabels();
   if (!result) return;
 
   if (!fromStr || !toStr || isNaN(wFrom) || isNaN(wTo)) {
@@ -2575,9 +2718,15 @@ function calcMetabolism() {
     ? `計算値より約${deltaAbs}kcal/日少ない消費です。食事制限による代謝適応・活動量低下などが考えられます。`
     : `計算値とほぼ一致しています（誤差${deltaAbs}kcal以内）。`;
 
-  // 信頼度（記録日数・期間に基づく）
-  const confidence = recordedDays >= 21 ? '高' : recordedDays >= 10 ? '中' : '低';
-  const confColor  = recordedDays >= 21 ? 'var(--green)' : recordedDays >= 10 ? 'var(--amber)' : 'var(--red)';
+  // 信頼度（記録日数・期間に加えて、体重が実測アンカーに基づいているかも反映する）
+  const anchorCount = weightLogSorted().filter(w => w.date >= fromStr && w.date <= toStr).length
+    + (weightLogSorted().some(w => w.date < fromStr) ? 1 : 0) + (weightLogSorted().some(w => w.date > toStr) ? 1 : 0);
+  const hasRealAnchor = weightLogSorted().length >= 2;
+  let confidence = recordedDays >= 21 ? '高' : recordedDays >= 10 ? '中' : '低';
+  let confColor  = recordedDays >= 21 ? 'var(--green)' : recordedDays >= 10 ? 'var(--amber)' : 'var(--red)';
+  if (!hasRealAnchor) { confidence = '低'; confColor = 'var(--red)'; }
+  const fatRatioForTile = metaCompMode === 'fat' ? 1 : metaCompMode === 'mixed' ? 0.5 : (parseInt(document.getElementById('metaFatRatio')?.value) || 100) / 100;
+  const fatDelta = weightDelta * fatRatioForTile;
 
   result.innerHTML = `
     <!-- 主要結果 -->
@@ -2628,13 +2777,22 @@ function calcMetabolism() {
       </div>
     </div>
 
+    <!-- 推定体脂肪変化 -->
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px;margin-bottom:10px;text-align:center">
+      <div style="font-size:10px;color:var(--text-sub);margin-bottom:2px">推定体脂肪の変化（体組成モード基準）</div>
+      <div style="font-size:20px;font-weight:700;letter-spacing:-.5px;color:${fatDelta < -0.05 ? 'var(--green)' : fatDelta > 0.05 ? 'var(--red)' : 'var(--text-sub)'}">
+        ${fatDelta >= 0 ? '+' : ''}${r1(fatDelta)}<span style="font-size:12px;font-weight:400"> kg</span>
+      </div>
+    </div>
+
     <!-- 信頼度 -->
-    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sub)">
+    <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-sub);flex-wrap:wrap">
       <span>推定信頼度：</span>
       <span style="font-weight:700;color:${confColor}">${confidence}</span>
       <span>（${recordedDays}日分の記録）</span>
       ${recordedDays < 10 ? '<span style="color:var(--amber)">⚠ 10日以上の記録で精度が上がります</span>' : ''}
-    </div>`;
+    </div>
+    ${!hasRealAnchor ? `<div style="margin-top:6px;font-size:11px;color:var(--amber);background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:8px">⚠ 実測の体重ログがまだ2件未満のため、体重変化は「設定中の体重のまま」という仮定に基づく参考値です。設定タブで体重を更新すると、その時点が実測記録として使われるようになります。</div>` : ''}`;
 }
 
 function renderMetabolismSection() {
@@ -3931,6 +4089,9 @@ function buildFullContext() {
   const lines = [];
   const TODAY = currentDate;
   const RECENT_DAYS = 14; // 詳細表示する直近日数
+  const SUMMARY_DAYS = 44; // 日次サマリーで表示する直近日数（RECENT_DAYSを含む）。
+  // これより古い記録は、使い続けるほど際限なく増えていって毎回のAI送信サイズを圧迫しないよう、
+  // 個別の日を並べず1行の集計（件数・期間・平均）にまとめる
 
   // ── プロフィール ──
   const sexLabel = profile.sex === 'male' ? '男性' : '女性';
@@ -3947,13 +4108,18 @@ function buildFullContext() {
   lines.push(`【目標】cal:${g.cal} P:${g.p} F:${g.f} C:${g.c}`);
 
   // ── カスタム食品DB（名前のみ・トークン節約） ──
-  if (customFoods.length) {
-    lines.push('【カスタム食品】' + customFoods.map(f => f.name).join('、'));
-  }
+  // 件数が多くなってきた場合は直近登録分に絞り、それより古いものは search_food_db での
+  // オンデマンド検索に任せる（一覧の目的は「重複登録の防止」なので、直近分だけでも大半のケースをカバーできる）
+  const NAME_LIST_CAP = 150;
+  const capNames = (list) => {
+    const names = list.map(f => f.name);
+    return names.length > NAME_LIST_CAP
+      ? names.slice(-NAME_LIST_CAP).join('、') + `（他${names.length - NAME_LIST_CAP}件は表示省略。search_food_dbで検索可）`
+      : names.join('、');
+  };
+  if (customFoods.length) lines.push('【カスタム食品】' + capNames(customFoods));
   // ── 複合食品DB（名前のみ・トークン節約） ──
-  if (comboFoods.length) {
-    lines.push('【複合食品】' + comboFoods.map(f => f.name).join('、'));
-  }
+  if (comboFoods.length) lines.push('【複合食品】' + capNames(comboFoods));
   // ── 調味料クイック登録（ラベルのみ・トークン節約） ──
   if (quickSeasonings.length) {
     lines.push('【調味料クイック登録】' + quickSeasonings.map(s => s.label).join('、'));
@@ -3992,12 +4158,28 @@ function buildFullContext() {
   }
 
   if (oldDates.length) {
-    lines.push('【食事記録 過去分（日次サマリー）】');
-    oldDates.forEach(date => {
-      const dayEntries = entries.filter(e => e.date === date);
-      const s = sumEntries(dayEntries);
-      lines.push(`${date} ${Math.round(s.cal)}kcal P${r1(s.p)} F${r1(s.f)} C${r1(s.c)}`);
-    });
+    const summaryCutoff = (() => {
+      const d = new Date(TODAY + 'T00:00:00');
+      d.setDate(d.getDate() - SUMMARY_DAYS + 1);
+      return toDateStr(d);
+    })();
+    const summaryDates = oldDates.filter(d => d >= summaryCutoff);
+    const archiveDates  = oldDates.filter(d => d <  summaryCutoff);
+
+    if (summaryDates.length) {
+      lines.push('【食事記録 過去分（日次サマリー）】');
+      summaryDates.forEach(date => {
+        const dayEntries = entries.filter(e => e.date === date);
+        const s = sumEntries(dayEntries);
+        lines.push(`${date} ${Math.round(s.cal)}kcal P${r1(s.p)} F${r1(s.f)} C${r1(s.c)}`);
+      });
+    }
+    if (archiveDates.length) {
+      const archEntries = entries.filter(e => archiveDates.includes(e.date));
+      const s = sumEntries(archEntries);
+      const n = archiveDates.length;
+      lines.push(`【食事記録 それ以前（集計のみ）】${archiveDates[0]}〜${archiveDates[archiveDates.length-1]} 記録${n}日分・1日平均 ${Math.round(s.cal/n)}kcal P${r1(s.p/n)} F${r1(s.f/n)} C${r1(s.c/n)}`);
+    }
   }
 
   if (!entries.length) lines.push('【食事記録】なし');
@@ -4031,13 +4213,15 @@ function executeAiCommands(commands, backupLabel) {
   let changed = false;
 
   commands.forEach(cmd => {
+   try {
     // ── ADD ──
     if (cmd.type === 'add') {
       const dates = cmd.dates || [cmd.date || currentDate];
       const meal  = ['朝食','昼食','夕食','間食'].includes(cmd.meal) ? cmd.meal : '間食';
       dates.forEach(date => {
+        let addedCount = 0, skippedCount = 0;
         (cmd.items || [cmd]).forEach(item => {
-          if (!item.name) return;
+          if (!item.name) { skippedCount++; return; }
           const aiEntry = {
             id: Date.now() + Math.random(),
             date, meal,
@@ -4061,8 +4245,15 @@ function executeAiCommands(commands, backupLabel) {
           };
           enrichFoodProfile(aiEntry);
           addOrMergeEntry(aiEntry);
+          addedCount++;
         });
-        log.push(`✅ ${dateLabel(date)} ${meal}に登録`);
+        if (addedCount > 0) {
+          log.push(`✅ ${dateLabel(date)} ${meal}に${addedCount}件登録${skippedCount ? `（名前の無い品目${skippedCount}件をスキップ）` : ''}`);
+        } else {
+          const msg = `${dateLabel(date)} ${meal}: 有効な品目が無く、何も登録されませんでした`;
+          log.push(`⚠️ ${msg}`);
+          logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500));
+        }
       });
       changed = true;
     }
@@ -4098,8 +4289,9 @@ function executeAiCommands(commands, backupLabel) {
         const before = entries.length;
         entries = entries.filter(e => !(e.date === date && e.meal === meal));
         const removed = before - entries.length;
+        let addedCount = 0, skippedCount = 0;
         (cmd.items || []).forEach(item => {
-          if (!item.name) return;
+          if (!item.name) { skippedCount++; return; }
           const aiEntry = {
             id: Date.now() + Math.random(),
             date, meal,
@@ -4123,8 +4315,13 @@ function executeAiCommands(commands, backupLabel) {
           };
           enrichFoodProfile(aiEntry);
           addOrMergeEntry(aiEntry);
+          addedCount++;
         });
-        log.push(`🔄 ${dateLabel(date)} ${meal}を置き換え（旧${removed}件→新${cmd.items.length}件）`);
+        log.push(`🔄 ${dateLabel(date)} ${meal}を置き換え（旧${removed}件→新${addedCount}件${skippedCount ? `・名前の無い品目${skippedCount}件をスキップ` : ''}）`);
+        if (addedCount === 0 && (cmd.items || []).length > 0) {
+          const msg = `${dateLabel(date)} ${meal}: 置き換え後、有効な品目が無く空になりました`;
+          logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500));
+        }
       });
       changed = true;
     }
@@ -4175,7 +4372,7 @@ function executeAiCommands(commands, backupLabel) {
         const src = entries.find(e => e.id === entryId);
         if (!src) { log.push(`⚠️ id:${entryId} の記録が見つかりません`); return; }
         const name = (item.as_name || src.name || '').trim();
-        if (!name) return;
+        if (!name) { log.push(`⚠️ id:${entryId} の記録に名前が無いため登録できませんでした`); return; }
         // 既に同名のカスタム食品があれば重複登録しない
         if (customFoods.some(f => normFoodName(f.name) === normFoodName(name))) {
           log.push(`ℹ️ 「${name}」は既にカスタム食品DBに登録済みです`);
@@ -4436,6 +4633,20 @@ function executeAiCommands(commands, backupLabel) {
       }
       changed = true;
     }
+    // ── 未対応のコマンド種別 ──
+    // 以前はここに何も無く、AIがタイプミスしたコマンドや未実装のコマンド種別を送ってきた場合、
+    // 何のエラーも出さずに黙って無視していた（「AIに依頼したのに理由も無く失敗する」不具合の主因の一つ）。
+    else {
+      const msg = `未対応のコマンド種別です: ${cmd.type}`;
+      log.push(`❌ ${msg}`);
+      logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500));
+    }
+   } catch (err) {
+     // 1つのコマンドで想定外のエラーが起きても、バッチ内の他のコマンドの実行は継続する
+     const msg = `コマンド実行中にエラーが発生しました（種別: ${cmd.type || '不明'}）: ${err.message}`;
+     log.push(`❌ ${msg}`);
+     logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500) + '\n' + (err.stack || ''));
+   }
   });
   return log;
 }
@@ -4479,7 +4690,7 @@ async function sendAiMessage() {
   // コンテキスト構築（送信のたびに最新データを全件渡す）
   const today = currentDate;
   const weekDates = getWeekDates(today);
-  const dbSample  = LOCAL_DB.slice(0, 60).map(f => f.name).join('、');
+  const dbSample  = LOCAL_DB.slice(0, 30).map(f => f.name).join('、'); // 内蔵DBは検索関数で引けるので、例示は最小限に
   const fullCtx = buildFullContext();
 
   const systemPrompt = `あなたは日本語の栄養管理アプリの操作AIです。
@@ -4792,6 +5003,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       /(\{[\s\S]*"items"[\s\S]*?\})\s*$/m,    // itemsキーを含むJSON
     ];
 
+    let jsonParseAttemptFailed = false;
     for (const pat of jsonPatterns) {
       const m = rawText.match(pat);
       if (m) {
@@ -4799,8 +5011,16 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
           parsed = JSON.parse(m[1].trim());
           displayText = parsed.message || rawText.replace(pat, '').trim();
           break;
-        } catch(e) { /* 次のパターンを試す */ }
+        } catch(e) { jsonParseAttemptFailed = true; /* 次のパターンを試す */ }
       }
+    }
+    // ```json のフェンスは見つかったのに、どのパターンでも解析できなかった場合。
+    // 以前はここで何も起きず、AIの返信文だけが表示されて操作が実行されない
+    // （かつ理由も分からない）ことがあった。
+    if (!parsed && jsonParseAttemptFailed) {
+      const warnMsg = '⚠️ AIの応答内に操作コマンドが含まれていましたが、解析に失敗したため実行されませんでした。もう一度お試しください。';
+      displayText = (displayText ? displayText + '\n\n' : '') + warnMsg;
+      logError('AI応答解析', 'JSONコマンドブロックの解析に失敗しました', rawText.slice(0, 800));
     }
 
     // 旧形式（items配列）のフォールバック対応
@@ -4840,6 +5060,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       ? msg
       : `通信エラーが発生しました。\n${msg}`;
     appendAiMessage('ai', hint);
+    logError('AI通信', msg, err.stack || '');
     aiHistory.pop();
   }
 
@@ -4874,5 +5095,6 @@ renderCalendar();
 renderRecord();
 renderQuickSeasonings();
 renderExerciseItems();
+renderErrorLogPanel();
 renderAuthUI();
 initFirebase(); // Firebase設定がある場合に認証・同期を開始

@@ -714,15 +714,19 @@
           ・7日以上のデータで精度が上がります<br>
           ・水分変動（短期）は誤差になります<br>
           ・食事記録が完全であるほど正確です<br>
-          ・脂肪1kg ≈ 7,200kcal、筋肉1kg ≈ 4,500kcal で計算しています
+          ・脂肪1kg ≈ 7,200kcal、筋肉1kg ≈ 4,500kcal で計算しています<br><br>
+          <strong style="color:var(--text)">体重の自動入力について</strong><br>
+          開始・終了時点の体重は、設定タブで体重を更新した記録（実測）をもとに自動で推定して入力されます。
+          実測が2件以上ないうちは推定できず、現在設定中の体重をそのまま使うため精度は低くなります
+          （体重欄を直接編集すれば、その値を優先して計算します）。
         </div>
 
         <!-- 期間・体重入力 -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
-          <div class="field"><label>開始日</label><input type="date" id="metaFrom" onchange="calcMetabolism()"></div>
-          <div class="field"><label>終了日</label><input type="date" id="metaTo" onchange="calcMetabolism()"></div>
-          <div class="field"><label>開始時の体重 (kg)</label><input type="number" id="metaWFrom" placeholder="65.0" step="0.1" min="30" max="300" oninput="calcMetabolism()"></div>
-          <div class="field"><label>終了時の体重 (kg)</label><input type="number" id="metaWTo" placeholder="64.5" step="0.1" min="30" max="300" oninput="calcMetabolism()"></div>
+          <div class="field"><label>開始日</label><input type="date" id="metaFrom" onchange="refreshMetaWeights();calcMetabolism()"></div>
+          <div class="field"><label>終了日</label><input type="date" id="metaTo" onchange="refreshMetaWeights();calcMetabolism()"></div>
+          <div class="field"><label>開始時の体重 (kg)</label><input type="number" id="metaWFrom" placeholder="65.0" step="0.1" min="30" max="300" oninput="markMetaWeightEdited(this);calcMetabolism()"><div id="metaWFromLabel" style="font-size:10px;color:var(--text-sub);margin-top:2px"></div></div>
+          <div class="field"><label>終了時の体重 (kg)</label><input type="number" id="metaWTo" placeholder="64.5" step="0.1" min="30" max="300" oninput="markMetaWeightEdited(this);calcMetabolism()"><div id="metaWToLabel" style="font-size:10px;color:var(--text-sub);margin-top:2px"></div></div>
         </div>
 
         <!-- 体組成モード -->
@@ -735,7 +739,7 @@
         <div id="metaCustomComp" style="display:none;margin-bottom:10px">
           <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">体重変化のうち脂肪が占める割合</div>
           <div style="display:flex;align-items:center;gap:8px">
-            <input type="range" id="metaFatRatio" min="0" max="100" value="100" oninput="document.getElementById('metaFatRatioVal').textContent=this.value+'%';calcMetabolism()" style="flex:1">
+            <input type="range" id="metaFatRatio" min="0" max="100" value="100" oninput="document.getElementById('metaFatRatioVal').textContent=this.value+'%';refreshMetaWeights();calcMetabolism()" style="flex:1">
             <span id="metaFatRatioVal" style="font-size:12px;font-weight:600;min-width:36px">100%</span>
           </div>
         </div>
@@ -834,6 +838,12 @@
         <textarea class="csv-area" id="fooddbImportArea" placeholder="食品DBのJSONをここに貼り付け、または上でファイルを選択してください…"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-success" onclick="importFoodDb()" style="flex:1">📤 インポート実行</button><button class="btn" onclick="document.getElementById('fooddbImportArea').value='';document.getElementById('fooddbFileInput').value=''">クリア</button></div>
         <div id="fooddbImportMsg" class="status-msg"></div>
+      </div>
+      <div class="card">
+        <div class="sl">エラーログ（<span id="errorLogCount">0</span>件）</div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">AIへの操作依頼が失敗した時などの理由を記録しています。うまくいかない時の原因確認や、開発者への報告にご利用ください。</p>
+        <div id="errorLogPreview" style="margin-bottom:8px"></div>
+        <div style="display:flex;gap:8px"><button class="btn btn-primary" onclick="exportErrorLog()" style="flex:1">📥 ログを書き出す</button><button class="btn" onclick="clearErrorLog()">クリア</button></div>
       </div>
       <div class="card">
         <div class="sl">フォーマット</div>
