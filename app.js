@@ -4770,8 +4770,8 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     【重要】cal/p/f/c だけでなく、可能な範囲で以下も必ず埋めること。ユーザーに数値を聞き返すのは禁止（パッケージの栄養成分表示に無い項目は、
     同カテゴリの一般的な食品を参考に自分で推定する。本当に無視できる量（0扱いで妥当）ならそのフィールド自体を省略してよい）：
     - fiber/iron/calcium/vitc/vitd/salt（MICRO_GOALSにある食物繊維・鉄・カルシウム・VitC・VitD・塩分。可能なら vita/vite/vitk/iodine も）
-    - fa（脂質が0.5g/100g相当以上ある場合）: {sat,mufa,n3,n6,trans}（脂質全体に対する比率。合計はおよそ0.8〜1.0）
-    - aa（タンパク質が1g/100g相当以上ある場合）: {leu,ile,val,lys,met,thr,trp,his,score}（gアミノ酸/gタンパク質比率とDIAAS近似スコア）
+    - fa・aa は原則省略してよい（記録時に食品名から自動推定される）。値に確信がある場合のみ、
+      fa: {sat,mufa,n3,n6,trans}（脂質に対する比率、合計0.8〜1.0）/ aa: {leu,ile,val,lys,met,thr,trp,his,score} を付ける
     - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
     - serving（よくある1食分の目安量g）、en（英語名）、tags（検索用キーワード、スペース区切り）も分かれば付ける
 {
@@ -4988,6 +4988,11 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       }
 
       rawText = (data.content || []).map(b => b.text || '').join('');
+      if (data.finishReason === 'MAX_TOKENS') {
+        const u = data.usage || {};
+        logError('AI応答', '出力上限に達して応答が途中で切れました',
+          `入力${u.promptTokenCount ?? '?'} / 出力${u.candidatesTokenCount ?? '?'} / 思考${u.thoughtsTokenCount ?? '?'} トークン`);
+      }
       break;
     }
 

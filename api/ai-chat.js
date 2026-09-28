@@ -68,7 +68,11 @@ module.exports = async (req, res) => {
       }],
     }],
     generationConfig: {
-      maxOutputTokens: 8192,
+      // gemini-2.5-flash は既定で「思考」を行い、その思考トークンも maxOutputTokens に含まれる。
+      // 上限が小さいと、思考で使い切って本文（操作用JSON）が途中で切れる（MAX_TOKENS）ため、
+      // 思考量に上限を設けつつ出力上限を広げる
+      maxOutputTokens: 16384,
+      thinkingConfig: { thinkingBudget: 1024 },
       temperature: 0.7,
     },
   };
@@ -106,6 +110,8 @@ module.exports = async (req, res) => {
     if (candidate?.finishReason === 'MAX_TOKENS') {
       return json(res, 200, {
         content: [{ type: 'text', text: `⚠️ 応答が長すぎて途中で切れました。一度に頼む量を減らす（例：品目数を分割する、日付範囲を短くする）と改善する場合があります。` }],
+        finishReason: 'MAX_TOKENS',
+        usage: data.usageMetadata || null,
       });
     }
     if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
@@ -119,7 +125,7 @@ module.exports = async (req, res) => {
     if (functionCallPart) {
       return json(res, 200, { functionCall: functionCallPart.functionCall });
     }
-    return json(res, 200, { content: [{ type: 'text', text }] });
+    return json(res, 200, { content: [{ type: 'text', text }], usage: data.usageMetadata || null });
 
   } catch (err) {
     return json(res, 502, { error: `Gemini API への接続に失敗しました: ${err.message}` });
