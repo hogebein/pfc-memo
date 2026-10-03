@@ -67,7 +67,7 @@ newFoods.forEach((food, i) => {
   });
 
   // 数値フィールドの妥当性（NaN・負数チェック）
-  ['cal','p','f','c','per','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(key => {
+  ['cal','p','f','c','per','fiber','fibS','fibI','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(key => {
     if (food[key] !== undefined && (isNaN(food[key]) || food[key] < 0)) {
       errors.push(`${tag}: "${key}" が数値として不正です (${food[key]})`);
     }
@@ -101,6 +101,23 @@ newFoods.forEach((food, i) => {
   }
   if (food.aa && food.aa.score !== undefined && (food.aa.score < 0 || food.aa.score > 1.5)) {
     warnings.push(`${tag}: aa.score が${food.aa.score}で不自然です（通常0.4〜1.3程度）`);
+  }
+
+  // 食物繊維の内訳（水溶性 fibS + 不溶性 fibI ≒ fiber）
+  if ((food.fiber || 0) > 0) {
+    const hasS = food.fibS !== undefined, hasI = food.fibI !== undefined;
+    if (hasS !== hasI) {
+      errors.push(`${tag}: fibS と fibI は両方セットで指定してください`);
+    } else if (hasS) {
+      const diff = Math.abs((food.fibS || 0) + (food.fibI || 0) - food.fiber);
+      if (diff > Math.max(0.1, food.fiber * 0.05)) {
+        errors.push(`${tag}: fibS(${food.fibS}) + fibI(${food.fibI}) が fiber(${food.fiber}) と一致しません`);
+      }
+    } else {
+      warnings.push(`${tag}: fiber があるのに fibS/fibI（水溶性/不溶性）が未設定です（海藻類など成分表に内訳が無い食品なら省略可）`);
+    }
+  } else if (food.fibS || food.fibI) {
+    warnings.push(`${tag}: fiber が0なのに fibS/fibI が設定されています`);
   }
 
   // カロリーとPFCの整合性（既存アプリの異常値チェックと同じ考え方。食物繊維は4kcal/gで計算しない）

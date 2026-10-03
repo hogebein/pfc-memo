@@ -20,7 +20,10 @@ const MICRO_GOALS = {
   iodine:  { label:'ヨウ素',   unit:'μg', goal:130,  color:'#5c6bc0', ul:3000 },
   salt:    { label:'塩分',     unit:'g',  goal:7.5,  color:'#9e9e9e', reverse:true },
 };
-const MICRO_KEYS = Object.keys(MICRO_GOALS);
+// 食物繊維の内訳（水溶性 fibS / 不溶性 fibI, g）。目標値(MICRO_GOALS)は持たないが、記録・複合食品・AI入力では他のミクロ栄養素と同じ経路で扱う
+const FIBER_SUB_KEYS = ['fibS','fibI'];
+const MICRO_GOAL_KEYS = Object.keys(MICRO_GOALS);
+const MICRO_KEYS = [...MICRO_GOAL_KEYS, ...FIBER_SUB_KEYS];
 // ミクロ栄養素の丸め桁（鉄・VitD・VitE・塩分は2桁、それ以外は1桁）
 function microRound(k, v) { const d = (k==='iron'||k==='vitd'||k==='vite'||k==='salt') ? 100 : 10; return Math.round((v||0)*d)/d; }
 // AI・インポート等の外部入力から、ミクロ栄養素(MICRO_KEYS)を数値として取り出す（不正値・負数は0）
@@ -28,6 +31,80 @@ function pickMicros(obj) {
   const o = {};
   MICRO_KEYS.forEach(k => { const v = parseFloat(obj && obj[k]); o[k] = (isFinite(v) && v > 0) ? v : 0; });
   return o;
+}
+// ── 食物繊維の水溶性/不溶性の内訳 ──
+// 食品DB(foods-db.js)の fibS/fibI は日本食品標準成分表(八訂)の実測値、またはカテゴリからの推定比率(fibEst:1)。
+// 藻類・寒天など、成分表自体が内訳を収載していない食品は fibS/fibI を持たない（→「区分不明」として集計）。
+let _fibRatioMap = null;
+function fibSolRatioByName(name) {
+  if (!_fibRatioMap) {
+    _fibRatioMap = new Map();
+    LOCAL_DB.forEach(f => { if (f.fiber > 0 && typeof f.fibS === 'number') _fibRatioMap.set(f.name, f.fibS / f.fiber); });
+  }
+  if (_fibRatioMap.has(name)) return _fibRatioMap.get(name);
+  const c = [...customFoods, ...comboFoods].find(x => x.name === name && x.fiber > 0 && (x.fibS || 0) + (x.fibI || 0) > 0);
+  return c ? (c.fibS || 0) / ((c.fibS || 0) + (c.fibI || 0)) : null;
+}
+// 記録1件の食物繊維を {s:水溶性, i:不溶性, u:区分不明} に分ける（過去の記録は食品名からDBの比率で補完）
+function getFiberSplit(e) {
+  const t = e.fiber || 0;
+  if (t <= 0) return { s: 0, i: 0, u: 0 };
+  const known = (e.fibS || 0) + (e.fibI || 0);
+  if (known > 0) {
+    if (known >= t * 0.95) { const k = t / known; return { s: (e.fibS || 0) * k, i: (e.fibI || 0) * k, u: 0 }; }
+    return { s: e.fibS || 0, i: e.fibI || 0, u: t - known }; // 一部だけ判明（複合食品で内訳不明の材料を含む場合など）
+  }
+  const r = fibSolRatioByName(e.name);
+  if (r != null) return { s: t * r, i: t * (1 - r), u: 0 };
+  return { s: 0, i: 0, u: t };
+}
+// 記録に内訳(fibS/fibI)を確定して持たせる（合算時など）。fibS+fibI = fiber になるよう丸める
+function materializeFiberSplit(e) {
+  const t = e.fiber || 0;
+  if (t <= 0) { e.fibS = 0; e.fibI = 0; return; }
+  const sp = getFiberSplit(e);
+  e.fibS = r1(sp.s);
+  e.fibI = sp.u > 0 ? r1(sp.i) : r1(t - r1(sp.s));
+}
+// DB食品(per基準)を実量(倍率r)にしたときの内訳。fiberScaled は丸め済みの食物繊維量
+function fibSplitScaled(f, r, fiberScaled) {
+  const known = (f.fibS || 0) + (f.fibI || 0);
+  if (!(fiberScaled > 0) || known <= 0) return { fibS: 0, fibI: 0 };
+  const s = r1(fiberScaled * (f.fibS || 0) / known);
+  return { fibS: s, fibI: r1(fiberScaled - s) };
+}
+// 外部入力(AI等)の内訳を検証。fiberと大きく食い違う場合は信用せず未設定にする
+function normFibSplit(o) {
+  const fiber = parseFloat(o && o.fiber) || 0, a = parseFloat(o && o.fibS), b = parseFloat(o && o.fibI);
+  if (!(fiber > 0) || !isFinite(a) || !isFinite(b) || a < 0 || b < 0 || a + b <= 0) return { fibS: 0, fibI: 0 };
+  const k = fiber / (a + b);
+  if (k < 0.7 || k > 1.4) return { fibS: 0, fibI: 0 };
+  const s = r1(a * k); return { fibS: s, fibI: r1(fiber - s) };
+}
+// 記録編集で食物繊維の量が変わったとき、内訳を同じ比率でスケールする（不明分は不明のまま）
+function syncFiberSplit(oldE, newE) {
+  const t = newE.fiber || 0;
+  if (t <= 0) { newE.fibS = 0; newE.fibI = 0; return; }
+  const sp = getFiberSplit(oldE), oldT = oldE.fiber || 0;
+  if (sp.s + sp.i <= 0 || oldT <= 0) { newE.fibS = 0; newE.fibI = 0; return; }
+  const k = t / oldT;
+  newE.fibS = r1(sp.s * k);
+  newE.fibI = sp.u > 0 ? r1(sp.i * k) : r1(t - newE.fibS);
+}
+// 表示用: 水溶性/不溶性/区分不明のスタックバー（目標値に対する割合ではなく内訳の割合）
+function fiberSplitBlock(s) {
+  const a = s.fibS || 0, b = s.fibI || 0, u = s.fibU || 0, tot = a + b + u;
+  if (tot <= 0) return '';
+  const pc = v => Math.round(v / tot * 100);
+  const strong = v => `<b style="color:var(--text)">${r1(v)}g</b>`;
+  return `<div style="margin:-2px 0 10px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px">
+    <div style="display:flex;height:6px;border-radius:3px;overflow:hidden;background:var(--border);margin-bottom:6px">
+      <div style="width:${pc(a)}%;background:#4fc3f7"></div><div style="width:${pc(b)}%;background:#8bc34a"></div>${u > 0 ? `<div style="width:${pc(u)}%;background:#bdbdbd"></div>` : ''}
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:8px;color:var(--text-sub)"><span>🔵 水溶性 ${strong(a)}（${pc(a)}%）</span><span>🟢 不溶性 ${strong(b)}（${pc(b)}%）</span></div>
+    ${u > 0 ? `<div style="margin-top:3px;color:var(--text-sub)">⚪ 区分不明 ${strong(u)}（${pc(u)}%）… 海藻類など内訳が収載されていない食品・手入力分</div>` : ''}
+    <div style="margin-top:4px;font-size:9px;color:var(--text-sub)">※内訳は食品成分表(八訂)の値、または食品カテゴリからの推定比率です</div>
+  </div>`;
 }
 // 脂肪酸比率(fa)・アミノ酸プロファイル(aa)の検証。不正・不自然な値は null（→ 名前からの自動推定に任せる）
 function sanitizeFa(fa) {
@@ -816,12 +893,16 @@ function goals() {
   return { cal: tdee, p, f, c };
 }
 function sumEntries(list) {
-  return list.reduce((a,e) => ({
+  const t = list.reduce((a,e) => ({
     cal:a.cal+e.cal, p:a.p+e.p, f:a.f+e.f, c:a.c+e.c,
     fiber:a.fiber+(e.fiber||0), iron:a.iron+(e.iron||0), calcium:a.calcium+(e.calcium||0),
     vitc:a.vitc+(e.vitc||0), vitd:a.vitd+(e.vitd||0), salt:a.salt+(e.salt||0),
     vita:a.vita+(e.vita||0), vite:a.vite+(e.vite||0), vitk:a.vitk+(e.vitk||0), iodine:a.iodine+(e.iodine||0),
   }), {cal:0,p:0,f:0,c:0,fiber:0,iron:0,calcium:0,vitc:0,vitd:0,salt:0,vita:0,vite:0,vitk:0,iodine:0});
+  // 食物繊維の内訳（水溶性/不溶性/区分不明）。過去の記録も食品名からDBの比率で補完して集計する
+  t.fibS = 0; t.fibI = 0; t.fibU = 0;
+  list.forEach(e => { const sp = getFiberSplit(e); t.fibS += sp.s; t.fibI += sp.i; t.fibU += sp.u; });
+  return t;
 }
 function getDayEntries(d) { return entries.filter(e => e.date === d); }
 
@@ -1238,14 +1319,23 @@ function renderRecord() {
   document.getElementById('recBarC').style.width=(ccal/tot*100)+'%';
 
   let microHtml = '';
-  MICRO_KEYS.forEach(k => {
+  MICRO_GOAL_KEYS.forEach(k => {
     const g=MICRO_GOALS[k], val=r1(s[k]||0);
     const pct=Math.min(val/g.goal*100,100);
     const over=!g.reverse&&val>g.goal;
     const color=g.reverse?(val>g.goal?'#c0392b':g.color):(over?'#c0392b':g.color);
+    let barHtml = `<div class="micro-bar-fill" style="width:${pct}%;background:${color}"></div>`;
+    let subHtml = '';
+    if (k === 'fiber' && val > 0 && ((s.fibS||0) + (s.fibI||0) + (s.fibU||0)) > 0) {
+      // 食物繊維は水溶性/不溶性/区分不明で色分けしたバーにし、内訳を数値でも添える
+      const tot = (s.fibS||0) + (s.fibI||0) + (s.fibU||0), scale = Math.min(pct, 100) / tot;
+      const seg = (v, col) => `<div style="width:${v*scale}%;background:${col};height:100%"></div>`;
+      barHtml = `<div style="display:flex;height:100%;width:100%">${seg(s.fibS||0,'#4fc3f7')}${seg(s.fibI||0,color)}${seg(s.fibU||0,'#bdbdbd')}</div>`;
+      subHtml = `<div style="font-size:9px;color:var(--text-sub);margin-top:2px;line-height:1.35">水溶${r1(s.fibS||0)} / 不溶${r1(s.fibI||0)}${(s.fibU||0) > 0.04 ? ' / 不明'+r1(s.fibU) : ''}</div>`;
+    }
     microHtml += `<div class="micro-item"><div class="micro-label">${g.label}</div>
-      <div class="micro-bar-track"><div class="micro-bar-fill" style="width:${pct}%;background:${color}"></div></div>
-      <div class="micro-val">${val}<span class="micro-unit"> ${g.unit}/${g.goal}</span></div></div>`;
+      <div class="micro-bar-track">${barHtml}</div>
+      <div class="micro-val">${val}<span class="micro-unit"> ${g.unit}/${g.goal}</span></div>${subHtml}</div>`;
   });
   document.getElementById('microGrid').innerHTML = microHtml;
 
@@ -1433,6 +1523,7 @@ function selectAddResult(i, meal) {
     f:       r1((f.f||0)*r),
     c:       r1((f.c||0)*r),
     fiber:   r1((f.fiber||0)*r),
+    ...fibSplitScaled(f, r, r1((f.fiber||0)*r)),
     iron:    r2((f.iron||0)*r),
     calcium: r1((f.calcium||0)*r),
     vitc:    r1((f.vitc||0)*r),
@@ -1512,6 +1603,8 @@ function addSeasoning(id) {
     f:       s.f,
     c:       s.c,
     fiber:   s.fiber,
+    fibS:    s.fibS || 0,
+    fibI:    s.fibI || 0,
     iron:    s.iron,
     calcium: s.calcium,
     vitc:    s.vitc,
@@ -1836,6 +1929,8 @@ function addOrMergeEntry(newEntry, excludeId) {
     dup.p       = r1((dup.p       || 0) + (newEntry.p       || 0));
     dup.f       = r1((dup.f       || 0) + (newEntry.f       || 0));
     dup.c       = r1((dup.c       || 0) + (newEntry.c       || 0));
+    // 食物繊維の内訳は、合算前に双方の内訳を確定させてから足す（片方だけ内訳なしで合計とズレるのを防ぐ）
+    materializeFiberSplit(dup); materializeFiberSplit(newEntry);
     MICRO_KEYS.forEach(k => { dup[k] = microRound(k, (dup[k] || 0) + (newEntry[k] || 0)); });
     if (!dup.fa && newEntry.fa) dup.fa = newEntry.fa;
     if (!dup.aa && newEntry.aa) dup.aa = newEntry.aa;
@@ -2049,7 +2144,8 @@ function autoSaveEdit(id) {
   const nameEl = document.getElementById('en'+id);
   const amtEl  = document.getElementById('ea'+id);
   if (!nameEl || !amtEl) return;
-  entries[idx] = {
+  const _oldEntry = entries[idx];
+  const _newEntry = {
     ...entries[idx],
     name:    nameEl.value.trim() || entries[idx].name,
     amount:  parseFloat(amtEl.value) || entries[idx].amount,
@@ -2066,6 +2162,8 @@ function autoSaveEdit(id) {
     meal:    document.getElementById('em'+id).value,
     time:    document.getElementById('et'+id)?.value || entries[idx].time,
   };
+  syncFiberSplit(_oldEntry, _newEntry); // 食物繊維の量が変わった場合は内訳も同じ比率でスケール
+  entries[idx] = _newEntry;
   saveDebounced();
 }
 function cancelEdit(id){
@@ -3125,7 +3223,7 @@ function getAvg(period) {
   const wd=days.filter(d=>getDayEntries(d).length>0); if(!wd.length) return null;
   const tot=wd.map(d=>sumEntries(getDayEntries(d))); const n=wd.length;
   const avg={days:n};
-  ['cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
+  ['cal','p','f','c','fiber','fibS','fibI','fibU','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
   return avg;
 }
 function goalBar(label, actual, target, unit, color, reverse=false) {
@@ -3165,7 +3263,7 @@ function renderStats() {
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:8px">PFC・カロリー</div>
     ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin:12px 0 8px">ビタミン・ミネラル・食物繊維</div>
-    ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('ビタミンA',ri(s.vita),850,'μg','#ff7043')}${goalBar('ビタミンE',r1(s.vite),6.5,'mg','#ab47bc')}${goalBar('ビタミンK',ri(s.vitk),150,'μg','#26a69a')}${goalBar('ヨウ素',ri(s.iodine),130,'μg','#5c6bc0')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
+    ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${fiberSplitBlock(s)}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('ビタミンA',ri(s.vita),850,'μg','#ff7043')}${goalBar('ビタミンE',r1(s.vite),6.5,'mg','#ab47bc')}${goalBar('ビタミンK',ri(s.vitk),150,'μg','#26a69a')}${goalBar('ヨウ素',ri(s.iodine),130,'μg','#5c6bc0')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
   ` : `<div style="text-align:center;padding:2rem;color:var(--text-sub);font-size:13px">この期間の記録がありません</div>`;
   renderCharts();
   renderVitDStock();
@@ -4233,6 +4331,7 @@ function executeAiCommands(commands, backupLabel) {
             f:       parseFloat(item.f)       || 0,
             c:       parseFloat(item.c)       || 0,
             fiber:   parseFloat(item.fiber)   || 0,
+            ...normFibSplit(item),
             iron:    parseFloat(item.iron)    || 0,
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
@@ -4303,6 +4402,7 @@ function executeAiCommands(commands, backupLabel) {
             f:       parseFloat(item.f)       || 0,
             c:       parseFloat(item.c)       || 0,
             fiber:   parseFloat(item.fiber)   || 0,
+            ...normFibSplit(item),
             iron:    parseFloat(item.iron)    || 0,
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
@@ -4414,8 +4514,9 @@ function executeAiCommands(commands, backupLabel) {
         if (!srcs.length || totalAmount <= 0) {
           log.push('⚠️ 対象の記録が見つからないため、合算登録できませんでした');
         } else {
-          const sum = { cal:0, p:0, f:0, c:0, fiber:0, iron:0, calcium:0, vitc:0, vitd:0, vita:0, vite:0, vitk:0, iodine:0, salt:0 };
-          srcs.forEach(e => { Object.keys(sum).forEach(k => { sum[k] += Math.max(0, e[k] || 0); }); });
+          const sum = { cal:0, p:0, f:0, c:0, fiber:0, fibS:0, fibI:0, iron:0, calcium:0, vitc:0, vitd:0, vita:0, vite:0, vitk:0, iodine:0, salt:0 };
+          srcs.forEach(e => { Object.keys(sum).forEach(k => { if (k === 'fibS' || k === 'fibI') return; sum[k] += Math.max(0, e[k] || 0); });
+            const sp = getFiberSplit(e); sum.fibS += sp.s; sum.fibI += sp.i; });
           const scale = 100 / totalAmount;
           customFoods.push({
             id:      Date.now() + Math.random(),
@@ -4423,7 +4524,7 @@ function executeAiCommands(commands, backupLabel) {
             per:     100,
             cal:     r1(sum.cal*scale),     p:       r1(sum.p*scale),
             f:       r1(sum.f*scale),       c:       r1(sum.c*scale),
-            fiber:   r1(sum.fiber*scale),   iron:    r2(sum.iron*scale),
+            fiber:   r1(sum.fiber*scale),   fibS:    r1(sum.fibS*scale),   fibI:    r1(sum.fibI*scale),   iron:    r2(sum.iron*scale),
             calcium: r1(sum.calcium*scale), vitc:    r1(sum.vitc*scale),
             vitd:    r2(sum.vitd*scale),    vita:    r1(sum.vita*scale),
             vite:    r2(sum.vite*scale),    vitk:    r1(sum.vitk*scale),
@@ -4455,7 +4556,8 @@ function executeAiCommands(commands, backupLabel) {
           log.push('⚠️ 対象の記録が見つからないため、複合食品として登録できませんでした');
         } else {
           const tot = { cal:0, p:0, f:0, c:0 }; MICRO_KEYS.forEach(k => { tot[k] = 0; });
-          srcs.forEach(e => { ['cal','p','f','c',...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
+          const srcsM = srcs.map(e => { const c = { ...e }; materializeFiberSplit(c); return c; }); // 過去の記録も食物繊維の内訳を補完してから合算
+          srcsM.forEach(e => { ['cal','p','f','c',...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
           // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
           comboFoods.push({
             id: Date.now() + Math.random(),
@@ -4463,7 +4565,7 @@ function executeAiCommands(commands, backupLabel) {
             cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
             ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
             // 各記録エントリはamount=perとして扱う（既に実量で記録されているため、r=amount/per=1で値をそのまま材料として使う）
-            ingredients: srcs.map(e => ({
+            ingredients: srcsM.map(e => ({
               name: e.name, amount: e.amount, per: e.amount,
               cal: e.cal||0, p: e.p||0, f: e.f||0, c: e.c||0,
               ...Object.fromEntries(MICRO_KEYS.map(k => [k, e[k]||0])),
@@ -4567,7 +4669,7 @@ function executeAiCommands(commands, backupLabel) {
           id: Date.now() + Math.random(),
           label, name: f.name, amount: r1(amt),
           cal: r1(f.cal*r), p: r1(f.p*r), f: r1(f.f*r), c: r1(f.c*r),
-          fiber: r1((f.fiber||0)*r), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
+          fiber: r1((f.fiber||0)*r), ...fibSplitScaled(f, r, r1((f.fiber||0)*r)), iron: r1((f.iron||0)*r), calcium: r1((f.calcium||0)*r),
           vitc: r1((f.vitc||0)*r), vitd: r1((f.vitd||0)*r), salt: r2((f.salt||0)*r),
           fa: f.fa || null, aa: f.aa || null,
           digest: f.digest || classifyDigestCategory(f.name, r1(f.p*r)),
@@ -4614,7 +4716,7 @@ function executeAiCommands(commands, backupLabel) {
         if (nameCollides) {
           log.push(`⚠️ 「${newName}」という名前は既に別のカスタム食品で使われています`);
         } else {
-          const numericKeys = ['per','serving','cal','p','f','c','fiber','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'];
+          const numericKeys = ['per','serving','cal','p','f','c','fiber','fibS','fibI','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'];
           numericKeys.forEach(k => {
             if (updates[k] === undefined || updates[k] === null || updates[k] === '') return;
             const v = parseFloat(updates[k]);
@@ -4668,7 +4770,7 @@ function searchFoodDbForAi(query) {
   return matches.map(f => {
     const src = srcLabel[f._src] || f._src || '';
     const extras = [];
-    MICRO_KEYS.forEach(k => { if (f[k]) extras.push(`${MICRO_GOALS[k].label}${f[k]}${MICRO_GOALS[k].unit}`); });
+    MICRO_KEYS.forEach(k => { if (f[k] && MICRO_GOALS[k]) extras.push(`${MICRO_GOALS[k].label}${f[k]}${MICRO_GOALS[k].unit}`); });
     return `${f.name}（${src}・${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${extras.length ? ' ' + extras.join(' ') : ''}）`;
   }).join('\n');
 }
@@ -4774,6 +4876,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     【重要】cal/p/f/c だけでなく、可能な範囲で以下も必ず埋めること。ユーザーに数値を聞き返すのは禁止（パッケージの栄養成分表示に無い項目は、
     同カテゴリの一般的な食品を参考に自分で推定する。本当に無視できる量（0扱いで妥当）ならそのフィールド自体を省略してよい）：
     - fiber/iron/calcium/vitc/vitd/salt（MICRO_GOALSにある食物繊維・鉄・カルシウム・VitC・VitD・塩分。可能なら vita/vite/vitk/iodine も）
+    - fiberが0より大きい場合は fibS（水溶性食物繊維g）と fibI（不溶性食物繊維g）も付ける。fibS+fibI は fiber とほぼ一致させること（日本食品標準成分表(八訂)の値、無ければ同カテゴリの一般的な比率で推定。海藻類など内訳が不明なら省略してよい）
     - fa・aa は原則省略してよい（記録時に食品名から自動推定される）。値に確信がある場合のみ、
       fa: {sat,mufa,n3,n6,trans}（脂質に対する比率、合計0.8〜1.0）/ aa: {leu,ile,val,lys,met,thr,trp,his,score} を付ける
     - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
@@ -4856,7 +4959,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 
 10. add_combo_food — まだ記録していないレシピ・料理を、複数の材料から「複合食品」として新規登録する（「記録」タブの複合食品登録と同じデータ構造。材料の内訳を保持したまま複合食品リストに保存される）。
     ingredients の各要素は「その食材のamount(g)における実量」ではなく、per(基準量。省略時100g)あたりの値を指定する（=食品DBの1件と同じ形式）。
-    各材料について、add_custom_food と同様に fiber/iron/calcium/vitc/vitd/salt（可能ならvita/vite/vitk/iodineも）を、
+    各材料について、add_custom_food と同様に fiber（>0なら fibS 水溶性・fibI 不溶性も）/iron/calcium/vitc/vitd/salt（可能ならvita/vite/vitk/iodineも）を、
     search_food_dbの結果があればその値を、無ければあなたの知識で推定して極力埋めること（cal/p/f/cだけにしない）。
     yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は付ける（ひらがな・ローマ字検索用）。
     登録後は100gあたりに正規化されず、材料の総重量そのものが基準量になる（例: 材料合計550gなら「550gあたり」として保存され、記録タブで選ぶ際のデフォルト量も550gになる）。
