@@ -45,6 +45,49 @@ function fibSolRatioByName(name) {
   const c = [...customFoods, ...comboFoods].find(x => x.name === name && x.fiber > 0 && (x.fibS || 0) + (x.fibI || 0) > 0);
   return c ? (c.fibS || 0) / ((c.fibS || 0) + (c.fibI || 0)) : null;
 }
+// 食品名から水溶性の割合(0〜1)を推定する（成分表に内訳が無い・AIが内訳を返さなかった・手入力で空欄、の場合の最終手段）。
+// 先勝ち。海藻類は成分表(八訂)にも内訳の収載が無いため、文献的な傾向（水溶性が比較的多い）にもとづく粗い目安。
+const FIB_SOL_RULES = [
+  [/昆布|こんぶ|もずく|めかぶ|寒天|かんてん/, 0.7], [/わかめ|ワカメ|ひじき|あおさ|海苔|焼きのり|海藻|スピルリナ|クロレラ/, 0.35],
+  [/サイリウム/, 0.7], [/亜麻仁|フラックス/, 0.3], [/チアシード/, 0.2],
+  [/納豆/, 0.34], [/おから/, 0.04], [/豆乳/, 0.4], [/豆腐|湯葉|高野豆腐/, 0.25], [/きな粉/, 0.15],
+  [/大豆|ひよこ|レンズ|ダール|小豆|いんげん|インゲン|えんどう|エンドウ|そら豆|黒豆|豆|ミート|テンペ/, 0.1],
+  [/こんにゃく|しらたき/, 0.05], [/玄米/, 0.23], [/オート|オーツ|グラノーラ|ミューズリー/, 0.32],
+  [/白米|ご飯|ごはん|おにぎり|赤飯|餅|もち|白玉|米粉|ビーフン|春雨|せんべい|煎餅/, 0.02],
+  [/ライ麦|全粒粉|ふすま/, 0.25], [/そば|蕎麦/, 0.25],
+  [/うどん|そうめん|パスタ|スパゲ|マカロニ|麺|ラーメン|ヌードル|ピザ|ナン|餃子|パン粉|小麦粉|薄力|中力|強力/, 0.35],
+  [/パン|ベーグル|クロワッサン|クラッカー|ビスケット|クッキー|ケーキ|ドーナツ|ワッフル|カステラ|月餅|八ツ橋/, 0.25],
+  [/ごま|ゴマ/, 0.13], [/アーモンド|ナッツ|くるみ|ピーナッツ|ピスタチオ|カシュー|マカダミア/, 0.1],
+  [/しいたけ|シイタケ|椎茸|えのき|しめじ|まいたけ|エリンギ|なめこ|きのこ|キノコ/, 0.08],
+  [/じゃがいも|ポテト|ポテチ/, 0.35], [/さつまいも|焼き芋|山芋|ながいも|里芋|さといも/, 0.3],
+  [/バナナ/, 0.1], [/みかん|オレンジ|グレープフルーツ|柑|レモン/, 0.5], [/りんご|リンゴ|キウイ|アボカド/, 0.28],
+  [/いちご|ベリー|ぶどう|ブドウ|もも|桃|梨|柿|さくらんぼ|マンゴー|パイン|メロン|すいか|プルーン|レーズン|デーツ/, 0.3],
+  [/にんにく|ガーリック/, 0.6], [/ごぼう/, 0.4], [/玉ねぎ|たまねぎ|ねぎ|ネギ/, 0.27],
+  [/チョコ|ココア/, 0.15], [/ジュース|スムージー|青汁/, 0.25],
+];
+function estimateSolRatio(name) {
+  const n = String(name || '');
+  for (const [re, r] of FIB_SOL_RULES) if (re.test(n)) return r;
+  return 0.28; // 野菜・混合料理などの一般的な目安
+}
+// AI入力の内訳を検証し、無い/不正なら食品名から推定して必ず {fibS, fibI} を返す（fiber>0のとき）
+function aiFiberSplit(o) {
+  const fiber = parseFloat(o && o.fiber) || 0;
+  if (!(fiber > 0)) return { fibS: 0, fibI: 0 };
+  const v = normFibSplit(o);
+  if (v.fibS + v.fibI > 0) return v;
+  const s = r1(fiber * estimateSolRatio(o && o.name));
+  return { fibS: s, fibI: r1(fiber - s) };
+}
+// 既存の食品オブジェクトの内訳を fiber と整合させる（無ければ名前から推定）
+function reconcileFiberSplit(o) {
+  const t = o.fiber || 0;
+  if (!(t > 0)) { o.fibS = 0; o.fibI = 0; return o; }
+  const k = (o.fibS || 0) + (o.fibI || 0);
+  const s = r1(k > 0 ? t * (o.fibS || 0) / k : t * estimateSolRatio(o.name));
+  o.fibS = s; o.fibI = r1(t - s);
+  return o;
+}
 // 記録1件の食物繊維を {s:水溶性, i:不溶性, u:区分不明} に分ける（過去の記録は食品名からDBの比率で補完）
 function getFiberSplit(e) {
   const t = e.fiber || 0;
@@ -56,7 +99,20 @@ function getFiberSplit(e) {
   }
   const r = fibSolRatioByName(e.name);
   if (r != null) return { s: t * r, i: t * (1 - r), u: 0 };
-  return { s: 0, i: 0, u: t };
+  const er = estimateSolRatio(e.name); // DBに無い食品も、名前からの推定で水溶性/不溶性に振り分ける
+  return { s: t * er, i: t * (1 - er), u: 0 };
+}
+// 入力欄に出す水溶性(g)。内訳が全く分からない場合は空欄（＝食品名から自動推定／区分不明のまま）
+function fibSInputVal(o) { const sp = getFiberSplit(o); return (sp.s + sp.i) > 0 ? r1(sp.s) : ''; }
+// 入力欄の水溶性(g)から {fibS, fibI} を作る。空欄なら {}（自動）。fiberを超える値は丸める
+function fibSplitFromInput(rawS, fiber) {
+  const raw = String(rawS == null ? '' : rawS).trim();
+  const t = parseFloat(fiber) || 0;
+  if (raw === '' || !(t > 0)) return {};
+  const v = parseFloat(raw);
+  if (!isFinite(v) || v < 0) return {};
+  const s = r1(Math.min(v, t));
+  return { fibS: s, fibI: r1(t - s) };
 }
 // 記録に内訳(fibS/fibI)を確定して持たせる（合算時など）。fibS+fibI = fiber になるよう丸める
 function materializeFiberSplit(e) {
@@ -102,8 +158,8 @@ function fiberSplitBlock(s) {
       <div style="width:${pc(a)}%;background:#4fc3f7"></div><div style="width:${pc(b)}%;background:#8bc34a"></div>${u > 0 ? `<div style="width:${pc(u)}%;background:#bdbdbd"></div>` : ''}
     </div>
     <div style="display:flex;justify-content:space-between;gap:8px;color:var(--text-sub)"><span>🔵 水溶性 ${strong(a)}（${pc(a)}%）</span><span>🟢 不溶性 ${strong(b)}（${pc(b)}%）</span></div>
-    ${u > 0 ? `<div style="margin-top:3px;color:var(--text-sub)">⚪ 区分不明 ${strong(u)}（${pc(u)}%）… 海藻類など内訳が収載されていない食品・手入力分</div>` : ''}
-    <div style="margin-top:4px;font-size:9px;color:var(--text-sub)">※内訳は食品成分表(八訂)の値、または食品カテゴリからの推定比率です</div>
+    ${u > 0 ? `<div style="margin-top:3px;color:var(--text-sub)">⚪ 区分不明 ${strong(u)}（${pc(u)}%）… 内訳を判定できなかった分</div>` : ''}
+    <div style="margin-top:4px;font-size:9px;color:var(--text-sub)">※内訳は食品成分表(八訂)の値、または食品名・カテゴリからの推定比率です（記録の編集で「うち水溶性」を直せます）</div>
   </div>`;
 }
 // 脂肪酸比率(fa)・アミノ酸プロファイル(aa)の検証。不正・不自然な値は null（→ 名前からの自動推定に任せる）
@@ -726,10 +782,7 @@ function renderBmrPreview() {
   const bmr  = Math.round(calcBMR());
   const g    = goals();
   const modeLabel = { normal:'通常', recomp:'低脂質リコンプ', custom:'カスタム' }[profile.goalMode || 'normal'];
-  const detail = getDetailedActivity(currentDate);
-  const modeDesc = detail
-    ? `${detail.source === 'google_health' ? 'Google Health実測' : '手入力歩数'}（${(detail.steps||0).toLocaleString()}歩・活動 ${detail.activeCal}kcal）＋NEAT「${getNeatLabel()}」+${getNeatPct()}%`
-    : `活動係数 ${profile.activityFactor || 1.2}（ざっくり設定）`;
+  const modeDesc = describeActivity(getTdeeBreakdown(currentDate));
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:6px">
       <div style="background:var(--bg);border-radius:8px;padding:8px 10px">
@@ -854,20 +907,60 @@ function calcBMR() {
 function usingKatchFallback() {
   return profile.bmrFormula === 'katch' && !(profile.bf != null && profile.bf > 0);
 }
+// 食事誘発熱産生（TEF/DIT）: 食事の消化・吸収・代謝で消費されるエネルギー。総消費の約10%（混合食）。
+// 「BMR×NEAT＋活動カロリー」にはTEFが含まれないため、NEAT方式では最後に上乗せする。
+// （従来の活動係数方式の 1.2〜1.9 は、もともとTEFを含んだ係数なので上乗せしない）
+const TEF_RATIO = 0.10;
+// 歩数などの活動データが全く無い日に仮定する歩数（国民健康・栄養調査の成人男性平均 約7,000〜8,000歩のうち、
+// NEAT倍率に職場での動きが既に含まれることを考慮して控えめにした値）
+const DEFAULT_DAILY_STEPS = 6000;
+// 直近14日の実測/手入力から活動カロリーの平均を求める（3日分以上あるときだけ。入力の手間をかけずに本人の実態へ寄せる）
+function recentAvgActiveCal(date) {
+  const base = new Date(date + 'T00:00:00');
+  let sum = 0, n = 0;
+  for (let i = 1; i <= 14; i++) {
+    const d = new Date(base); d.setDate(d.getDate() - i);
+    const det = getDetailedActivity(toDateStr(d));
+    if (det && det.activeCal > 0) { sum += det.activeCal; n++; }
+  }
+  return n >= 3 ? Math.round(sum / n) : null;
+}
 function getTdeeBreakdown(date) {
   date = date || currentDate;
   const bmr = calcBMR();
-
-  // その日の歩数（Garmin/Google Health実測 または 手動入力）が分かれば、
-  // NEATレベルで補正したBMR＋実際の活動カロリーで精緻に算出する
   const detail = getDetailedActivity(date);
-  const base = detail
-    ? bmr * getNeatMult() + detail.activeCal
-    : bmr * (profile.activityFactor || 1.2);
 
-  const tdee = Math.round(base);
+  // ざっくり設定（座位中心=1.2 以外の活動係数）を本人が明示的に選んでいて、その日の活動データも無い場合のみ従来方式
+  const simple = !detail && (profile.activityFactor || 1.2) !== 1.2;
+  if (simple) {
+    const base = bmr * profile.activityFactor;
+    return { bmr, detail, base, tdee: Math.round(base), tef: 0, activeCal: 0, assumed: null, simple: true };
+  }
 
-  return { bmr, detail, base, tdee };
+  // NEAT方式: BMR×NEAT倍率 ＋ 活動カロリー ＋ TEF
+  // 活動カロリーは、その日の実測/手入力 → 直近平均 → 標準歩数 の順で解決する（データが無い日でもNEAT設定が効く）
+  let activeCal, assumed = null;
+  if (detail) {
+    activeCal = detail.activeCal;
+  } else {
+    const avg = recentAvgActiveCal(date);
+    if (avg != null) { activeCal = avg; assumed = 'recent_avg'; }
+    else { activeCal = stepsToCal(DEFAULT_DAILY_STEPS, profile.weight || userWeight || 65); assumed = 'default_steps'; }
+  }
+  const pre = bmr * getNeatMult() + activeCal;
+  const tef = pre * TEF_RATIO;
+  const base = pre + tef;
+  return { bmr, detail, base, tdee: Math.round(base), tef: Math.round(tef), activeCal, assumed, simple: false };
+}
+// 画面・CSV・AI向けの「活動分の説明」（実測か、仮定かを区別して表示する）
+function describeActivity(tb) {
+  if (tb.simple) return `活動係数 ${profile.activityFactor || 1.2}（ざっくり設定）`;
+  const neat = `NEAT「${getNeatLabel()}」+${getNeatPct()}%`;
+  let act;
+  if (tb.detail) act = `活動 ${tb.activeCal}kcal（${tb.detail.source==='google_health'?'Google Health実測':'歩数入力'} ${(tb.detail.steps||0).toLocaleString()}歩）`;
+  else if (tb.assumed === 'recent_avg') act = `想定活動 ${tb.activeCal}kcal（直近の記録の平均）`;
+  else act = `想定活動 ${tb.activeCal}kcal（標準${DEFAULT_DAILY_STEPS.toLocaleString()}歩相当・活動データなし）`;
+  return `${neat} + ${act} + 食事誘発熱産生 ${tb.tef}kcal（+${Math.round(TEF_RATIO*100)}%）`;
 }
 function calcTDEE(date) {
   return getTdeeBreakdown(date).tdee;
@@ -1276,9 +1369,7 @@ function renderRecord() {
   const bmrFormulaDesc = usingKatchFallback()
     ? 'Mifflin-St Jeor式・体脂肪率未設定のためKatch-McArdleから自動フォールバック'
     : (profile.bmrFormula === 'katch' ? 'Katch-McArdle式（除脂肪体重ベース）' : 'Mifflin-St Jeor式');
-  const actDesc = actDetail
-    ? `× NEAT「${getNeatLabel()}」+${getNeatPct()}% + 活動 ${actDetail.activeCal}kcal（${actDetail.source==='google_health'?'Google Health実測':'歩数入力'} ${(actDetail.steps||0).toLocaleString()}歩）`
-    : `× 活動係数 ${profile.activityFactor || 1.2}`;
+  const actDesc = `× ${describeActivity(tb)}`;
   const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
   const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
@@ -1362,7 +1453,7 @@ function renderRecord() {
         if (editingId === e.id) {
           // 編集フォーム用に100g基準値をstoreする
           window._editBase = window._editBase || {};
-          window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
+          window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,fibS:fibSInputVal(e),iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
             ingredients: (e.ingredients||[]).map(ing=>({...ing}))};
           html += `<div class="edit-form" id="editForm_${e.id}">
             <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id})"></div></div>
@@ -1385,7 +1476,7 @@ function renderRecord() {
               <div class="field" style="flex:1"><label>目標カロリーで調整（PFC比を維持）</label><input type="number" placeholder="例: 100" step="1" onchange="recalcEditByCal(${e.id}, this.value)"></div>
             </div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>kcal</label><input type="number" id="ec${e.id}" value="${r1(e.cal)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>P</label><input type="number" id="ep${e.id}" value="${r1(e.p)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>F</label><input type="number" id="ef${e.id}" value="${r1(e.f)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>C</label><input type="number" id="ecc${e.id}" value="${r1(e.c)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
-            <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:5px"><div class="field"><label>食物繊維</label><input type="number" id="efib${e.id}" value="${r1(e.fiber||0)}" step="0.1" data-prev="${r1(e.fiber||0)}" onchange="fiberEdited(${e.id})"></div><div class="field"><label>うち水溶性</label><input type="number" id="efibs${e.id}" value="${fibSInputVal(e)}" placeholder="自動" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>鉄(mg)</label><input type="number" id="efe${e.id}" value="${r1(e.iron||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>Ca(mg)</label><input type="number" id="eca${e.id}" value="${r1(e.calcium||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:5px"><div class="field"><label>VitC</label><input type="number" id="evc${e.id}" value="${r1(e.vitc||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>VitD</label><input type="number" id="evd${e.id}" value="${r1(e.vitd||0)}" step="0.1" onchange="autoSaveEdit(${e.id})"></div><div class="field"><label>塩分</label><input type="number" id="esl${e.id}" value="${r2(e.salt||0)}" step="0.01" onchange="autoSaveEdit(${e.id})"></div></div>
             <div class="row" style="margin-bottom:0"><div class="field"><label>タイミング</label><select id="em${e.id}" onchange="autoSaveEdit(${e.id})">${MEALS_ORDER.map(m=>`<option${e.meal===m?' selected':''}>${m}</option>`).join('')}</select></div><div class="field" style="flex:1"><label>摂取時刻</label><input type="time" id="et${e.id}" value="${e.time||''}" onchange="autoSaveEdit(${e.id})"></div>
             <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="height:32px;margin-top:auto">保存</button>
@@ -1423,6 +1514,7 @@ function renderRecord() {
             </div>
             <div class="macro-row">
               <div class="field"><label>食物繊維(g)</label><input type="number" id="addFib_${meal}" placeholder="0" step="0.1"></div>
+              <div class="field"><label>うち水溶性(g)</label><input type="number" id="addFibS_${meal}" placeholder="自動" step="0.1"></div>
               <div class="field"><label>鉄(mg)</label><input type="number" id="addFe_${meal}" placeholder="0" step="0.1"></div>
               <div class="field"><label>Ca(mg)</label><input type="number" id="addCa_${meal}" placeholder="0" step="0.1"></div>
               <div class="field"><label>VitC(mg)</label><input type="number" id="addVc_${meal}" placeholder="0" step="0.1"></div>
@@ -1896,7 +1988,9 @@ function fillAddMacros(f, amt, meal) {
   const r=amt/(f.per||100);
   const set=(id,val)=>{const el=document.getElementById(id+'_'+meal);if(el)el.value=r1(val*r)};
   set('addCal',f.cal);set('addP',f.p);set('addF',f.f);set('addC',f.c);
-  set('addFib',f.fiber||0);set('addFe',f.iron||0);set('addCa',f.calcium||0);set('addVc',f.vitc||0);set('addVd',f.vitd||0);
+  set('addFib',f.fiber||0);
+  { const el=document.getElementById('addFibS_'+meal); if(el){ const k=(f.fibS||0)+(f.fibI||0); el.value = (f.fiber>0 && k>0) ? r1(f.fiber*r*(f.fibS||0)/k) : ''; } }
+  set('addFe',f.iron||0);set('addCa',f.calcium||0);set('addVc',f.vitc||0);set('addVd',f.vitd||0);
   const se=document.getElementById('addSalt_'+meal); if(se) se.value=r2((f.salt||0)*r);
 }
 function recalcAdd(meal) {
@@ -1981,7 +2075,7 @@ function addEntry(meal) {
       if (unit === 'serving' && base?.serving) return Math.round(raw * base.serving * 10) / 10;
       return raw || 100;
     })(),
-    fiber:gv('addFib_'+meal),iron:gv('addFe_'+meal),calcium:gv('addCa_'+meal),vitc:gv('addVc_'+meal),vitd:gv('addVd_'+meal),salt:gv('addSalt_'+meal),
+    fiber:gv('addFib_'+meal),...fibSplitFromInput(document.getElementById('addFibS_'+meal)?.value, gv('addFib_'+meal)),iron:gv('addFe_'+meal),calcium:gv('addCa_'+meal),vitc:gv('addVc_'+meal),vitd:gv('addVd_'+meal),salt:gv('addSalt_'+meal),
     fa: window._addBase?.[meal]?.fa || null,
     aa: window._addBase?.[meal]?.aa || null,
     _fa: window._addBase?.[meal]?.fa || null,
@@ -2081,7 +2175,7 @@ function updateEditIngredientAmt(id, idx, val) {
   MICRO_KEYS.forEach(k => { e[k] = microRound(k, tot[k]); });
 
   window._editBase = window._editBase || {};
-  window._editBase[id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
+  window._editBase[id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,fibS:fibSInputVal(e),iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
     ingredients: e.ingredients.map(ing=>({...ing}))};
 
   const amtEl = document.getElementById('ea'+id); if (amtEl) amtEl.value = e.amount;
@@ -2089,11 +2183,22 @@ function updateEditIngredientAmt(id, idx, val) {
   if (sliderEl) { if (e.amount > parseFloat(sliderEl.max)) sliderEl.max = e.amount; sliderEl.value = e.amount; }
   const setVal = (elId, v, dec) => { const el = document.getElementById(elId+id); if (el) el.value = dec === 2 ? r2(v) : r1(v); };
   setVal('ec', e.cal); setVal('ep', e.p); setVal('ef', e.f); setVal('ecc', e.c);
-  setVal('efib', e.fiber); setVal('efe', e.iron); setVal('eca', e.calcium);
+  setVal('efib', e.fiber); { const el=document.getElementById('efibs'+id); if(el) el.value = fibSInputVal(e); }
+  setVal('efe', e.iron); setVal('eca', e.calcium);
   setVal('evc', e.vitc); setVal('evd', e.vitd); setVal('esl', e.salt, 2);
   const totalLineEl = document.getElementById('editIngTotal'+id);
   if (totalLineEl) totalLineEl.textContent = `合計 ${ri(e.cal)}kcal P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber ? ' 繊'+r1(e.fiber)+'g' : ''}`;
   saveDebounced();
+}
+// 食物繊維の合計を手で変えたら、水溶性の入力値も同じ比率でスケールしてから保存する
+function fiberEdited(id) {
+  const fe = document.getElementById('efib'+id), se = document.getElementById('efibs'+id);
+  if (fe && se) {
+    const prev = parseFloat(fe.dataset.prev) || 0, now = parseFloat(fe.value) || 0;
+    if (se.value.trim() !== '' && prev > 0) se.value = r1((parseFloat(se.value) || 0) * now / prev);
+    fe.dataset.prev = now;
+  }
+  autoSaveEdit(id);
 }
 function recalcEdit(id) {
   const base = window._editBase && window._editBase[id];
@@ -2115,6 +2220,7 @@ function recalcEdit(id) {
   set('ef', base.f);
   set('ecc', base.c);
   set('efib', base.fiber);
+  { const el = document.getElementById('efibs'+id); if (el) el.value = (base.fibS === '' || base.fibS == null) ? '' : r1(base.fibS * r); }
   set('efe', base.iron);
   set('eca', base.calcium);
   set('evc', base.vitc);
@@ -2163,6 +2269,9 @@ function autoSaveEdit(id) {
     time:    document.getElementById('et'+id)?.value || entries[idx].time,
   };
   syncFiberSplit(_oldEntry, _newEntry); // 食物繊維の量が変わった場合は内訳も同じ比率でスケール
+  // 水溶性の入力欄に値があればそれを優先（不溶性＝食物繊維−水溶性）。空欄なら自動のまま
+  const _fsEl = document.getElementById('efibs'+id);
+  if (_fsEl && _fsEl.value.trim() !== '') { const sp = fibSplitFromInput(_fsEl.value, _newEntry.fiber); if (sp.fibS != null) Object.assign(_newEntry, sp); }
   entries[idx] = _newEntry;
   saveDebounced();
 }
@@ -3364,7 +3473,7 @@ function renderCharts() {
 }
 
 // ── CSV ──
-const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt'];
+const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble'];
 const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal'];
 function exportCSV() {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
@@ -3372,7 +3481,7 @@ function exportCSV() {
   if(from) data=data.filter(e=>e.date>=from);
   if(to) data=data.filter(e=>e.date<=to);
   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
-  const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0)].join(','))];
+  const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })()].join(','))];
 
   // ── 消費カロリー詳細（日別、1行1日）──
   // 食事記録の対象日を軸に、その日のTDEE内訳・運動消費・摂取との差引をまとめる。
@@ -3384,14 +3493,12 @@ function exportCSV() {
     rows.push(TDEE_CSV_HEADERS.join(','));
     dates.forEach(d => {
       const tb = getTdeeBreakdown(d);
-      const activityDesc = tb.detail
-        ? `NEAT ${getNeatPct()}%（${(tb.detail.source==='google_health')?'Google Health実測':'歩数入力'}）`
-        : `活動係数 ${profile.activityFactor || 1.2}`;
+      const activityDesc = describeActivity(tb).replace(/"/g, '""');
       const exCal = exercises.filter(x => x.date === d).reduce((a,x) => a + (x.cal||0), 0);
       const intake = r1(sumEntries(getDayEntries(d)).cal);
       const totalBurn = r1(tb.tdee + exCal);
       rows.push([
-        d, ri(tb.bmr), `"${activityDesc}"`, tb.detail ? ri(tb.detail.activeCal) : '',
+        d, ri(tb.bmr), `"${activityDesc}"`, tb.simple ? '' : ri(tb.activeCal),
         tb.detail ? (tb.detail.steps||0) : '', tb.tdee, ri(exCal), ri(totalBurn),
         intake, r1(intake - totalBurn),
       ].join(','));
@@ -3423,6 +3530,10 @@ function importCSV() {
         fiber:parseFloat(cols[idxOf('fiber')])||0, iron:parseFloat(cols[idxOf('iron')])||0,
         calcium:parseFloat(cols[idxOf('calcium')])||0, vitc:parseFloat(cols[idxOf('vitc')])||0,
         vitd:parseFloat(cols[idxOf('vitd')])||0, salt:parseFloat(cols[idxOf('salt')])||0};
+      if (idxOf('fiber_soluble') >= 0 && idxOf('fiber_insoluble') >= 0) { // 内訳つきCSV。無い古いCSVは食品名から自動推定される
+        const fs = parseFloat(cols[idxOf('fiber_soluble')]), fi = parseFloat(cols[idxOf('fiber_insoluble')]);
+        if (isFinite(fs) && isFinite(fi) && fs + fi > 0) { entry.fibS = r1(fs); entry.fibI = r1(Math.max(0, entry.fiber - r1(fs))); }
+      }
       const dup=entries.some(e=>e.date===entry.date&&e.meal===entry.meal&&e.name===entry.name&&e.amount===entry.amount);
       if(!dup){entries.push(entry);count++}else skip++;
     }catch(err){skip++}
@@ -3484,6 +3595,7 @@ function sanitizeImportedFood(raw, kind) {
     cal: Math.max(0, cal), p: Math.max(0, p), f: Math.max(0, f), c: Math.max(0, c),
     ...pickMicros(raw),
   };
+  Object.assign(food, aiFiberSplit({ ...raw, name }));
   const fa = sanitizeFa(raw.fa), aa = sanitizeAa(raw.aa);
   if (fa) food.fa = fa; if (aa) food.aa = aa;
   if (typeof raw.en === 'string' && raw.en.trim()) food.en = raw.en.trim().slice(0, 120);
@@ -3494,7 +3606,7 @@ function sanitizeImportedFood(raw, kind) {
       const ip = parseFloat(ing.per) || 100, ia = parseFloat(ing.amount) || ip;
       return { name: String(ing.name || '材料'), amount: ia, per: ip,
         cal: parseFloat(ing.cal) || 0, p: parseFloat(ing.p) || 0, f: parseFloat(ing.f) || 0, c: parseFloat(ing.c) || 0,
-        ...pickMicros(ing) };
+        ...pickMicros(ing), ...aiFiberSplit({ ...ing, name: String(ing.name || '材料') }) };
     });
   }
   return food;
@@ -3549,9 +3661,9 @@ function saveCustomFood() {
   if(!name){msg.className='status-msg status-err';msg.textContent='食品名を入力してください';return}
   const yomi=sanitizeYomi(document.getElementById('csFoodYomi').value);
   customFoods.push({id:Date.now(),name,...(yomi?{yomi}:{}),cal:gv('csCal'),p:gv('csP'),f:gv('csF'),c:gv('csC'),per:gv('csPer')||100,
-    fiber:gv('csFib'),iron:gv('csFe'),calcium:gv('csCa'),vitc:gv('csVc'),vitd:gv('csVd'),salt:gv('csSalt')});
+    fiber:gv('csFib'),...fibSplitFromInput(document.getElementById('csFibS').value, gv('csFib')),iron:gv('csFe'),calcium:gv('csCa'),vitc:gv('csVc'),vitd:gv('csVd'),salt:gv('csSalt')});
   saveCustom(); msg.className='status-msg status-ok'; msg.textContent=`「${name}」を登録しました`;
-  ['csFoodName','csFoodYomi','csCal','csP','csF','csC','csFib','csFe','csCa','csVc','csVd','csSalt'].forEach(id=>document.getElementById(id).value='');
+  ['csFoodName','csFoodYomi','csCal','csP','csF','csC','csFib','csFibS','csFe','csCa','csVc','csVd','csSalt'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('csPer').value='100'; renderCustomFoodList(); setTimeout(()=>{msg.textContent=''},2500);
 }
 function deleteCustomFood(id){
@@ -3600,6 +3712,11 @@ function saveEditCustomFood(id) {
     fiber:   gvSuf('Fib'), iron: gvSuf('Fe'), calcium: gvSuf('Ca'),
     vitc:    gvSuf('Vc'),  vitd: gvSuf('Vd'), salt: gvSuf('Salt'),
   };
+  { // 水溶性の入力があれば内訳を保存、空欄なら内訳を外して自動（食品名から推定／区分不明）に戻す
+    delete customFoods[idx].fibS; delete customFoods[idx].fibI;
+    const fs = document.getElementById('ecfFibS'+id);
+    Object.assign(customFoods[idx], fibSplitFromInput(fs ? fs.value : '', customFoods[idx].fiber));
+  }
   if (yomi) customFoods[idx].yomi = yomi; else delete customFoods[idx].yomi; // 空欄なら自動推定に戻す
   saveCustom();
   editingCustomFoodId = null;
@@ -3615,7 +3732,7 @@ function renderCustomFoodList() {
         <div class="row" style="margin-bottom:0"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="ecfName${f.id}" value="${f.name}"></div><div class="field" style="flex:1"><label>基準量(g)</label><input type="number" id="ecfPer${f.id}" value="${f.per}"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>読み（任意・空欄で自動推定）</label><input type="text" id="ecfYomi${f.id}" value="${f.yomi||''}" autocomplete="off"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>kcal</label><input type="number" id="ecfCal${f.id}" value="${f.cal}" step="0.1"></div><div class="field"><label>P</label><input type="number" id="ecfP${f.id}" value="${f.p}" step="0.1"></div><div class="field"><label>F</label><input type="number" id="ecfF${f.id}" value="${f.f}" step="0.1"></div><div class="field"><label>C</label><input type="number" id="ecfC${f.id}" value="${f.c}" step="0.1"></div></div>
-        <div class="row" style="margin-bottom:0"><div class="field"><label>食物繊維</label><input type="number" id="ecfFib${f.id}" value="${f.fiber||0}" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="ecfFe${f.id}" value="${f.iron||0}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="ecfCa${f.id}" value="${f.calcium||0}" step="0.1"></div></div>
+        <div class="row" style="margin-bottom:0"><div class="field"><label>食物繊維</label><input type="number" id="ecfFib${f.id}" value="${f.fiber||0}" step="0.1"></div><div class="field"><label>うち水溶性</label><input type="number" id="ecfFibS${f.id}" value="${fibSInputVal(f)}" placeholder="自動" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="ecfFe${f.id}" value="${f.iron||0}" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="ecfCa${f.id}" value="${f.calcium||0}" step="0.1"></div></div>
         <div class="row" style="margin-bottom:0"><div class="field"><label>VitC</label><input type="number" id="ecfVc${f.id}" value="${f.vitc||0}" step="0.1"></div><div class="field"><label>VitD</label><input type="number" id="ecfVd${f.id}" value="${f.vitd||0}" step="0.1"></div><div class="field"><label>塩分</label><input type="number" id="ecfSalt${f.id}" value="${f.salt||0}" step="0.01"></div></div>
         <div style="display:flex;gap:6px">
           <button class="btn btn-primary btn-sm" style="flex:1" onclick="saveEditCustomFood(${f.id})">保存</button>
@@ -4194,10 +4311,7 @@ function buildFullContext() {
   // ── プロフィール ──
   const sexLabel = profile.sex === 'male' ? '男性' : '女性';
   const actLabel = ({1.2:'座位中心',1.375:'軽い運動',1.55:'中程度',1.725:'激しい運動',1.9:'非常に激しい'})[String(profile.activityFactor)] || String(profile.activityFactor);
-  const todayDetail = getDetailedActivity(TODAY);
-  const actDesc = todayDetail
-    ? `詳細モード(NEAT:${getNeatLabel()}+${getNeatPct()}%, 本日${(todayDetail.steps||0)}歩/活動${todayDetail.activeCal}kcal, ${todayDetail.source==='google_health'?'Google Health実測':'歩数手入力'})`
-    : `活動係数:${actLabel}（ざっくり設定）`;
+  const actDesc = describeActivity(getTdeeBreakdown(TODAY));
   lines.push('【プロフィール】');
   lines.push(`性別:${sexLabel} 年齢:${profile.age} 身長:${profile.height}cm 体重:${profile.weight}kg 活動:${actDesc}`);
 
@@ -4331,7 +4445,7 @@ function executeAiCommands(commands, backupLabel) {
             f:       parseFloat(item.f)       || 0,
             c:       parseFloat(item.c)       || 0,
             fiber:   parseFloat(item.fiber)   || 0,
-            ...normFibSplit(item),
+            ...aiFiberSplit(item),
             iron:    parseFloat(item.iron)    || 0,
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
@@ -4402,7 +4516,7 @@ function executeAiCommands(commands, backupLabel) {
             f:       parseFloat(item.f)       || 0,
             c:       parseFloat(item.c)       || 0,
             fiber:   parseFloat(item.fiber)   || 0,
-            ...normFibSplit(item),
+            ...aiFiberSplit(item),
             iron:    parseFloat(item.iron)    || 0,
             calcium: parseFloat(item.calcium) || 0,
             vitc:    parseFloat(item.vitc)    || 0,
@@ -4451,6 +4565,7 @@ function executeAiCommands(commands, backupLabel) {
           f:       parseFloat(food.f)       || 0,
           c:       parseFloat(food.c)       || 0,
           ...pickMicros(food),
+          ...aiFiberSplit(food),
           ...(aiFa ? { fa: aiFa } : {}),
           ...(aiAa ? { aa: aiAa } : {}),
           digest:  classifyDigestCategory(food.name, parseFloat(food.p) || 0),
@@ -4479,6 +4594,7 @@ function executeAiCommands(commands, backupLabel) {
           return;
         }
         const scale = 100 / (src.amount || 100);
+        const srcM = { ...src }; materializeFiberSplit(srcM); // 内訳なしの過去記録も、名前からの推定で内訳を確定させてから登録
         customFoods.push({
           id:      Date.now() + Math.random(),
           name,
@@ -4487,7 +4603,7 @@ function executeAiCommands(commands, backupLabel) {
           p:       r1((src.p       || 0) * scale),
           f:       r1((src.f       || 0) * scale),
           c:       r1((src.c       || 0) * scale),
-          ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, (src[k] || 0) * scale)])),
+          ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, (srcM[k] || 0) * scale)])),
           fa:      src.fa || null,
           aa:      src.aa || null,
           digest:  src.digest || classifyDigestCategory(name, src.p || 0),
@@ -4605,7 +4721,7 @@ function executeAiCommands(commands, backupLabel) {
           const amount = parseFloat(ing.amount) || per;
           const r      = amount / per;
           const cal = parseFloat(ing.cal) || 0, p = parseFloat(ing.p) || 0, f = parseFloat(ing.f) || 0, c = parseFloat(ing.c) || 0;
-          const mic = pickMicros(ing);
+          const mic = { ...pickMicros(ing), ...aiFiberSplit(ing) };
           const o = { name: ing.name || '材料', amount, per, cal, p, f, c, ...mic,
             _cal: r1(cal*r), _p: r1(p*r), _f: r1(f*r), _c: r1(c*r) };
           MICRO_KEYS.forEach(k => { o['_'+k] = microRound(k, mic[k]*r); });
@@ -4723,6 +4839,8 @@ function executeAiCommands(commands, backupLabel) {
             if (!isNaN(v)) customFoods[idx][k] = Math.max(0, v);
           });
           if (newName) customFoods[idx].name = newName;
+          // 食物繊維や内訳が更新された場合は、合計と整合させる（内訳が無ければ名前から推定）
+          if (['fiber','fibS','fibI'].some(k => updates[k] != null && updates[k] !== '')) reconcileFiberSplit(customFoods[idx]);
           ['en','tags'].forEach(k => { if (typeof updates[k] === 'string') { const v = updates[k].trim().slice(0, 200); if (v) customFoods[idx][k] = v; else delete customFoods[idx][k]; } });
           // 読み: 指定があれば更新、名前だけ変えた場合は古い読みが残らないよう自動推定に戻す
           if (updates.yomi != null) {
@@ -4845,7 +4963,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     "type": "add",
     "dates": ["${today}"],
     "meal": "昼食",
-    "items": [{"name": "食品名", "amount": 100, "cal": 168, "p": 2.5, "f": 0.3, "c": 37.1, "fiber": 0.3, "iron": 0.1, "calcium": 3, "vitc": 0, "vitd": 0, "salt": 0}]
+    "items": [{"name": "食品名", "amount": 100, "cal": 168, "p": 2.5, "f": 0.3, "c": 37.1, "fiber": 0.3, "fibS": 0.1, "fibI": 0.2, "iron": 0.1, "calcium": 3, "vitc": 0, "vitd": 0, "salt": 0}]
   }],
   "backup_label": "朝食追加",
   "message": "ユーザーへの返答"
@@ -4876,7 +4994,10 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     【重要】cal/p/f/c だけでなく、可能な範囲で以下も必ず埋めること。ユーザーに数値を聞き返すのは禁止（パッケージの栄養成分表示に無い項目は、
     同カテゴリの一般的な食品を参考に自分で推定する。本当に無視できる量（0扱いで妥当）ならそのフィールド自体を省略してよい）：
     - fiber/iron/calcium/vitc/vitd/salt（MICRO_GOALSにある食物繊維・鉄・カルシウム・VitC・VitD・塩分。可能なら vita/vite/vitk/iodine も）
-    - fiberが0より大きい場合は fibS（水溶性食物繊維g）と fibI（不溶性食物繊維g）も付ける。fibS+fibI は fiber とほぼ一致させること（日本食品標準成分表(八訂)の値、無ければ同カテゴリの一般的な比率で推定。海藻類など内訳が不明なら省略してよい）
+    - fiberが0より大きい場合は fibS（水溶性食物繊維g）と fibI（不溶性食物繊維g）を【必ず】付ける（省略禁止）。fibS+fibI は fiber と一致させること。
+      日本食品標準成分表(八訂)の水溶性/不溶性の値が分かればそれを使い、分からなければ下の目安比率で推定して必ず入れる（海藻類・加工品・外食も推定でよい）。
+      水溶性の割合の目安: 白米・餅 0〜3% / 小麦粉・パン・麺 25〜45% / 玄米・雑穀 20〜25% / オーツ 30〜35% / 野菜 20〜30%（ごぼう40%・にんにく60%）/
+      果物 25〜50%（バナナ10%） / 芋類 30〜35% / 大豆・豆類 10%（納豆34%）/ きのこ 5〜10% / ナッツ・種子 10〜15% / 海藻 35〜70% / 混合料理 25〜30%
     - fa・aa は原則省略してよい（記録時に食品名から自動推定される）。値に確信がある場合のみ、
       fa: {sat,mufa,n3,n6,trans}（脂質に対する比率、合計0.8〜1.0）/ aa: {leu,ile,val,lys,met,thr,trp,his,score} を付ける
     - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
@@ -4889,7 +5010,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       "yomi": "サントリーカクハイボールカン",
       "per": 350, "serving": 350,
       "cal": 154, "p": 0, "f": 0, "c": 10.5,
-      "fiber": 0, "iron": 0, "calcium": 0, "vitc": 0, "vitd": 0, "salt": 0
+      "fiber": 0, "fibS": 0, "fibI": 0, "iron": 0, "calcium": 0, "vitc": 0, "vitd": 0, "salt": 0
     }]
   }],
   "backup_label": "カスタム食品登録",
@@ -4969,7 +5090,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     "name": "自家製プロテインオートミール",
     "yomi": "ジカセイプロテインオートミール",
     "ingredients": [
-      {"name": "オートミール", "amount": 50, "per": 100, "cal": 380, "p": 13.7, "f": 5.7, "c": 69.1, "fiber": 9.4},
+      {"name": "オートミール", "amount": 50, "per": 100, "cal": 380, "p": 13.7, "f": 5.7, "c": 69.1, "fiber": 9.4, "fibS": 3.2, "fibI": 6.2},
       {"name": "ホエイプロテイン", "amount": 30, "per": 100, "cal": 400, "p": 80, "f": 5, "c": 8},
       {"name": "無調整豆乳", "amount": 200, "per": 100, "cal": 46, "p": 3.6, "f": 2, "c": 3.1}
     ]
