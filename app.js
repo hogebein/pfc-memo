@@ -883,27 +883,30 @@ function getDetailedActivity(date) {
   }
   return null;
 }
-function calcBMR() {
+// BMRを「値＋計算式（数値を代入した形）」で返す。CSV出力などで根拠を示すために使う
+function getBmrDetail() {
   const w = profile.weight || userWeight || 65;
   const h = profile.height || 170;
   const age = profile.age || 30;
   const isMale = profile.sex !== 'female';
-  let bmr;
+  let raw, name, expr;
   if (profile.bmrFormula === 'katch' && profile.bf != null && profile.bf > 0) {
     // Katch-McArdle式：除脂肪体重(LBM)ベース。性別・年齢を使わず、体組成のみで算出する
     const lbm = w * (1 - profile.bf / 100);
-    bmr = 370 + 21.6 * lbm;
+    raw = 370 + 21.6 * lbm;
+    name = 'Katch-McArdle';
+    expr = `370 + 21.6 × LBM(${r1(lbm)}kg = ${w}kg × (1 − ${profile.bf}%))`;
   } else {
     // Mifflin-St Jeor式（体脂肪率が未設定/0の場合はこちらにフォールバック）
-    bmr = isMale
-      ? 10*w + 6.25*h - 5*age + 5
-      : 10*w + 6.25*h - 5*age - 161;
+    raw = isMale ? 10*w + 6.25*h - 5*age + 5 : 10*w + 6.25*h - 5*age - 161;
+    name = 'Mifflin-St Jeor' + (usingKatchFallback() ? '（体脂肪率未設定のためKatchから切替）' : '');
+    expr = `10×${w} + 6.25×${h} − 5×${age} ${isMale ? '+ 5' : '− 161'}`;
   }
   const temp = profile.temp ?? 22;
-  if (temp < 10) bmr *= 1.06;
-  else if (temp >= 30) bmr *= 1.025;
-  return bmr;
+  const tempMult = temp < 10 ? 1.06 : (temp >= 30 ? 1.025 : 1);
+  return { bmr: raw * tempMult, raw, name, expr, temp, tempMult, w, h, age, sex: isMale ? '男性' : '女性', bf: profile.bf };
 }
+function calcBMR() { return getBmrDetail().bmr; }
 function usingKatchFallback() {
   return profile.bmrFormula === 'katch' && !(profile.bf != null && profile.bf > 0);
 }
@@ -951,6 +954,18 @@ function getTdeeBreakdown(date) {
   const tef = pre * TEF_RATIO;
   const base = pre + tef;
   return { bmr, detail, base, tdee: Math.round(base), tef: Math.round(tef), activeCal, assumed, simple: false };
+}
+// TDEEの計算式を、数値を代入した形で返す（CSVなど根拠の記録用）
+function describeTdeeFormula(tb) {
+  const b = ri(tb.bmr);
+  if (tb.simple) return `BMR ${b} × 活動係数 ${profile.activityFactor} = ${tb.tdee}`;
+  const mult = getNeatMult();
+  return `(BMR ${b} × NEAT ${mult.toFixed(2)} + 活動 ${ri(tb.activeCal)}) × (1 + TEF ${Math.round(TEF_RATIO*100)}%) = ${tb.tdee}`;
+}
+function tdeeActivitySource(tb) {
+  if (tb.simple) return 'simple_factor';
+  if (tb.detail) return tb.detail.source === 'google_health' ? 'google_health' : 'manual_steps';
+  return tb.assumed === 'recent_avg' ? 'recent_14d_avg' : 'default_steps';
 }
 // 画面・CSV・AI向けの「活動分の説明」（実測か、仮定かを区別して表示する）
 function describeActivity(tb) {
@@ -3474,7 +3489,8 @@ function renderCharts() {
 
 // ── CSV ──
 const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble'];
-const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal'];
+const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal',
+  'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used'];
 function exportCSV() {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
   let data=[...entries];
@@ -3491,6 +3507,8 @@ function exportCSV() {
   if (dates.length) {
     rows.push('');
     rows.push(TDEE_CSV_HEADERS.join(','));
+    const q = v => `"${String(v).replace(/"/g, '""')}"`;
+    const bd = getBmrDetail();
     dates.forEach(d => {
       const tb = getTdeeBreakdown(d);
       const activityDesc = describeActivity(tb).replace(/"/g, '""');
@@ -3501,6 +3519,9 @@ function exportCSV() {
         d, ri(tb.bmr), `"${activityDesc}"`, tb.simple ? '' : ri(tb.activeCal),
         tb.detail ? (tb.detail.steps||0) : '', tb.tdee, ri(exCal), ri(totalBurn),
         intake, r1(intake - totalBurn),
+        q(describeTdeeFormula(tb)), q(bd.name), q(`${bd.expr} = ${ri(bd.raw)}` + (bd.tempMult !== 1 ? ` × 気温補正${bd.tempMult}(${bd.temp}℃)` : '') + ` → BMR ${ri(bd.bmr)}`),
+        bd.tempMult, tb.simple ? '' : getNeatPct(), tdeeActivitySource(tb), tb.simple ? 0 : tb.tef,
+        q(`${bd.sex} ${bd.h}cm ${bd.w}kg ${bd.age}歳` + (bd.bf ? ` 体脂肪${bd.bf}%` : '') + '（現在のプロフィール設定）'),
       ].join(','));
     });
   }
@@ -4541,11 +4562,19 @@ function executeAiCommands(commands, backupLabel) {
     }
     // ── ADD_CUSTOM_FOOD ──（カスタム食品DBへの登録）
     else if (cmd.type === 'add_custom_food') {
-      const foods = Array.isArray(cmd.foods) ? cmd.foods : [cmd];
+      // AIが foods 以外の形（food:{...} / items:[...] / custom_foods:[...]）で返しても受け付ける
+      const foods = Array.isArray(cmd.foods) ? cmd.foods
+        : Array.isArray(cmd.custom_foods) ? cmd.custom_foods
+        : Array.isArray(cmd.items) ? cmd.items
+        : (cmd.food && typeof cmd.food === 'object') ? [cmd.food] : [cmd];
       foods.forEach(food => {
-        if (!food.name) return;
+        if (!food.name) { log.push('⚠️ 食品名(name)が指定されていない項目があり、登録できませんでした（コマンドの形式が不正）'); return; }
         if (customFoods.some(f => normFoodName(f.name) === normFoodName(food.name))) {
           log.push(`ℹ️ 「${food.name}」は既にカスタム食品DBに登録済みです（重複登録をスキップしました）`);
+          return;
+        }
+        if (hasNoNutritionValues(food)) {
+          log.push(`⚠️ 「${food.name}」は栄養値(cal/p/f/c)が指定されていないため登録しませんでした（0kcalの食品がDBに残るのを防ぐため）。もう一度、値を推定して登録を依頼してください`);
           return;
         }
         const per = parseFloat(food.per) || 100;
@@ -4572,7 +4601,7 @@ function executeAiCommands(commands, backupLabel) {
           _src:    'ai',
         };
         customFoods.push(newFood);
-        log.push(`📦 カスタム食品「${food.name}」を登録（${per}gあたり ${Math.round(food.cal)}kcal）`);
+        log.push(`📦 カスタム食品「${food.name}」を登録（${per}gあたり ${Math.round(newFood.cal)}kcal）`);
       });
       saveCustom();
       changed = true;
@@ -4716,7 +4745,16 @@ function executeAiCommands(commands, backupLabel) {
         const rawIngredients = Array.isArray(combo.ingredients) ? combo.ingredients : [];
         if (!rawIngredients.length) { log.push(`⚠️ 「${name}」の材料が指定されていません`); return; }
 
-        const ingredients = rawIngredients.map(ing => {
+        // 栄養値(cal/p/f/c)が全く指定されていない材料は、食品DB（内蔵/カスタム/複合）の同名食品の値で補う。
+        // DBにも無ければ0kcalのまま黙って登録せず、警告を出す（AIが値の指定を忘れた場合の保険）
+        const filledFromDb = [], unresolved = [];
+        const ingredients = rawIngredients.map(ing0 => {
+          let ing = ing0;
+          if (['cal','p','f','c'].every(k => ing0[k] == null || ing0[k] === '')) {
+            const dbf = getAllFoods().find(x => normFoodName(x.name) === normFoodName(ing0.name));
+            if (dbf) { ing = { ...dbf, name: ing0.name || dbf.name, per: dbf.per || 100, amount: ing0.amount }; filledFromDb.push(ing.name); }
+            else unresolved.push(ing0.name || '材料');
+          }
           const per    = parseFloat(ing.per) || 100;
           const amount = parseFloat(ing.amount) || per;
           const r      = amount / per;
@@ -4729,6 +4767,8 @@ function executeAiCommands(commands, backupLabel) {
         });
         const totalAmt = ingredients.reduce((a,f) => a + f.amount, 0);
         if (totalAmt <= 0) { log.push(`⚠️ 「${name}」の材料の量が不正です`); return; }
+        if (filledFromDb.length) log.push(`ℹ️ 「${name}」: 栄養値の指定が無かった材料（${filledFromDb.join('、')}）は食品DBの登録値を使用しました`);
+        if (unresolved.length) log.push(`⚠️ 「${name}」: 材料（${unresolved.join('、')}）は栄養値の指定もDB登録も無いため0kcalで登録されています。値を指定して登録し直してください`);
         const tot = comboTotals(ingredients);
 
         // 100gあたりに正規化せず、材料の総重量を基準量(per)にする
@@ -4892,6 +4932,112 @@ function searchFoodDbForAi(query) {
     return `${f.name}（${src}・${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}${extras.length ? ' ' + extras.join(' ') : ''}）`;
   }).join('\n');
 }
+// AI応答テキストから操作コマンドのJSONを取り出す（Geminiは```json以外の形式でも返すことがある）
+function parseAiResponse(rawText) {
+  let parsed      = null;
+  let displayText = rawText;
+
+  // 複数のパターンを試みる
+  const jsonPatterns = [
+    /```json\s*([\s\S]*?)```/,   // 標準: ```json ... ```
+    /```\s*(\{[\s\S]*?\})\s*```/, // ``` { ... } ```
+    /(\{[\s\S]*"commands"[\s\S]*?\})\s*$/m, // 末尾のJSONオブジェクト
+    /(\{[\s\S]*"items"[\s\S]*?\})\s*$/m,    // itemsキーを含むJSON
+  ];
+
+  let jsonParseAttemptFailed = false;
+  for (const pat of jsonPatterns) {
+    const m = rawText.match(pat);
+    if (m) {
+      try {
+        parsed = JSON.parse(m[1].trim());
+        displayText = parsed.message || rawText.replace(pat, '').trim();
+        break;
+      } catch(e) { jsonParseAttemptFailed = true; /* 次のパターンを試す */ }
+    }
+  }
+  // ```json のフェンスは見つかったのに、どのパターンでも解析できなかった場合。
+  // 以前はここで何も起きず、AIの返信文だけが表示されて操作が実行されない
+  // （かつ理由も分からない）ことがあった。
+  if (!parsed && jsonParseAttemptFailed) {
+    const warnMsg = '⚠️ AIの応答内に操作コマンドが含まれていましたが、解析に失敗したため実行されませんでした。もう一度お試しください。';
+    displayText = (displayText ? displayText + '\n\n' : '') + warnMsg;
+    logError('AI応答解析', 'JSONコマンドブロックの解析に失敗しました', rawText.slice(0, 800));
+  }
+
+  // 旧形式（items配列）のフォールバック対応
+  if (parsed && !parsed.commands && Array.isArray(parsed.items)) {
+    // 旧itemsフォーマットをcommands形式に変換
+    parsed = {
+      commands: [{
+        type: 'add',
+        dates: [currentDate],
+        meal: parsed.items[0]?.meal || '昼食',
+        items: parsed.items,
+      }],
+      message: parsed.message || '',
+      backup_label: '食品追加',
+    };
+  }
+  return { parsed, displayText, jsonParseAttemptFailed };
+}
+// AIが返答の末尾のJSONで出す「操作コマンド」の種別（関数呼び出し(function call)ではない）
+const AI_COMMAND_TYPES = ['add','add_combo_food','add_custom_food','add_quick_seasoning','combo_food_from_log','delete_by_date_meal','delete_by_id',
+  'delete_combo_food','delete_custom_food','delete_quick_seasoning','edit_custom_food','register_combo_from_log','register_logged_food','replace'];
+// AIが「未対応」「できない」「システムエラー」などを理由に実行を断っているか（実際には対応済みの操作でこう言われることがある）
+function claimsCannot(text) {
+  return /未対応|対応していません|対応しておりません|サポートしていません|サポートされていません|利用できません|使用できません|使えません|システムエラー|エラーが発生|失敗しました|登録できません|実行できません|(削除|更新|追加|記録|保存|置き換え|変更|修正|反映)(することが)?できません/.test(String(text || ''));
+}
+// ユーザーの依頼が「何かを実行してほしい」内容か（質問・雑談は除く）
+function looksLikeActionRequest(text) {
+  const t = String(text || '').trim();
+  if (/[?？]\s*$|教えて|ですか$|でしょうか$/.test(t)) return false;
+  return /登録|追加|記録|食べた|飲んだ|保存|入れて|いれて|削除|消して|置き換え|置換|変更|修正|直して|更新|反映/.test(t);
+}
+// AIの返答が「実行しました」と完了を主張しているか
+function claimActionDoneGuard(text) { return claimsActionDone(text); }
+function claimsActionDone(text) {
+  return /(登録|追加|記録|保存|削除|更新|置き換え|変更|修正|反映)(し|いた)ました|完了しました|しておきました|済みです/.test(String(text || ''));
+}
+// データ全体の簡易シグネチャ（AI操作の前後で比較し、実際に何か変わったかを判定する）
+function aiStateSig() {
+  try { return JSON.stringify([entries, customFoods, comboFoods, quickSeasonings]); } catch (e) { return String(Math.random()); }
+}
+// 記録・登録の依頼か（削除・置換・変更の依頼は対象外：そちらは確認の聞き返しが正当な場合がある）
+function looksLikeRegistrationRequest(text) {
+  const t = String(text || '');
+  if (/削除|消して|消去|置き換え|置換|変更|修正|直して|リセット/.test(t)) return false;
+  return /登録|追加|記録|食べた|飲んだ|保存|入れて|いれて/.test(t);
+}
+// AIの返答が、量・値・目安などの数値を聞き返す内容か
+function looksLikeAskBack(text) {
+  const t = String(text || '');
+  if (!/[?？]|ください|教えて|お知らせ|ご指定|お聞かせ|ご提示/.test(t)) return false;
+  return /目安|何g|何グラム|グラム数|どのくらい|どれくらい|いくつ|何個|何人前|分量|量を|カロリーを|栄養成分|成分表示|数値|PFC|値を|サイズ/.test(t);
+}
+// 栄養値(cal/p/f/c)が全く指定されていない（=このままでは0kcalで登録される）か
+const hasNoNutritionValues = o => ['cal','p','f','c'].every(k => o[k] == null || o[k] === '');
+// 登録系コマンドのうち、栄養値の指定が無く補う手段も無いもの:
+//  ・add_combo_food の材料（食品DBに同名があればDB値で補えるので対象外）
+//  ・add_custom_food の食品（単品は補う元が無い）
+function findUnvaluedItems(parsed) {
+  const out = [];
+  (parsed && Array.isArray(parsed.commands) ? parsed.commands : []).forEach(cmd => {
+    if (cmd.type === 'add_combo_food') {
+      (Array.isArray(cmd.combos) ? cmd.combos : [cmd]).forEach(combo => {
+        (Array.isArray(combo.ingredients) ? combo.ingredients : []).forEach(ing => {
+          if (hasNoNutritionValues(ing) && !getAllFoods().some(x => normFoodName(x.name) === normFoodName(ing.name))) out.push(ing.name || '材料');
+        });
+      });
+    } else if (cmd.type === 'add_custom_food') {
+      (Array.isArray(cmd.foods) ? cmd.foods : [cmd]).forEach(food => {
+        if (food && food.name && hasNoNutritionValues(food)) out.push(food.name);
+      });
+    }
+  });
+  return out;
+}
+
 async function sendAiMessage() {
   const inp = document.getElementById('aiInput');
   const btn = document.getElementById('aiSendBtn');
@@ -4930,7 +5076,7 @@ ${fullCtx}
 【search_food_db 関数について】
 内蔵食品DB・カスタム食品DBを実際に検索できる関数です。以下のような場面で積極的に使ってください：
 - 「〇〇は登録されている？」「〇〇の栄養価教えて」など、DBの内容そのものを聞かれたとき
-- add / add_custom_food 等で記録・登録する前に、同じ食品や紛らわしい名前の食品が既にDBに無いか確認したいとき
+- add / add_custom_food 等のコマンドを出す前に、同じ食品や紛らわしい名前の食品が既にDBに無いか確認したいとき（検索はあくまで確認用。登録そのものは関数ではなくJSONコマンドで行う）
 - 一般的な食品名で構わないので、まず検索してみて、見つかればその実測値を使う。見つからなければ通常通りあなたの知識で推定する
 検索結果が0件でも構いません。無理に何度も検索し直さないでください。
 ただし、ユーザーが登録・記録を依頼している場合、0件だったことを理由に処理を諦めたり、
@@ -4947,6 +5093,9 @@ ${fullCtx}
 
 ━━━━━━━━━━━━━━━━━━━━━━
 【操作コマンド仕様】
+【関数とコマンドの区別（重要）】あなたが関数として呼び出せるのは search_food_db だけです。add / add_custom_food / add_combo_food などは「関数」ではなく、
+返答の末尾に \`\`\`json ブロックで書く【操作コマンド】です。これらを関数として呼び出そうとしてはいけません。
+また「add_custom_food関数は未対応」「関数が用意されていない」などを理由に登録を断ってはいけません（すべて対応済みで、JSONブロックを出力すれば実行されます）。
 操作が必要な場合は必ず末尾に \`\`\`json ブロックを出力してください。
 JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他の形式は使用不可。
 
@@ -5014,7 +5163,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     }]
   }],
   "backup_label": "カスタム食品登録",
-  "message": "カスタム食品DBに登録しました。次回から食品検索で見つかります。"
+  "message": "「（実際の食品名）」をカスタム食品DBに登録しました（100gあたり（実際のkcal）kcal）。記録タブの食品検索から追加できます"
 }
 
 6. register_logged_food — 【現在日時】以下のコンテキストに既にある食事記録（id付き）を、その記録済みの栄養値そのまま100gあたりに換算してカスタム食品DBに登録（栄養値を推定し直さない・改めてお願いされた食品名と一致するidをコンテキストから探して使う）
@@ -5148,6 +5297,12 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 1回の応答で出力するJSONが非常に大きくなりそうな場合（一度に大量の日付・大量の品目を扱う依頼など）は、無理に1回で全て出力しようとせず、まず一部だけを実行してmessageで「残りは分けて実行しましょうか？」と提案する。出力途中で切れて壊れたJSONを返すより、確実に完了する範囲に絞ること
 - dates は必ず配列で指定。「今日」でも ["${today}"] と明示する
 - meal は必ず「朝食」「昼食」「夕食」「間食」のいずれか。省略・空文字・null 禁止
+- 【完了報告のルール】message は、実際に出力したコマンドの内容（食品名・件数・主な値）を具体的に書く。例文の message をそのままコピーしてはいけない。
+  JSONブロック（commands）を出力していないのに「登録しました」「追加しました」などと書くのは厳禁（コマンドを出さなければ、実際には何も実行されない）。実行するなら必ずその回に \`\`\`json でコマンドを出力すること
+- 【聞き返し禁止（登録・記録系）】食品の記録・登録の依頼で、量・カロリー・PFC・栄養成分・per・serving・材料の分量・「目安」などの数値の指定が無くても、ユーザーに聞き返してはいけない。
+  一般的な標準値（標準的な1人前・1個・1食分のグラム数、市販品の一般的な内容量、レシピの一般的な分量、同カテゴリの一般的な栄養値）であなたが推定し、その回のうちにJSONコマンドで実行する。
+  前提にした量や値は message に「〜gと仮定して登録しました。違っていれば教えてください」のように【事後報告】として1〜2行で添える（確認は実行後）。
+  聞き返してよいのは次の場合だけ: ①削除・置換など破壊的操作で対象を特定できない ②食品名・料理名がまったく判別できない ③同名のカスタム食品が既にあり上書きか別名か判断できない。「数値・量・目安が分からない」は聞き返す理由にならない
 - items の栄養素（cal/p/f/c）は必ず推定値を入れる。全て0はNG
 - 「〇〇を食べた」に対して、カロリーやPFCが分からないという理由でユーザーに聞き返すことは禁止。あなたの知識で一般的な値を推定するか、銘柄が特定できる市販品・チェーン店メニューなど確度を上げたい場合は検索ツールを使って調べ、必ず自分で数値を確定させて登録すること。ユーザーへの質問は、量や食事区分など、あなたの知識や検索では埋められない情報が本当に無い場合のみに限る
 - amount は必ず正の数値。単位はg（人前ではなくg換算で記入）
@@ -5178,7 +5333,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 既に記録した食事から登録したい場合は register_logged_food（記録値そのまま使う・最も正確）
 - 複数の記録済み品目を1つにまとめたい場合は register_combo_from_log（対象の判断はあなたの食品知識で行う）
 - まだ記録していない新しい商品を登録したい場合は add_custom_food（per は商品1個・1食分・100g など最も使いやすい単位を選ぶ。栄養成分表示がある場合はその数値を使用、なければ標準的な値を推定）
-- まだ記録していないレシピを、材料の内訳を残したまま登録したい場合は add_combo_food（各材料の栄養値は search_food_db で確認するか、あなたの知識で推定）
+- まだ記録していないレシピを、材料の内訳を残したまま登録したい場合は add_combo_food（各材料の栄養値は search_food_db で確認するか、あなたの知識で推定。分量の指定が無ければ一般的なレシピの分量で決め、聞き返さない）
 - 登録後は「記録タブの食品検索から追加できます」と案内する
 ━━━━━━━━━━━━━━━━━━━━━━`;
 
@@ -5207,9 +5362,21 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 
       if (data.functionCall) {
         const { name, args } = data.functionCall;
-        const toolResult = name === 'search_food_db'
-          ? searchFoodDbForAi(args && args.query)
-          : `未対応の関数です: ${name}`;
+        let toolResult;
+        if (name === 'search_food_db') {
+          toolResult = searchFoodDbForAi(args && args.query);
+        } else {
+          // 操作コマンド(add_custom_food等)を「関数」として呼んでしまった場合。以前は「未対応の関数です」とだけ返しており、
+          // AIがそれを真に受けて「add_custom_food関数は未対応のため登録できません」とユーザーに答えていた
+          const isCmd = AI_COMMAND_TYPES.includes(name);
+          toolResult = isCmd
+            ? `「${name}」は関数ではなく【操作コマンド】です。関数としては呼び出せませんが、アプリは「${name}」に対応済みです。` +
+              `最終返答の末尾に \`\`\`json ブロックで {"commands":[{"type":"${name}", ...}], "message":"..."} の形で出力すれば実行されます。` +
+              `ユーザーに「未対応」「できない」と伝えてはいけません。今すぐコマンドとして出力してください。`
+            : `「${name}」という関数はありません。使える関数は search_food_db のみです。記録・登録などの操作は、最終返答の末尾に \`\`\`json ブロックのコマンドとして出力してください。`;
+          logError('AI関数呼び出し', `AIが関数として「${name}」を呼び出しました（使える関数は search_food_db のみ。${isCmd ? '操作コマンド名を関数として呼んだ' : '存在しない関数'}）`,
+            JSON.stringify(args || {}).slice(0, 500));
+        }
         workingMessages.push({ role: 'assistant', parts: [{ functionCall: { name, args } }] });
         workingMessages.push({ role: 'function',  parts: [{ functionResponse: { name, response: { result: toolResult } } }] });
         continue; // 検索結果を渡してもう一度Geminiに問い合わせる
@@ -5240,51 +5407,49 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       return;
     }
 
-    // JSONブロック抽出（Geminiは```json以外の形式でも返すことがある）
-    let parsed      = null;
-    let displayText = rawText;
+    let { parsed, displayText, jsonParseAttemptFailed } = parseAiResponse(rawText);
 
-    // 複数のパターンを試みる
-    const jsonPatterns = [
-      /```json\s*([\s\S]*?)```/,   // 標準: ```json ... ```
-      /```\s*(\{[\s\S]*?\})\s*```/, // ``` { ... } ```
-      /(\{[\s\S]*"commands"[\s\S]*?\})\s*$/m, // 末尾のJSONオブジェクト
-      /(\{[\s\S]*"items"[\s\S]*?\})\s*$/m,    // itemsキーを含むJSON
-    ];
+    // 自動の再依頼（最大1回）: AIに「推定して出し直して」と頼み、良くなった場合だけ採用する
+    const retryAi = async (userNote, accept) => {
+      try {
+        const retryMessages = [...workingMessages, { role: 'assistant', content: rawText }, { role: 'user', content: userNote }];
+        const res2 = await fetch('/.netlify/functions/ai-chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...(localStorage.getItem('appAccessToken') ? { 'X-App-Token': localStorage.getItem('appAccessToken') } : {}) },
+          body: JSON.stringify({ system: systemPrompt, messages: retryMessages }),
+        });
+        const data2 = await res2.json();
+        if (!res2.ok || data2.functionCall) return false;
+        const rawText2 = (data2.content || []).map(b => b.text || '').join('');
+        const pr2 = parseAiResponse(rawText2);
+        if (!accept(pr2)) return false;
+        rawText = rawText2; ({ parsed, displayText, jsonParseAttemptFailed } = pr2);
+        return true;
+      } catch (e) { logError('AI再確認', 'AIへの再依頼に失敗しました', String(e && e.message || e)); return false; }
+    };
 
-    let jsonParseAttemptFailed = false;
-    for (const pat of jsonPatterns) {
-      const m = rawText.match(pat);
-      if (m) {
-        try {
-          parsed = JSON.parse(m[1].trim());
-          displayText = parsed.message || rawText.replace(pat, '').trim();
-          break;
-        } catch(e) { jsonParseAttemptFailed = true; /* 次のパターンを試す */ }
-      }
+    // (1) 未登録の材料/食品に栄養値が付いていない登録コマンドは、そのまま実行すると0kcalで登録されてしまうため
+    const unvalued = parsed ? findUnvaluedItems(parsed) : [];
+    if (unvalued.length) {
+      await retryAi(`【システムからの自動確認】登録コマンドの「${[...new Set(unvalued)].join('」「')}」に栄養値(cal/p/f/c など)が指定されておらず、食品DBにも登録がありません（このままでは0kcalになります）。` +
+        `それぞれに per あたりの cal/p/f/c と fiber/fibS/fibI/iron/calcium/vitc/vitd/salt を search_food_db の結果またはあなたの知識で推定して必ず入れ、同じ内容のコマンドをもう一度JSONで出力してください（他の食品・名前・量は変えない。分からなくても一般的な値で推定すること）。`,
+        pr2 => pr2.parsed && findUnvaluedItems(pr2.parsed).length < unvalued.length);
     }
-    // ```json のフェンスは見つかったのに、どのパターンでも解析できなかった場合。
-    // 以前はここで何も起きず、AIの返信文だけが表示されて操作が実行されない
-    // （かつ理由も分からない）ことがあった。
-    if (!parsed && jsonParseAttemptFailed) {
-      const warnMsg = '⚠️ AIの応答内に操作コマンドが含まれていましたが、解析に失敗したため実行されませんでした。もう一度お試しください。';
-      displayText = (displayText ? displayText + '\n\n' : '') + warnMsg;
-      logError('AI応答解析', 'JSONコマンドブロックの解析に失敗しました', rawText.slice(0, 800));
+    // (2) 記録・登録の依頼なのに、コマンドを出さず量や値を聞き返してきた場合は、聞き返さず推定して実行するよう促す
+    else if (!(parsed && Array.isArray(parsed.commands) && parsed.commands.length) && looksLikeRegistrationRequest(text) && looksLikeAskBack(displayText)) {
+      await retryAi('【システムからの自動確認】記録・登録の依頼では、量・カロリー・栄養値・目安などの数値の指定が無くても聞き返さないでください。' +
+        '一般的な標準値（標準的な1人前・1個・1食分の量、一般的なレシピ分量、同カテゴリの一般的な栄養値）であなたが推定し、今すぐJSONコマンドで実行してください。' +
+        '前提にした量や値は message に事後報告として1〜2行で添えてください。',
+        pr2 => pr2.parsed && Array.isArray(pr2.parsed.commands) && pr2.parsed.commands.length > 0);
     }
 
-    // 旧形式（items配列）のフォールバック対応
-    if (parsed && !parsed.commands && Array.isArray(parsed.items)) {
-      // 旧itemsフォーマットをcommands形式に変換
-      parsed = {
-        commands: [{
-          type: 'add',
-          dates: [currentDate],
-          meal: parsed.items[0]?.meal || '昼食',
-          items: parsed.items,
-        }],
-        message: parsed.message || '',
-        backup_label: '食品追加',
-      };
+    // (3) 登録・記録の依頼なのに「登録しました」と言うだけでコマンドを出していない → 実行されていないので一度だけ出し直させる
+    const _claim3 = [displayText, parsed && parsed.message].filter(Boolean).join(' ');
+    if (!(parsed && Array.isArray(parsed.commands) && parsed.commands.length) && looksLikeRegistrationRequest(text)
+        && (claimsActionDone(_claim3) || claimsCannot(_claim3))) {
+      await retryAi('【システムからの自動確認】返答では「登録しました」または「未対応・できない・エラー」などと書かれていますが、操作コマンド（```json ブロックの commands）が出力されていないため、実際には何も実行されていません。' +
+        'add_custom_food などは関数ではなく、返答末尾のJSONブロックに書く操作コマンドで、すべて対応済みです。「未対応」「システムエラー」を理由に断らず、今すぐ依頼内容を実行する commands を ```json ブロックで出力してください（栄養値などは一般的な値で推定してよい）。',
+        pr2 => pr2.parsed && Array.isArray(pr2.parsed.commands) && pr2.parsed.commands.length > 0);
     }
 
     if (thinking) { clearInterval(thinking._timer); thinking.remove(); }
@@ -5293,13 +5458,40 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     if (aiHistory.length > 20) aiHistory = aiHistory.slice(aiHistory.length - 20);
 
     // コマンド実行
+    const claimText = [displayText, parsed && parsed.message].filter(Boolean).join(' ');
     if (parsed && Array.isArray(parsed.commands) && parsed.commands.length > 0) {
       const backupLabel = parsed.backup_label || 'AI操作';
+      const sigBefore = aiStateSig();
       const opLog = executeAiCommands(parsed.commands, backupLabel);
-      const replyText = (displayText ? displayText + '\n\n' : '') + opLog.join('\n');
+      const changedAnything = aiStateSig() !== sigBefore;
+      // ⚠️/❌ の結果は画面に出すだけでなくエラーログにも残す（個別のlogErrorと重複しないよう同文は除外）
+      opLog.filter(l => /^(⚠️|❌)/.test(l)).forEach(l => {
+        const m = l.replace(/^(⚠️|❌)\s*/, '');
+        if (!errorLog.slice(-40).some(e => e.message === m)) logError('AI操作', m, `依頼: ${text.slice(0, 200)}`);
+      });
+      let notice = '';
+      if (!changedAnything) {
+        // コマンドは受理されたが、データが一切変わらなかった（重複登録のスキップ・対象なし・不正な形式など）
+        const types = parsed.commands.map(c => c && c.type).join(', ');
+        logError('AI操作', 'コマンドは実行されましたが、データは何も変更されませんでした' + (claimActionDoneGuard(claimText) ? '（返答は完了を報告している）' : ''),
+          `依頼: ${text.slice(0, 200)}\nコマンド種別: ${types}\nAI返答: ${claimText.slice(0, 300)}\n実行結果: ${opLog.join(' / ').slice(0, 400)}`);
+        if (claimActionDoneGuard(claimText)) notice = '\n\n⚠️ 実際にはデータは変更されていません（詳細はエラーログを確認してください）。';
+      }
+      const replyText = (displayText ? displayText + '\n\n' : '') + opLog.join('\n') + notice;
       appendAiMessage('ai', replyText);
     } else {
-      appendAiMessage('ai', displayText || '応答を取得できませんでした。');
+      // コマンドが無いのに「登録しました」等と完了を報告している場合: 実際には何も実行されていない
+      let finalText = displayText || '応答を取得できませんでした。';
+      if (claimsCannot(claimText) && !claimActionDoneGuard(claimText) && looksLikeActionRequest(text)) {
+        // 「未対応」「できない」「システムエラー」等で断られた（コマンド未出力）。実際には対応済みの操作であることが多いので記録しておく
+        logError('AI応答', 'AIが「実行できない／未対応」と返答しました（操作コマンドは出力されていません）',
+          `依頼: ${text.slice(0, 200)}\nAI返答: ${claimText.slice(0, 400)}`);
+      } else if (claimActionDoneGuard(claimText) && looksLikeActionRequest(text)) {
+        logError('AI応答', 'AIは完了を報告しましたが、操作コマンドが出力されていないため何も実行されていません',
+          `依頼: ${text.slice(0, 200)}\nAI返答: ${claimText.slice(0, 400)}\nJSONブロック有無: ${/\`\`\`/.test(rawText) ? 'あり（commandsが空/不正）' : 'なし'}`);
+        finalText += '\n\n⚠️ 実際には何も実行されていません（AIが操作コマンドを出力しませんでした）。もう一度依頼してください。';
+      }
+      appendAiMessage('ai', finalText);
     }
 
   } catch(err) {
