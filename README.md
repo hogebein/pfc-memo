@@ -150,6 +150,7 @@ Netlify ダッシュボード → Site settings → Environment variables：
 - **TDEE計算**（Mifflin-St Jeor式BMR × 気温補正 × 活動係数）
 - **エネルギー収支**（DIT補正・食物繊維補正後の正味摂取カロリー vs TDEE）
 - **補正前/補正後/収支グラフ**の切り替え
+- 食品登録タブは簡易データベース: 検索・カテゴリ・ソート・複製・編集・一括操作（選択モード）・カテゴリ管理（単品/複合の両方）
 - ビタミン・ミネラル・食物繊維の集計と達成度表示（食物繊維は水溶性/不溶性の内訳つき。内訳は成分表の値またはカテゴリからの推定比率）
 - 運動ログ（METs計算）
 - CSV入出力
@@ -279,3 +280,19 @@ Firestoreに以下の形式で保存されます：
 
 Firebase未設定 or 未ログイン時はlocalStorageに保存されます。
 ログイン後に既存のローカルデータは自動的にクラウドにアップロードされます。
+
+## 食物繊維の水溶性/不溶性を成分表の実測値に差し替える
+
+内蔵DB（foods-db.js）の水溶性/不溶性の多くは食品カテゴリからの推定値（`fibEst:1`）です。文科省の
+「日本食品標準成分表（八訂）増補2023年 **炭水化物成分表編**」のExcelがあれば、成分表の値に差し替えられます
+（八訂の本表には食物繊維の総量しか載っていません）。
+
+```
+npm install --no-save xlsx
+node scripts/import-mext-fiber.js <炭水化物成分表編.xlsx>          # ドライラン: scripts/out/mext-fiber-report.csv に照合結果を出力
+node scripts/import-mext-fiber.js <炭水化物成分表編.xlsx> --apply  # 反映（foods-db.js.bak を自動作成）
+```
+曖昧・低スコア・総量が大きく食い違うものは自動では反映されません。`scripts/mext-name-map.example.json` を
+`mext-name-map.json` にコピーして「当アプリの食品名 → 成分表の食品名」を書くと、その対応が最優先されます。
+
+`scripts/check-mext-totals.js <本表.xlsx>` は、八訂の**本表**のExcelと foods-db.js の食物繊維総量を突き合わせて食い違いを一覧にします（確認専用）。
