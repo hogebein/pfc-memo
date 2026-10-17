@@ -201,6 +201,8 @@
     .fd-bulk-row:last-child { margin-bottom: 0; }
     .fd-bulk-row input[type=text] { flex: 1; min-width: 0; padding: 7px 8px; font-size: 12px; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
     .fd-selrow { cursor: pointer; align-items: center; gap: 8px; }
+    .cl-row { cursor: pointer; align-items: center; gap: 8px; }
+    .cl-bar { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--surface); border: 1.5px solid #3266ad; border-radius: var(--radius-sm); padding: 10px; margin: 10px 0; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
     .fd-servrow { align-items: center; gap: 8px; }
     .fd-sv { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     .fd-sv input { width: 74px; padding: 7px 8px; font-size: 14px; text-align: right; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface2); color: var(--text); }
@@ -629,7 +631,9 @@
       </details>
 
       <!-- ④ 食事ブロック -->
+      <div style="display:flex;justify-content:flex-end;margin:0 0 8px"><button class="btn btn-sm" id="clStartBtn" onclick="startComboFromLog()" style="display:inline-flex;align-items:center;gap:4px">🍱 記録から複合食品を作る</button></div>
       <div id="mealBlocks"></div>
+      <div id="comboLogBar"></div>
 
       <!-- ⑤ 調味料クイック登録（折りたたみ） -->
       <details style="margin-bottom:8px">

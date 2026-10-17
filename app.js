@@ -503,6 +503,13 @@ let comboIngredients = [], editingId = null, activeAddMeal = null, exPanelOpen =
 let calViewYear = new Date().getFullYear(), calViewMonth = new Date().getMonth();
 let currentDate = toDateStr(new Date());
 let ghToken = null, ghData = {}; // Google Health API
+// Google Health の日別データから、必要な数値だけを残す。APIの返答に含まれる updatedToken（認証トークン）は端末にもクラウドにも保存しない
+const GH_DAY_KEYS = ['date', 'steps', 'activeCalories', 'totalCalories', 'restingHeartRate', 'weight'];
+function sanitizeGhData(obj) {
+  const out = {};
+  Object.keys(obj || {}).forEach(d => { const v = obj[d]; if (!v || typeof v !== 'object') return; const o = {}; GH_DAY_KEYS.forEach(k => { if (v[k] !== undefined) o[k] = v[k]; }); out[d] = o; });
+  return out;
+}
 let dailyActivity = {}; // Garmin/Google Health未連携ユーザー向け：日別の手動歩数入力
 let deferredPrompt = null;
 let profile = { sex:'male', age:30, height:170, weight:65, bf:null, activityFactor:1.2, temp:22, neatPct:20 };
@@ -530,6 +537,7 @@ try { exercises   = JSON.parse(localStorage.getItem('pfcExercises')  || '[]'); }
 try { userWeight  = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
 try { ghToken     = localStorage.getItem('ghToken') || null; } catch(e) {}
 try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
+{ const raw = JSON.stringify(ghData); ghData = sanitizeGhData(ghData); if (JSON.stringify(ghData) !== raw) { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} } } // 過去に保存された認証トークンを取り除く
 try { dailyActivity = JSON.parse(localStorage.getItem('pfcDailyActivity') || '{}'); } catch(e) {}
 try { const p = JSON.parse(localStorage.getItem('pfcProfile') || 'null'); if(p) profile = migrateNeatTier({...profile, ...p}); } catch(e) {}
 try { errorLog = JSON.parse(localStorage.getItem('pfcErrorLog') || '[]'); } catch(e) {}
@@ -599,6 +607,7 @@ function saveLocal() {
 //  ・失敗はエラーログに記録し、ヘッダーの同期ドット（●）で状態を表示する
 let cloudDirty = false, cloudStatus = 'idle', _cloudInFlight = false, _cloudRequeue = false, _cloudRetryTimer = null, _cloudRetryCount = 0, _cloudLastError = '';
 let CLOUD_RETRY_MS = [5000, 15000, 60000, 180000];
+let _lastCloudStamp = '', _lastForegroundPull = 0;   // クラウド上のデータの updatedAt（最後に確認した値）と、前面復帰時の読み込み時刻
 const CLOUD_DOC_WARN_BYTES = 800000, CLOUD_DOC_MAX_BYTES = 1000000;   // Firestoreの1ドキュメントは1MiBまで
 let _fsMod = null, _cloudWarnedSize = false, _cloudLastLogged = { msg: '', t: 0 };
 async function fsApi() {
@@ -636,7 +645,7 @@ async function saveToCloud() {
   let retry = false;
   try {
     const { doc, setDoc } = await fsApi();
-    const payload = { entries, exercises, customFoods, comboFoods, quickSeasonings, profile, updatedAt: new Date().toISOString() };
+    const payload = { entries, exercises, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), updatedAt: new Date().toISOString() };
     const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
     if (bytes > CLOUD_DOC_MAX_BYTES) { // 1MiBを超えると保存できない。以前は黙って失敗していた
       _cloudLastError = `データが大きすぎます（${Math.round(bytes / 1024)}KB / 上限1024KB）`;
@@ -644,7 +653,7 @@ async function saveToCloud() {
     }
     if (bytes > CLOUD_DOC_WARN_BYTES && !_cloudWarnedSize) { _cloudWarnedSize = true; logError('クラウド保存', `クラウドのデータが上限に近づいています（${Math.round(bytes / 1024)}KB / 上限1024KB）`, ''); }
     await setDoc(doc(fbDb, 'users', fbUser.uid), payload);
-    _cloudRetryCount = 0; _cloudLastError = '';
+    _cloudRetryCount = 0; _cloudLastError = ''; _lastCloudStamp = payload.updatedAt;
     if (!_cloudRequeue) cloudDirty = false;
   } catch (e) {
     _cloudLastError = (e && (e.code || e.message)) ? String(e.code || e.message).slice(0, 120) : String(e);
@@ -666,7 +675,7 @@ function flushCloudSave() {
 }
 window.addEventListener('online', () => { if (cloudDirty) flushCloudSave(); });
 window.addEventListener('pagehide', flushCloudSave);
-document.addEventListener('visibilitychange', () => { flushCloudSave(); });
+document.addEventListener('visibilitychange', () => { flushCloudSave(); if (document.visibilityState === 'visible') pullOnForeground(); });
 
 // ── 初回クラウド同期ゲート ──
 // 起動直後、ローカルキャッシュがクラウドの最新状態を反映しているとは限らない
@@ -701,8 +710,13 @@ function saveDebounced() {
 }
 function saveCustom() { saveLocal(); queueCloudSave(); }
 function saveExercises() { saveLocal(); queueCloudSave(); }
-function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} }
-function saveDailyActivity() { try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch(e) {} }
+// 手入力の歩数・Google Healthの日別データも、他の記録と同じようにクラウドへ同期する（入力中の連続保存に備えて少し待ってから送る）
+function queueCloudSaveSoon() {
+  clearTimeout(_cloudSaveTimer); cloudDirty = true;
+  _cloudSaveTimer = setTimeout(() => { _cloudSaveTimer = null; queueCloudSave(); }, 800);
+}
+function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} queueCloudSaveSoon(); }
+function saveDailyActivity() { try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch(e) {} queueCloudSaveSoon(); }
 function saveProfile() {
   const oldWeight = profile.weight;
   profile.sex    = document.getElementById('pSex').value;
@@ -1517,17 +1531,21 @@ function renderRecord() {
         <div class="meal-icon" style="background:${meta.bg}">${meta.icon}</div>
         <div><div class="meal-name">${meal}</div><div class="meal-sub">${items.length?ri(ms.cal)+' kcal / P'+r1(ms.p)+' F'+r1(ms.f)+' C'+r1(ms.c):'未記録'}</div></div>
       </div>
-      <button class="meal-add-btn${isAdding?' active-add':''}" onclick="toggleAddPanel('${meal}')">${isAdding?'✕ 閉じる':'＋ 追加'}</button>
+      ${_cl.active
+        ? (items.length ? `<button class="meal-add-btn" onclick="clToggleMeal('${meal}')">${items.every(e => _cl.ids.has(e.id)) ? '選択解除' : 'この食事を選択'}</button>` : '')
+        : `<button class="meal-add-btn${isAdding?' active-add':''}" onclick="toggleAddPanel('${meal}')">${isAdding?'✕ 閉じる':'＋ 追加'}</button>`}
     </div>`;
     if (items.length) {
-      html += `<div style="display:flex;align-items:center;gap:6px;padding:0 12px 8px;font-size:11px">
+      if (!_cl.active) html += `<div style="display:flex;align-items:center;gap:6px;padding:0 12px 8px;font-size:11px">
         <span style="color:var(--text-sub)">⏱ 摂取時刻を一括設定</span>
         <input type="time" id="mealTimeSet_${meal}" style="padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
         <button type="button" class="btn btn-sm" style="padding:3px 10px;font-size:11px" onclick="setMealTime('${meal}', document.getElementById('mealTimeSet_${meal}').value)">反映</button>
       </div>`;
       html += `<div class="meal-items">`;
       items.forEach(e => {
-        if (editingId === e.id) {
+        if (_cl.active) {
+          html += `<label class="log-item cl-row"><input type="checkbox" class="fd-check" ${_cl.ids.has(e.id) ? 'checked' : ''} onchange="clToggleEntry(${e.id}, this.checked)"><div style="flex:1;min-width:0"><div class="li-name">${fdEsc(e.name)}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}</div></div><div class="li-right"><div class="li-cal">${ri(e.cal)}</div></div></label>`;
+        } else if (editingId === e.id) {
           // 編集フォーム用に100g基準値をstoreする
           window._editBase = window._editBase || {};
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,fibS:fibSInputVal(e),iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
@@ -1568,7 +1586,7 @@ function renderRecord() {
       });
       html += `</div>`;
     }
-    if (isAdding) {
+    if (isAdding && !_cl.active) {
       html += `<div class="add-panel" id="addPanel_${meal}">
         <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:9px">
           <div class="search-wrap" style="flex:1;margin-bottom:0">
@@ -1607,6 +1625,7 @@ function renderRecord() {
     html += `</div>`;
   });
   document.getElementById('mealBlocks').innerHTML = html;
+  renderComboLogBar();
   if (activeAddMeal) setTimeout(() => { const el = document.getElementById('addSearch_'+activeAddMeal); if(el) el.focus(); }, 30);
   renderExerciseItems();
 }
@@ -1699,14 +1718,9 @@ function onAddSearch(q, meal) {
   if(!q.trim()){if(box)box.style.display='none';return}
   renderResultsFor(localSearch(q),meal);
 }
-function selectAddResult(i, meal) {
-  const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
-  const f=box._local && box._local[i]; if(!f) return;
-  window._addBase[meal]={...f};
-
-  // ── 検索結果タップ＝即登録。量やその他の栄養素はあとで記録欄のインライン編集で調整する ──
+// 食品(f)を、指定の量(amt: g)で食事記録のエントリにする（複合食品は材料の内訳も実量に換算して持たせる）
+function buildEntryFromFood(f, meal, amt) {
   const per = f.per || 100;
-  const amt = f.serving || per;
   const r   = amt / per;
   const newEntry = {
     id: Date.now() + Math.random(),
@@ -1742,6 +1756,18 @@ function selectAddResult(i, meal) {
         ...Object.fromEntries(MICRO_KEYS.map(k => [k, ing[k] || 0])) };
     });
   }
+  return newEntry;
+}
+function selectAddResult(i, meal) {
+  const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
+  const f=box._local && box._local[i]; if(!f) return;
+  window._addBase[meal]={...f};
+
+  // ── 検索結果タップ＝即登録。量やその他の栄養素はあとで記録欄のインライン編集で調整する ──
+  const per = f.per || 100;
+  const amt = f.serving || per;
+  const r   = amt / per;
+  const newEntry = buildEntryFromFood(f, meal, amt);
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
   const { merged } = addOrMergeEntry(newEntry);
   save();
@@ -1754,6 +1780,97 @@ function selectAddResult(i, meal) {
   renderRecord();
   renderCalendar();
   showToast(merged ? `✅「${f.name}」は既存の記録に合算しました` : `✅「${f.name}」を登録しました`);
+}
+// ══ 記録から複合食品を作る ══
+// 食事記録(entries)の各エントリを材料として、複合食品を組み立てる。各記録は実量で保存されているため、材料は per=amount（そのままの値）で持つ
+function buildComboFromEntries(srcs, name, category) {
+  const srcsM = srcs.map(e => { const c = { ...e }; materializeFiberSplit(c); return c; });   // 過去の記録も食物繊維の内訳を補完してから合算
+  const totalAmt = srcsM.reduce((a, e) => a + Math.max(0, e.amount || 0), 0);
+  const tot = { cal: 0, p: 0, f: 0, c: 0 }; MICRO_KEYS.forEach(k => { tot[k] = 0; });
+  srcsM.forEach(e => { ['cal', 'p', 'f', 'c', ...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
+  const cat = sanitizeCategory(category) || guessFoodCategory(name);
+  // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
+  return {
+    id: Date.now() + Math.random(),
+    name, ...(cat ? { category: cat } : {}), per: r1(totalAmt), serving: r1(totalAmt),
+    cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
+    ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
+    ingredients: srcsM.map(e => ({
+      name: e.name, amount: e.amount, per: e.amount,
+      cal: e.cal || 0, p: e.p || 0, f: e.f || 0, c: e.c || 0,
+      ...Object.fromEntries(MICRO_KEYS.map(k => [k, e[k] || 0])),
+    })),
+    digest: 'mixed',
+    _src: 'combo',
+  };
+}
+const _cl = { active: false, ids: new Set() };
+function clSelectedEntries() { // 画面の並び（食事順→記録順）で返す
+  const list = getDayEntries(currentDate), order = m => { const i = MEALS_ORDER.indexOf(m); return i < 0 ? MEALS_ORDER.length : i; };
+  return list.map((e, i) => ({ e, i })).filter(x => _cl.ids.has(x.e.id)).sort((a, b) => order(a.e.meal) - order(b.e.meal) || a.i - b.i).map(x => x.e);
+}
+function startComboFromLog(meal) {
+  _cl.active = true; _cl.ids.clear(); editingId = null; activeAddMeal = null;
+  if (meal) getDayEntries(currentDate).filter(e => e.meal === meal).forEach(e => _cl.ids.add(e.id));
+  renderRecord();
+  const bar = document.getElementById('comboLogBar'); if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function cancelComboFromLog() { _cl.active = false; _cl.ids.clear(); renderRecord(); }
+function clToggleEntry(id, on) { if (on) _cl.ids.add(id); else _cl.ids.delete(id); updateClSummary(); }
+function clToggleMeal(meal) {
+  const items = getDayEntries(currentDate).filter(e => e.meal === meal), all = items.length && items.every(e => _cl.ids.has(e.id));
+  items.forEach(e => { if (all) _cl.ids.delete(e.id); else _cl.ids.add(e.id); });
+  renderRecord();
+}
+function updateClSummary() {
+  const el = document.getElementById('clSummary'); if (!el) return;
+  const srcs = clSelectedEntries(), t = sumEntries(srcs), g = srcs.reduce((a, e) => a + (e.amount || 0), 0);
+  el.textContent = srcs.length ? `${srcs.length}品・合計${r1(g)}g ／ ${ri(t.cal)}kcal  P${r1(t.p)} F${r1(t.f)} C${r1(t.c)}${t.fiber ? '  繊' + r1(t.fiber) : ''}` : '材料にする記録をタップして選んでください';
+}
+function renderComboLogBar() {
+  const bar = document.getElementById('comboLogBar'), btn = document.getElementById('clStartBtn');
+  if (btn) btn.style.display = _cl.active ? 'none' : 'inline-flex';
+  if (!bar) return;
+  if (!_cl.active) { bar.innerHTML = ''; return; }
+  const keep = { name: document.getElementById('clName')?.value || '', cat: document.getElementById('clCat')?.value || '', rep: document.getElementById('clReplace')?.checked || false, msg: document.getElementById('clMsg')?.textContent || '' };
+  bar.innerHTML = `<div class="cl-bar">
+    <div id="clSummary" style="font-size:12px;font-weight:500;margin-bottom:8px"></div>
+    <div class="row" style="margin-bottom:6px"><div class="field" style="flex:2"><input type="text" id="clName" placeholder="複合食品名（例：朝のオートミール）" value="${fdEsc(keep.name)}" autocomplete="off"></div><div class="field" style="flex:1.2"><input type="text" id="clCat" list="foodCatList" placeholder="カテゴリ（空欄で自動）" value="${fdEsc(keep.cat)}" autocomplete="off"></div></div>
+    <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px"><input type="checkbox" class="fd-check" id="clReplace" ${keep.rep ? 'checked' : ''}>元の記録を削除して、この複合食品1件にまとめて記録する</label>
+    <div id="clMsg" class="status-msg status-err" style="margin-bottom:6px">${fdEsc(keep.msg)}</div>
+    <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" style="flex:2;height:36px" onclick="registerComboFromLog()">複合食品として登録</button><button class="btn btn-sm" style="flex:1;height:36px" onclick="cancelComboFromLog()">キャンセル</button></div>
+  </div>`;
+  updateClSummary();
+}
+function registerComboFromLog() {
+  const msg = document.getElementById('clMsg'), fail = t => { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = t; } };
+  const srcs = clSelectedEntries(); if (!srcs.length) { fail('材料にする記録を選んでください'); return; }
+  const name = (document.getElementById('clName')?.value || '').trim(); if (!name) { fail('複合食品名を入力してください'); return; }
+  if ([...comboFoods, ...customFoods].some(f => normFoodName(f.name) === normFoodName(name))) { fail(`「${name}」は既に登録されています。別の名前にしてください`); return; }
+  if (srcs.reduce((a, e) => a + (e.amount || 0), 0) <= 0) { fail('選んだ記録の量が0gです'); return; }
+  const replace = !!document.getElementById('clReplace')?.checked;
+  const combo = buildComboFromEntries(srcs, name, document.getElementById('clCat')?.value);
+  comboFoods.push(combo);
+  let removed = [], newEntry = null;
+  if (replace) {
+    // 元の記録を、この複合食品1件の記録に置き換える（食事は最初の記録のもの、時刻は最も早いもの）
+    const times = srcs.map(e => e.time).filter(Boolean).sort();
+    const all = entries.map((e, i) => ({ e, i })); removed = all.filter(x => srcs.some(s => s.id === x.e.id));
+    const ids = new Set(srcs.map(e => e.id)); entries = entries.filter(e => !ids.has(e.id));
+    newEntry = buildEntryFromFood(combo, srcs[0].meal, combo.per); newEntry.meal = srcs[0].meal; newEntry.date = currentDate;
+    if (times.length) newEntry.time = times[0];
+    if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
+    entries.push(newEntry);
+  }
+  saveCustom();
+  const n = srcs.length, label = `「${name}」を${n}品から複合食品に登録しました${replace ? '（記録を1件にまとめました）' : ''}`;
+  _cl.active = false; _cl.ids.clear();
+  renderRecord(); renderCalendar(); renderComboFoodList();
+  showUndoToast(label, () => {
+    comboFoods = comboFoods.filter(f => f.id !== combo.id);
+    if (newEntry) { entries = entries.filter(e => e.id !== newEntry.id); removed.sort((a, b) => a.i - b.i).forEach(x => entries.splice(Math.min(x.i, entries.length), 0, x.e)); }
+    saveCustom(); renderRecord(); renderCalendar(); renderComboFoodList();
+  });
 }
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
@@ -1778,6 +1895,7 @@ try {
   quickSeasonings = qs || JSON.parse(JSON.stringify(DEFAULT_QUICK_SEASONINGS));
 } catch(e) { quickSeasonings = JSON.parse(JSON.stringify(DEFAULT_QUICK_SEASONINGS)); }
 quickSeasonings.forEach(s => { if (s.id == null) s.id = Date.now() + Math.random(); });
+function saveQuickSeasoningsLocal() { try { localStorage.setItem('pfcQuickSeasonings', JSON.stringify(quickSeasonings)); } catch (e) {} }
 function saveQuickSeasonings() {
   try { localStorage.setItem('pfcQuickSeasonings', JSON.stringify(quickSeasonings)); } catch(e) {}
   queueCloudSave();
@@ -4372,7 +4490,7 @@ async function syncGoogleHealth() {
       ghToken = data.updatedToken;
       localStorage.setItem('ghToken', ghToken);
     }
-    ghData[currentDate] = data;
+    ghData[currentDate] = sanitizeGhData({ [currentDate]: data })[currentDate];
     saveGhData();
     document.getElementById('garminSyncBtn').style.display = 'flex';
     renderRecord();
@@ -4465,30 +4583,69 @@ async function initFirebase() {
 }
 
 // Firestoreからデータを取得してローカルにマージ
+// クラウドのデータを画面側へ反映する。配列系はクラウド優先、日別の歩数/Google Healthデータは日付ごとに統合（同じ日はクラウド優先、端末にだけある日は残す）
+// 戻り値: 端末にだけあるデータが残った（＝クラウドへ送り直す必要がある）か
+function applyCloudData(data) {
+  let needUpload = false;
+  if (data.entries)     { entries     = data.entries; }
+  if (data.exercises)   { exercises   = data.exercises; }
+  if (data.customFoods) { customFoods = data.customFoods; }
+  if (data.comboFoods)  { comboFoods  = data.comboFoods; }
+  saveLocal();
+  if (data.quickSeasonings) { quickSeasonings = data.quickSeasonings; saveQuickSeasoningsLocal(); renderQuickSeasonings(); }
+  if (data.profile)     { profile = migrateNeatTier({ ...profile, ...data.profile }); localStorage.setItem('pfcProfile', JSON.stringify(profile)); }
+  const mergeDays = (local, cloud) => { const lk = Object.keys(local || {}); const merged = { ...(local || {}), ...(cloud || {}) }; if (lk.some(k => !cloud || !(k in cloud))) needUpload = true; return merged; };
+  if (data.dailyActivity || Object.keys(dailyActivity).length) { dailyActivity = mergeDays(dailyActivity, data.dailyActivity); try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch (e) {} }
+  if (data.ghData || Object.keys(ghData).length) { ghData = sanitizeGhData(mergeDays(ghData, sanitizeGhData(data.ghData))); try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch (e) {} }
+  if (data.updatedAt) _lastCloudStamp = data.updatedAt;
+  return needUpload;
+}
+function refreshViewsAfterCloud() {
+  ['renderRecord', 'renderCalendar', 'renderExerciseItems', 'renderCustomFoodList', 'renderComboFoodList', 'renderBmrPreview', 'renderActivityCard'].forEach(fn => { try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval('typeof ' + fn) === 'string' && eval('typeof ' + fn) === 'function') eval(fn + '()'); } catch (e) { /* 表示の更新失敗は無視 */ } });
+}
 async function pullFromCloud() {
   if (!fbDb || !fbUser || fbSyncing) return;
   fbSyncing = true;
   try {
-    const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+    const { doc, getDoc } = await fsApi();
     const snap = await getDoc(doc(fbDb, 'users', fbUser.uid));
     if (snap.exists()) {
-      const data = snap.data();
-      // クラウドデータで上書き（最新が優先）
-      if (data.entries)     { entries     = data.entries;     saveLocal(); }
-      if (data.exercises)   { exercises   = data.exercises;   saveLocal(); }
-      if (data.customFoods) { customFoods = data.customFoods; saveLocal(); }
-      if (data.comboFoods)  { comboFoods  = data.comboFoods;  saveLocal(); }
-      if (data.quickSeasonings) { quickSeasonings = data.quickSeasonings; saveQuickSeasonings(); renderQuickSeasonings(); }
-      if (data.profile)     { profile = migrateNeatTier({ ...profile, ...data.profile }); localStorage.setItem('pfcProfile', JSON.stringify(profile)); }
+      const needUpload = applyCloudData(snap.data());
+      if (needUpload) queueCloudSave();   // 端末にだけあった歩数データなどをクラウドへ送る（ゲート解除後に送信される）
     } else {
       // 初回ログイン：ローカルデータをクラウドにアップロード
       await saveToCloud();
     }
   } catch(e) {
     console.warn('Cloud pull failed:', e);
+    logCloudError(`クラウドからの読み込みに失敗しました（${(e && (e.code || e.message)) || e}）`, '');
   } finally {
     fbSyncing = false;
   }
+}
+// アプリが前面に戻ったとき、他の端末で更新されていれば読み込み直す。
+// 起動時にしか読み込まないと、開きっぱなしの端末が古い内容のまま保存して、他の端末の変更を上書きしてしまうため。
+// 未送信の変更・送信中・入力中のときは、手元の変更を守るため読み込まない
+async function pullOnForeground() {
+  if (!fbDb || !fbUser || !initialSyncDone || fbSyncing || cloudDirty || _cloudInFlight) return;
+  if (Date.now() - _lastForegroundPull < 15000) return;
+  const ae = document.activeElement; if (ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.type !== 'checkbox') return;
+  _lastForegroundPull = Date.now(); fbSyncing = true;
+  try {
+    const { doc, getDoc } = await fsApi();
+    const snap = await getDoc(doc(fbDb, 'users', fbUser.uid));
+    if (!snap.exists()) return;
+    const data = snap.data();
+    if (data.updatedAt && data.updatedAt === _lastCloudStamp) return;     // 変更なし
+    if (cloudDirty || _cloudInFlight) return;                                // 取得している間に端末側で変更があった → 手元を優先
+    const needUpload = applyCloudData(data);
+    refreshViewsAfterCloud();
+    if (typeof showToast === 'function') showToast('他の端末の変更を反映しました');
+    if (needUpload) queueCloudSave();
+  } catch (e) {
+    console.warn('Foreground pull failed:', e);
+    logCloudError(`クラウドからの読み込みに失敗しました（${(e && (e.code || e.message)) || e}）`, '');
+  } finally { fbSyncing = false; }
 }
 
 // 認証UIを描画（ヘッダーのユーザー情報 & ログインボタン）
@@ -5097,24 +5254,7 @@ function executeAiCommands(commands, backupLabel) {
         if (!srcs.length || totalAmt <= 0) {
           log.push('⚠️ 対象の記録が見つからないため、複合食品として登録できませんでした');
         } else {
-          const tot = { cal:0, p:0, f:0, c:0 }; MICRO_KEYS.forEach(k => { tot[k] = 0; });
-          const srcsM = srcs.map(e => { const c = { ...e }; materializeFiberSplit(c); return c; }); // 過去の記録も食物繊維の内訳を補完してから合算
-          srcsM.forEach(e => { ['cal','p','f','c',...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
-          // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
-          comboFoods.push({
-            id: Date.now() + Math.random(),
-            name, ...((sanitizeCategory(cmd.category) || guessFoodCategory(name)) ? { category: sanitizeCategory(cmd.category) || guessFoodCategory(name) } : {}), per: r1(totalAmt), serving: r1(totalAmt),
-            cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
-            ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
-            // 各記録エントリはamount=perとして扱う（既に実量で記録されているため、r=amount/per=1で値をそのまま材料として使う）
-            ingredients: srcsM.map(e => ({
-              name: e.name, amount: e.amount, per: e.amount,
-              cal: e.cal||0, p: e.p||0, f: e.f||0, c: e.c||0,
-              ...Object.fromEntries(MICRO_KEYS.map(k => [k, e[k]||0])),
-            })),
-            digest: 'mixed',
-          _src: 'combo',
-          });
+          comboFoods.push(buildComboFromEntries(srcs, name, cmd.category));
           log.push(`📦 「${name}」を${srcs.length}件の記録（合計${r1(totalAmt)}g）から複合食品として登録`);
           if (deleteOriginals) {
             const srcIds = new Set(srcs.map(e => e.id));

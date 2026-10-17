@@ -4,7 +4,8 @@
   "description": "カロリー・PFC管理PWA with Google Health API連携",
   "scripts": {
     "build": "node build.js",
-    "import-mext-fiber": "node scripts/import-mext-fiber.js"
+    "import-mext-fiber": "node scripts/import-mext-fiber.js",
+    "test": "node tests/core.test.js && node tests/combo-from-log.test.js"
   },
   "dependencies": {}
 }

@@ -150,6 +150,7 @@ Netlify ダッシュボード → Site settings → Environment variables：
 - **TDEE計算**（Mifflin-St Jeor式BMR × 気温補正 × 活動係数）
 - **エネルギー収支**（DIT補正・食物繊維補正後の正味摂取カロリー vs TDEE）
 - **補正前/補正後/収支グラフ**の切り替え
+- 記録タブの「🍱 記録から複合食品を作る」で、食事記録を選んで複合食品に登録（元の記録を1件にまとめることも可能）
 - 食品登録タブは簡易データベース: 検索・カテゴリ・ソート・複製・編集・一括操作（選択モード）・カテゴリ管理（単品/複合の両方）
 - ビタミン・ミネラル・食物繊維の集計と達成度表示（食物繊維は水溶性/不溶性の内訳つき。内訳は成分表の値またはカテゴリからの推定比率）
 - 運動ログ（METs計算）
@@ -296,3 +297,11 @@ node scripts/import-mext-fiber.js <炭水化物成分表編.xlsx> --apply  # 反
 `mext-name-map.json` にコピーして「当アプリの食品名 → 成分表の食品名」を書くと、その対応が最優先されます。
 
 `scripts/check-mext-totals.js <本表.xlsx>` は、八訂の**本表**のExcelと foods-db.js の食物繊維総量を突き合わせて食い違いを一覧にします（確認専用）。
+
+## テスト
+
+jsdom でアプリを読み込んで画面操作まで確認するテストが `tests/` にあります（初回のみ `npm install --no-save jsdom`）。
+
+```
+npm test    # tests/core.test.js（DB整合・AIコマンドの保存・クラウド同期・食品登録タブ・TDEE）と tests/combo-from-log.test.js
+```
