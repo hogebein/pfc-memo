@@ -1531,21 +1531,17 @@ function renderRecord() {
         <div class="meal-icon" style="background:${meta.bg}">${meta.icon}</div>
         <div><div class="meal-name">${meal}</div><div class="meal-sub">${items.length?ri(ms.cal)+' kcal / P'+r1(ms.p)+' F'+r1(ms.f)+' C'+r1(ms.c):'未記録'}</div></div>
       </div>
-      ${_cl.active
-        ? (items.length ? `<button class="meal-add-btn" onclick="clToggleMeal('${meal}')">${items.every(e => _cl.ids.has(e.id)) ? '選択解除' : 'この食事を選択'}</button>` : '')
-        : `<button class="meal-add-btn${isAdding?' active-add':''}" onclick="toggleAddPanel('${meal}')">${isAdding?'✕ 閉じる':'＋ 追加'}</button>`}
+      <button class="meal-add-btn${isAdding?' active-add':''}" onclick="toggleAddPanel('${meal}')">${isAdding?'✕ 閉じる':'＋ 追加'}</button>
     </div>`;
     if (items.length) {
-      if (!_cl.active) html += `<div style="display:flex;align-items:center;gap:6px;padding:0 12px 8px;font-size:11px">
+      html += `<div style="display:flex;align-items:center;gap:6px;padding:0 12px 8px;font-size:11px">
         <span style="color:var(--text-sub)">⏱ 摂取時刻を一括設定</span>
         <input type="time" id="mealTimeSet_${meal}" style="padding:3px 6px;font-size:11px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)">
         <button type="button" class="btn btn-sm" style="padding:3px 10px;font-size:11px" onclick="setMealTime('${meal}', document.getElementById('mealTimeSet_${meal}').value)">反映</button>
       </div>`;
       html += `<div class="meal-items">`;
       items.forEach(e => {
-        if (_cl.active) {
-          html += `<label class="log-item cl-row"><input type="checkbox" class="fd-check" ${_cl.ids.has(e.id) ? 'checked' : ''} onchange="clToggleEntry(${e.id}, this.checked)"><div style="flex:1;min-width:0"><div class="li-name">${fdEsc(e.name)}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}</div></div><div class="li-right"><div class="li-cal">${ri(e.cal)}</div></div></label>`;
-        } else if (editingId === e.id) {
+        if (editingId === e.id) {
           // 編集フォーム用に100g基準値をstoreする
           window._editBase = window._editBase || {};
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,fibS:fibSInputVal(e),iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
@@ -1578,15 +1574,16 @@ function renderRecord() {
             <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="height:32px;margin-top:auto">取消</button></div>
           </div>`;
         } else {
-          html += `<div class="log-item"><div><div class="li-name">${e.name}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
+          const isGrp = Array.isArray(e.ingredients) && e.ingredients.length > 1, open = isGrp && _grpOpen.has(e.id);
+          html += `<div class="log-item${isGrp ? ' grp' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
           <div class="li-right"><div class="li-cal">${ri(e.cal)}</div>
           <button class="btn btn-sm btn-ghost" onclick="startEdit(${e.id})" style="padding:2px 6px">✏️</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})" style="padding:6px 10px">✕</button></div></div>`;
+          <button class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})" style="padding:6px 10px">✕</button></div>${open ? groupMembersHtml(e) : ''}</div>`;
         }
       });
       html += `</div>`;
     }
-    if (isAdding && !_cl.active) {
+    if (isAdding) {
       html += `<div class="add-panel" id="addPanel_${meal}">
         <div style="display:flex;gap:6px;align-items:flex-start;margin-bottom:9px">
           <div class="search-wrap" style="flex:1;margin-bottom:0">
@@ -1625,7 +1622,6 @@ function renderRecord() {
     html += `</div>`;
   });
   document.getElementById('mealBlocks').innerHTML = html;
-  renderComboLogBar();
   if (activeAddMeal) setTimeout(() => { const el = document.getElementById('addSearch_'+activeAddMeal); if(el) el.focus(); }, 30);
   renderExerciseItems();
 }
@@ -1781,13 +1777,32 @@ function selectAddResult(i, meal) {
   renderCalendar();
   showToast(merged ? `✅「${f.name}」は既存の記録に合算しました` : `✅「${f.name}」を登録しました`);
 }
-// ══ 記録から複合食品を作る ══
-// 食事記録(entries)の各エントリを材料として、複合食品を組み立てる。各記録は実量で保存されているため、材料は per=amount（そのままの値）で持つ
-function buildComboFromEntries(srcs, name, category) {
-  const srcsM = srcs.map(e => { const c = { ...e }; materializeFiberSplit(c); return c; });   // 過去の記録も食物繊維の内訳を補完してから合算
-  const totalAmt = srcsM.reduce((a, e) => a + Math.max(0, e.amount || 0), 0);
-  const tot = { cal: 0, p: 0, f: 0, c: 0 }; MICRO_KEYS.forEach(k => { tot[k] = 0; });
-  srcsM.forEach(e => { ['cal', 'p', 'f', 'c', ...MICRO_KEYS].forEach(k => { tot[k] += (e[k] || 0); }); });
+// ══ 記録のグループ化（長押し→ドラッグ）と、複合食品への登録 ══
+// 食事記録を長押しして別の記録の上にドロップすると、ひとつの「グループ」記録にまとめる（iOSのフォルダのように）。
+// グループ = 材料(ingredients)を持つ記録。材料の分量はこれまでの複合食品の記録と同じ編集画面で調整でき、合計は自動計算される。
+// 記録の各材料は「per グラムあたりの値」で持つ（comboScaled で実量に換算）。単品の記録は per = 量 ・値はそのまま。
+function ingredientFromEntry(e) {
+  const c = { ...e }; materializeFiberSplit(c);   // 過去の記録も食物繊維の内訳を補完してから持つ
+  return { name: e.name, amount: e.amount, per: e.amount || 100, cal: c.cal || 0, p: c.p || 0, f: c.f || 0, c: c.c || 0, ...Object.fromEntries(MICRO_KEYS.map(k => [k, c[k] || 0])) };
+}
+function entryIngredients(e) { return (Array.isArray(e.ingredients) && e.ingredients.length) ? e.ingredients.map(i => ({ ...i })) : [ingredientFromEntry(e)]; }
+function autoGroupName(ings) {
+  const names = ings.map(i => i.name); const n = names.length;
+  const txt = n <= 3 ? names.join('＋') : `${names.slice(0, 2).join('＋')}＋ほか${n - 2}品`;
+  return txt.length > 30 ? txt.slice(0, 29) + '…' : txt;
+}
+function recomputeEntryFromIngredients(e) {
+  const tot = comboTotals(e.ingredients.map(ing => comboScaled(ing, ing.amount)));
+  e.amount = r1(e.ingredients.reduce((a, ing) => a + (ing.amount || 0), 0));
+  e.cal = r1(tot.cal); e.p = r1(tot.p); e.f = r1(tot.f); e.c = r1(tot.c);
+  MICRO_KEYS.forEach(k => { e[k] = microRound(k, tot[k]); });
+  e.digest = 'mixed'; delete e.fa; delete e.aa; enrichFoodProfile(e);
+  return e;
+}
+// 材料のリストから複合食品を組み立てる（記録のグループ・記録の選択のどちらからも使う）
+function buildComboFromIngredients(ings, name, category) {
+  const tot = comboTotals(ings.map(ing => comboScaled(ing, ing.amount)));
+  const totalAmt = ings.reduce((a, ing) => a + Math.max(0, ing.amount || 0), 0);
   const cat = sanitizeCategory(category) || guessFoodCategory(name);
   // 100gあたりに正規化せず、材料の総重量を基準量(per)にする（手動の複合食品登録と同じ方式）
   return {
@@ -1795,83 +1810,135 @@ function buildComboFromEntries(srcs, name, category) {
     name, ...(cat ? { category: cat } : {}), per: r1(totalAmt), serving: r1(totalAmt),
     cal: r1(tot.cal), p: r1(tot.p), f: r1(tot.f), c: r1(tot.c),
     ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, tot[k])])),
-    ingredients: srcsM.map(e => ({
-      name: e.name, amount: e.amount, per: e.amount,
-      cal: e.cal || 0, p: e.p || 0, f: e.f || 0, c: e.c || 0,
-      ...Object.fromEntries(MICRO_KEYS.map(k => [k, e[k] || 0])),
-    })),
+    ingredients: ings.map(ing => ({ ...ing })),
     digest: 'mixed',
     _src: 'combo',
   };
 }
-const _cl = { active: false, ids: new Set() };
-function clSelectedEntries() { // 画面の並び（食事順→記録順）で返す
-  const list = getDayEntries(currentDate), order = m => { const i = MEALS_ORDER.indexOf(m); return i < 0 ? MEALS_ORDER.length : i; };
-  return list.map((e, i) => ({ e, i })).filter(x => _cl.ids.has(x.e.id)).sort((a, b) => order(a.e.meal) - order(b.e.meal) || a.i - b.i).map(x => x.e);
+function buildComboFromEntries(srcs, name, category) { return buildComboFromIngredients(srcs.map(ingredientFromEntry), name, category); }
+
+// src を target の上にドロップしたときの処理。target の記録（位置・食事・時刻）がグループになり、src の記録は取り込まれて消える
+function groupEntries(srcId, targetId) {
+  if (srcId === targetId) return false;
+  const si = entries.findIndex(e => e.id === srcId), ti = entries.findIndex(e => e.id === targetId);
+  if (si === -1 || ti === -1) return false;
+  const src = entries[si], tgt = entries[ti], snap = JSON.parse(JSON.stringify(entries));
+  const tgtAuto = Array.isArray(tgt.ingredients) && tgt.ingredients.length && tgt.name === autoGroupName(tgt.ingredients);   // 自動命名のままのグループは、メンバーが増えたら名前も更新する
+  const ings = [...entryIngredients(tgt), ...entryIngredients(src)];
+  tgt.ingredients = ings;
+  if (!(Array.isArray(snap[ti].ingredients) && snap[ti].ingredients.length) || tgtAuto) tgt.name = autoGroupName(ings);
+  tgt.group = true;
+  recomputeEntryFromIngredients(tgt);
+  entries = entries.filter(e => e.id !== srcId);
+  save();
+  _grpOpen.add(tgt.id);
+  renderRecord(); renderCalendar();
+  showUndoToast(`「${src.name}」を「${snap[ti].name}」にグループ化しました（${ings.length}品）`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
+  return true;
 }
-function startComboFromLog(meal) {
-  _cl.active = true; _cl.ids.clear(); editingId = null; activeAddMeal = null;
-  if (meal) getDayEntries(currentDate).filter(e => e.meal === meal).forEach(e => _cl.ids.add(e.id));
-  renderRecord();
-  const bar = document.getElementById('comboLogBar'); if (bar) bar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-function cancelComboFromLog() { _cl.active = false; _cl.ids.clear(); renderRecord(); }
-function clToggleEntry(id, on) { if (on) _cl.ids.add(id); else _cl.ids.delete(id); updateClSummary(); }
-function clToggleMeal(meal) {
-  const items = getDayEntries(currentDate).filter(e => e.meal === meal), all = items.length && items.every(e => _cl.ids.has(e.id));
-  items.forEach(e => { if (all) _cl.ids.delete(e.id); else _cl.ids.add(e.id); });
-  renderRecord();
-}
-function updateClSummary() {
-  const el = document.getElementById('clSummary'); if (!el) return;
-  const srcs = clSelectedEntries(), t = sumEntries(srcs), g = srcs.reduce((a, e) => a + (e.amount || 0), 0);
-  el.textContent = srcs.length ? `${srcs.length}品・合計${r1(g)}g ／ ${ri(t.cal)}kcal  P${r1(t.p)} F${r1(t.f)} C${r1(t.c)}${t.fiber ? '  繊' + r1(t.fiber) : ''}` : '材料にする記録をタップして選んでください';
-}
-function renderComboLogBar() {
-  const bar = document.getElementById('comboLogBar'), btn = document.getElementById('clStartBtn');
-  if (btn) btn.style.display = _cl.active ? 'none' : 'inline-flex';
-  if (!bar) return;
-  if (!_cl.active) { bar.innerHTML = ''; return; }
-  const keep = { name: document.getElementById('clName')?.value || '', cat: document.getElementById('clCat')?.value || '', rep: document.getElementById('clReplace')?.checked || false, msg: document.getElementById('clMsg')?.textContent || '' };
-  bar.innerHTML = `<div class="cl-bar">
-    <div id="clSummary" style="font-size:12px;font-weight:500;margin-bottom:8px"></div>
-    <div class="row" style="margin-bottom:6px"><div class="field" style="flex:2"><input type="text" id="clName" placeholder="複合食品名（例：朝のオートミール）" value="${fdEsc(keep.name)}" autocomplete="off"></div><div class="field" style="flex:1.2"><input type="text" id="clCat" list="foodCatList" placeholder="カテゴリ（空欄で自動）" value="${fdEsc(keep.cat)}" autocomplete="off"></div></div>
-    <label style="display:flex;align-items:center;gap:6px;font-size:12px;margin-bottom:8px"><input type="checkbox" class="fd-check" id="clReplace" ${keep.rep ? 'checked' : ''}>元の記録を削除して、この複合食品1件にまとめて記録する</label>
-    <div id="clMsg" class="status-msg status-err" style="margin-bottom:6px">${fdEsc(keep.msg)}</div>
-    <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" style="flex:2;height:36px" onclick="registerComboFromLog()">複合食品として登録</button><button class="btn btn-sm" style="flex:1;height:36px" onclick="cancelComboFromLog()">キャンセル</button></div>
-  </div>`;
-  updateClSummary();
-}
-function registerComboFromLog() {
-  const msg = document.getElementById('clMsg'), fail = t => { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = t; } };
-  const srcs = clSelectedEntries(); if (!srcs.length) { fail('材料にする記録を選んでください'); return; }
-  const name = (document.getElementById('clName')?.value || '').trim(); if (!name) { fail('複合食品名を入力してください'); return; }
-  if ([...comboFoods, ...customFoods].some(f => normFoodName(f.name) === normFoodName(name))) { fail(`「${name}」は既に登録されています。別の名前にしてください`); return; }
-  if (srcs.reduce((a, e) => a + (e.amount || 0), 0) <= 0) { fail('選んだ記録の量が0gです'); return; }
-  const replace = !!document.getElementById('clReplace')?.checked;
-  const combo = buildComboFromEntries(srcs, name, document.getElementById('clCat')?.value);
-  comboFoods.push(combo);
-  let removed = [], newEntry = null;
-  if (replace) {
-    // 元の記録を、この複合食品1件の記録に置き換える（食事は最初の記録のもの、時刻は最も早いもの）
-    const times = srcs.map(e => e.time).filter(Boolean).sort();
-    const all = entries.map((e, i) => ({ e, i })); removed = all.filter(x => srcs.some(s => s.id === x.e.id));
-    const ids = new Set(srcs.map(e => e.id)); entries = entries.filter(e => !ids.has(e.id));
-    newEntry = buildEntryFromFood(combo, srcs[0].meal, combo.per); newEntry.meal = srcs[0].meal; newEntry.date = currentDate;
-    if (times.length) newEntry.time = times[0];
-    if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
-    entries.push(newEntry);
-  }
-  saveCustom();
-  const n = srcs.length, label = `「${name}」を${n}品から複合食品に登録しました${replace ? '（記録を1件にまとめました）' : ''}`;
-  _cl.active = false; _cl.ids.clear();
-  renderRecord(); renderCalendar(); renderComboFoodList();
-  showUndoToast(label, () => {
-    comboFoods = comboFoods.filter(f => f.id !== combo.id);
-    if (newEntry) { entries = entries.filter(e => e.id !== newEntry.id); removed.sort((a, b) => a.i - b.i).forEach(x => entries.splice(Math.min(x.i, entries.length), 0, x.e)); }
-    saveCustom(); renderRecord(); renderCalendar(); renderComboFoodList();
+// グループ（材料を持つ記録）を、材料ごとの個別の記録に戻す
+function ungroupEntry(id) {
+  const idx = entries.findIndex(e => e.id === id); if (idx === -1) return;
+  const g = entries[idx]; if (!Array.isArray(g.ingredients) || !g.ingredients.length) return;
+  const snap = JSON.parse(JSON.stringify(entries));
+  const parts = g.ingredients.map((ing, i) => {
+    const sc = comboScaled(ing, ing.amount);
+    const e = { id: Date.now() + Math.random() + i, date: g.date, meal: g.meal, time: g.time, name: ing.name, amount: r1(ing.amount),
+      cal: r1(sc._cal), p: r1(sc._p), f: r1(sc._f), c: r1(sc._c), ...Object.fromEntries(MICRO_KEYS.map(k => [k, microRound(k, sc['_' + k] || 0)])) };   // comboScaled は値を「_cal」のように _ 付きのキーで返す
+    e.digest = classifyDigestCategory(e.name, e.p); enrichFoodProfile(e); return e;
   });
+  entries.splice(idx, 1, ...parts); _grpOpen.delete(id);
+  save(); renderRecord(); renderCalendar();
+  showUndoToast(`「${g.name}」のグループを解除しました（${parts.length}件）`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
 }
+// グループを、名前を付けて複合食品DBに登録する（以後は食品検索から1タップで記録できる）
+function registerGroupAsCombo(id) {
+  const g = entries.find(e => e.id === id); if (!g || !Array.isArray(g.ingredients) || !g.ingredients.length) return;
+  const nameEl = document.getElementById('grpName_' + id), catEl = document.getElementById('grpCat_' + id), msg = document.getElementById('grpMsg_' + id);
+  const fail = t => { if (msg) msg.textContent = t; else showToast(t); };
+  const name = ((nameEl && nameEl.value) || g.name || '').trim(); if (!name) { fail('複合食品名を入力してください'); return; }
+  if ([...comboFoods, ...customFoods].some(f => normFoodName(f.name) === normFoodName(name))) { fail(`「${name}」は既に登録されています。別の名前にしてください`); return; }
+  const combo = buildComboFromIngredients(g.ingredients, name, catEl ? catEl.value : '');
+  comboFoods.push(combo); saveCustom(); renderComboFoodList();
+  showUndoToast(`「${name}」を複合食品に登録しました（${g.ingredients.length}品）`, () => { comboFoods = comboFoods.filter(f => f.id !== combo.id); saveCustom(); renderComboFoodList(); });
+  if (msg) msg.textContent = '';
+}
+const _grpOpen = new Set();
+function toggleGroupOpen(id) { if (_grpOpen.has(id)) _grpOpen.delete(id); else _grpOpen.add(id); renderRecord(); }
+function groupMembersHtml(e) {
+  return `<div class="grp-members" onclick="event.stopPropagation()">
+    ${e.ingredients.map(ing => { const sc = comboScaled(ing, ing.amount); return `<div class="grp-m"><span>${fdEsc(ing.name)}</span><span>${r1(ing.amount)}g ・${ri(sc._cal)}kcal</span></div>`; }).join('')}
+    <div class="row" style="margin:8px 0 6px"><div class="field" style="flex:2"><input type="text" id="grpName_${e.id}" value="${fdEsc(e.name)}" placeholder="複合食品名" autocomplete="off"></div><div class="field" style="flex:1.2"><input type="text" id="grpCat_${e.id}" list="foodCatList" value="${fdEsc(e.category || '')}" placeholder="カテゴリ" autocomplete="off"></div></div>
+    <div id="grpMsg_${e.id}" class="status-msg status-err" style="margin-bottom:4px"></div>
+    <div class="grp-actions"><button class="btn btn-primary btn-sm" onclick="registerGroupAsCombo(${e.id})">複合食品として登録</button><button class="btn btn-sm" onclick="ungroupEntry(${e.id})">グループ解除</button></div>
+  </div>`;
+}
+// ── 長押し→ドラッグの操作 ──
+const DRAG_HOLD_MS = 380;
+const DRAG = { timer: null, pending: null, active: false, srcId: null, row: null, ghost: null, target: null, raf: 0, x: 0, y: 0, offX: 0, offY: 0, suppressUntil: 0 };
+function dragRowFromEvent(ev) {
+  const t = ev.target; if (!t || !t.closest) return null;
+  if (t.closest('button, input, select, textarea, a, .edit-form, .grp-members')) return null;
+  const row = t.closest('.log-item[data-eid]'); return row && row.closest('#mealBlocks') ? row : null;
+}
+function dragPointerStart(ev, x, y) {
+  const row = dragRowFromEvent(ev); if (!row || DRAG.active) return;
+  dragCancelPending(); DRAG.pending = { row, x, y };
+  DRAG.timer = setTimeout(() => dragBegin(row, x, y), DRAG_HOLD_MS);
+}
+function dragCancelPending() { clearTimeout(DRAG.timer); DRAG.timer = null; DRAG.pending = null; }
+function dragBegin(row, x, y) {
+  DRAG.timer = null; DRAG.pending = null; DRAG.active = true; DRAG.row = row; DRAG.srcId = Number(row.dataset.eid);
+  const r = row.getBoundingClientRect(); DRAG.offX = x - r.left; DRAG.offY = y - r.top; DRAG.x = x; DRAG.y = y;
+  const ghost = row.cloneNode(true); ghost.classList.add('drag-ghost'); ghost.removeAttribute('data-eid');
+  ghost.style.width = r.width + 'px'; ghost.style.transform = `translate(${x - DRAG.offX}px, ${y - DRAG.offY}px) scale(1.03)`;
+  document.body.appendChild(ghost); DRAG.ghost = ghost;
+  row.classList.add('dragging-src'); document.body.classList.add('drag-mode');
+  try { if (navigator.vibrate) navigator.vibrate(12); } catch (e) {}
+  dragAutoScroll();
+}
+function dragMove(x, y) {
+  if (!DRAG.active) return; DRAG.x = x; DRAG.y = y;
+  DRAG.ghost.style.transform = `translate(${x - DRAG.offX}px, ${y - DRAG.offY}px) scale(1.03)`;
+  const el = typeof document.elementFromPoint === 'function' ? document.elementFromPoint(x, y) : null;
+  let tr = el && el.closest ? el.closest('.log-item[data-eid]') : null;
+  if (tr === DRAG.row || (tr && tr.closest('.drag-ghost'))) tr = null;
+  if (tr !== DRAG.target) { if (DRAG.target) DRAG.target.classList.remove('drop-target'); DRAG.target = tr; if (tr) tr.classList.add('drop-target'); }
+}
+function dragAutoScroll() { // 画面の上端・下端の近くにいる間は自動でスクロールする
+  if (!DRAG.active) return;
+  const h = window.innerHeight || 800; let dy = 0;
+  if (DRAG.y < 90) dy = -Math.ceil((90 - DRAG.y) / 6); else if (DRAG.y > h - 120) dy = Math.ceil((DRAG.y - (h - 120)) / 6);
+  if (dy) { window.scrollBy(0, dy); dragMove(DRAG.x, DRAG.y); }
+  DRAG.raf = requestAnimationFrame(dragAutoScroll);
+}
+function dragEnd(commit) {
+  if (!DRAG.active) return;
+  const targetId = DRAG.target ? Number(DRAG.target.dataset.eid) : null, srcId = DRAG.srcId;
+  cancelAnimationFrame(DRAG.raf);
+  if (DRAG.ghost) DRAG.ghost.remove();
+  if (DRAG.row) DRAG.row.classList.remove('dragging-src'); if (DRAG.target) DRAG.target.classList.remove('drop-target');
+  document.body.classList.remove('drag-mode');
+  DRAG.active = false; DRAG.ghost = null; DRAG.row = null; DRAG.target = null; DRAG.suppressUntil = Date.now() + 450;   // 指を離した直後のクリック（編集画面が開く等）を無効にする
+  if (commit && targetId != null) groupEntries(srcId, targetId);
+}
+function bindEntryDrag() {
+  const root = document.getElementById('mealBlocks'); if (!root) return;
+  root.addEventListener('touchstart', ev => { if (ev.touches && ev.touches.length === 1) dragPointerStart(ev, ev.touches[0].clientX, ev.touches[0].clientY); }, { passive: true });
+  document.addEventListener('touchmove', ev => {   // ドラッグ中だけスクロールを止める（iOSでは最初から non-passive で登録しておく必要がある）
+    const t = ev.touches && ev.touches[0]; if (!t) return;
+    if (DRAG.active) { ev.preventDefault(); dragMove(t.clientX, t.clientY); }
+    else if (DRAG.pending && Math.hypot(t.clientX - DRAG.pending.x, t.clientY - DRAG.pending.y) > 9) dragCancelPending();   // 動いたらスクロール操作とみなす
+  }, { passive: false });
+  document.addEventListener('touchend', () => { if (DRAG.active) dragEnd(true); else dragCancelPending(); });
+  document.addEventListener('touchcancel', () => { if (DRAG.active) dragEnd(false); else dragCancelPending(); });
+  root.addEventListener('mousedown', ev => { if (ev.button === 0) dragPointerStart(ev, ev.clientX, ev.clientY); });
+  document.addEventListener('mousemove', ev => { if (DRAG.active) dragMove(ev.clientX, ev.clientY); else if (DRAG.pending && Math.hypot(ev.clientX - DRAG.pending.x, ev.clientY - DRAG.pending.y) > 9) dragCancelPending(); });
+  document.addEventListener('mouseup', () => { if (DRAG.active) dragEnd(true); else dragCancelPending(); });
+  document.addEventListener('click', ev => { if (Date.now() < DRAG.suppressUntil) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+  document.addEventListener('contextmenu', ev => { if (DRAG.active || DRAG.pending) ev.preventDefault(); });
+}
+function dismissDragHint() { try { localStorage.setItem('pfcDragHint', '1'); } catch (e) {} const el = document.getElementById('dragHint'); if (el) el.style.display = 'none'; }
 // ── 調味料クイック登録 ──
 // 小さじ1 = 約5ml（油類・液体）/調味料によって重量が異なる
 // ユーザーが自由に追加・削除できるよう配列で管理する（初回起動時はこの12種を初期値として使う）
@@ -6084,6 +6151,8 @@ document.addEventListener('click', e => {
 });
 
 // ── Init ──
+bindEntryDrag();
+try { if (localStorage.getItem('pfcDragHint') === '1') { const h = document.getElementById('dragHint'); if (h) h.style.display = 'none'; } } catch (e) {}
 updateDateHeader();
 renderCalendar();
 renderRecord();

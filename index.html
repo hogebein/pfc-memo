@@ -201,8 +201,19 @@
     .fd-bulk-row:last-child { margin-bottom: 0; }
     .fd-bulk-row input[type=text] { flex: 1; min-width: 0; padding: 7px 8px; font-size: 12px; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
     .fd-selrow { cursor: pointer; align-items: center; gap: 8px; }
-    .cl-row { cursor: pointer; align-items: center; gap: 8px; }
-    .cl-bar { position: sticky; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); z-index: 30; background: var(--surface); border: 1.5px solid #3266ad; border-radius: var(--radius-sm); padding: 10px; margin: 10px 0; box-shadow: 0 4px 16px rgba(0,0,0,.18); }
+    /* ── 記録のグループ化（長押し→ドラッグ）── */
+    .log-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .log-item.grp { flex-wrap: wrap; }
+    .grp-members { flex: 0 0 100%; margin-top: 8px; padding: 8px 10px; background: var(--surface2); border-radius: 8px; font-size: 12px; -webkit-user-select: text; user-select: text; cursor: default; }
+    .grp-m { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+    .grp-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .drag-ghost { position: fixed; z-index: 9999; left: 0; top: 0; margin: 0; pointer-events: none; opacity: .93; box-shadow: 0 10px 28px rgba(0,0,0,.28); border-radius: 12px; background: var(--surface); transition: none; }
+    .dragging-src { opacity: .25; }
+    .drop-target { outline: 2.5px solid #3266ad; outline-offset: -2px; background: #e8f0fe !important; transform: scale(1.015); transition: transform .12s; position: relative; }
+    .drop-target::after { content: 'ここにドロップでグループ化'; position: absolute; right: 10px; top: -9px; background: #3266ad; color: #fff; font-size: 10px; padding: 1px 8px; border-radius: 999px; }
+    body.drag-mode { overscroll-behavior: contain; }
+    body.drag-mode .log-item:not(.dragging-src):not(.drop-target) { animation: jiggle .28s ease-in-out infinite alternate; }
+    @keyframes jiggle { from { transform: rotate(-.35deg); } to { transform: rotate(.35deg); } }
     .fd-servrow { align-items: center; gap: 8px; }
     .fd-sv { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
     .fd-sv input { width: 74px; padding: 7px 8px; font-size: 14px; text-align: right; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface2); color: var(--text); }
@@ -631,9 +642,8 @@
       </details>
 
       <!-- ④ 食事ブロック -->
-      <div style="display:flex;justify-content:flex-end;margin:0 0 8px"><button class="btn btn-sm" id="clStartBtn" onclick="startComboFromLog()" style="display:inline-flex;align-items:center;gap:4px">🍱 記録から複合食品を作る</button></div>
+      <div id="dragHint" style="display:flex;align-items:flex-start;gap:8px;margin:0 0 8px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;line-height:1.5;color:var(--text-sub)"><span style="flex:1">💡 記録を<b>長押し</b>して別の記録の上に<b>ドラッグ</b>すると、グループ（複合食品）にまとめられます。グループをタップすると中身の確認と複合食品への登録ができます。</span><button class="btn btn-sm btn-ghost" onclick="dismissDragHint()" style="padding:0 6px;flex:0 0 auto" aria-label="閉じる">✕</button></div>
       <div id="mealBlocks"></div>
-      <div id="comboLogBar"></div>
 
       <!-- ⑤ 調味料クイック登録（折りたたみ） -->
       <details style="margin-bottom:8px">
