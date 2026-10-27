@@ -5,7 +5,7 @@
   "scripts": {
     "build": "node build.js",
     "import-mext-fiber": "node scripts/import-mext-fiber.js",
-    "test": "node tests/core.test.js && node tests/group-drag.test.js"
+    "test": "node tests/core.test.js && node tests/group-drag.test.js && node tests/prompt-templates.test.js && node tests/amount-sheet.test.js && node tests/csv-export.test.js && node tests/search-focus.test.js"
   },
   "dependencies": {}
 }

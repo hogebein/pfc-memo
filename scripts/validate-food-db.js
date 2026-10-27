@@ -103,6 +103,15 @@ newFoods.forEach((food, i) => {
     warnings.push(`${tag}: aa.score が${food.aa.score}で不自然です（通常0.4〜1.3程度）`);
   }
 
+  // 単位（units: [{label, g}]）: 数えて食べる食品の1単位あたりのグラム数
+  if (food.units !== undefined) {
+    if (!Array.isArray(food.units)) errors.push(`${tag}: units は配列にしてください`);
+    else food.units.forEach((u, k) => {
+      if (!u || typeof u.label !== 'string' || !u.label.trim() || u.label.length > 8) errors.push(`${tag}: units[${k}].label は1〜8文字の文字列にしてください`);
+      if (!u || !(u.g > 0 && u.g <= 5000)) errors.push(`${tag}: units[${k}].g は0より大きく5000以下の数値にしてください`);
+    });
+  }
+
   // 食物繊維の内訳（水溶性 fibS + 不溶性 fibI ≒ fiber）
   if ((food.fiber || 0) > 0) {
     const hasS = food.fibS !== undefined, hasI = food.fibI !== undefined;

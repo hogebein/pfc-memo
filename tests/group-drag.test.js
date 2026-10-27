@@ -64,7 +64,7 @@ setTimeout(async () => {
     t('combo keeps fiber split', Math.abs(cf[0].fiber - 3.4) < 0.05 && cf[0].fibS > 0); t('entries untouched by registration', ev('entries.length') === 4 && !!E(3));
     t('combo listed in food tab', (w.renderComboFoodList(), /納豆ご飯/.test($('comboFoodList').textContent))); undo(); t('undo registration', ev('comboFoods.length') === 0);
     // 登録した複合食品を記録すると同じ値になる
-    $('grpName_3').value = '納豆ご飯'; w.registerGroupAsCombo(3); ev(`activeAddMeal='間食'`); ev('renderRecord()'); const food = ev('getAllFoods()').find(f => f.name === '納豆ご飯'); $('addResultsBox_間食')._local = [food]; w.selectAddResult(0, '間食');
+    $('grpName_3').value = '納豆ご飯'; w.registerGroupAsCombo(3); ev(`activeAddMeal='間食'`); ev('renderRecord()'); const food = ev('getAllFoods()').find(f => f.name === '納豆ご飯'); $('addResultsBox_間食')._local = [food]; w.selectAddResult(0, '間食'); w.confirmAmountSheet();   // 数量シートで量(既定=1食分)を確定
     const logged = ev('entries').filter(e => e.name === '納豆ご飯').pop(); t('logging registered combo reproduces totals', logged && logged.amount === 200 && logged.cal === 352 && logged.ingredients.length === 2);
     // ── ドラッグ操作（長押し→移動→ドロップ）──
     setup(); let hit = null; w.document.elementFromPoint = () => hit;

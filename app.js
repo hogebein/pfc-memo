@@ -645,7 +645,7 @@ async function saveToCloud() {
   let retry = false;
   try {
     const { doc, setDoc } = await fsApi();
-    const payload = { entries, exercises, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), updatedAt: new Date().toISOString() };
+    const payload = { entries, exercises, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), promptTemplates, updatedAt: new Date().toISOString() };
     const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
     if (bytes > CLOUD_DOC_MAX_BYTES) { // 1MiBを超えると保存できない。以前は黙って失敗していた
       _cloudLastError = `データが大きすぎます（${Math.round(bytes / 1024)}KB / 上限1024KB）`;
@@ -1154,11 +1154,12 @@ function renderCalendar() {
 // 食物繊維NET補正: 食物繊維は消化吸収されないため実質カロリー = fiber * 2kcal/g（大腸発酵分）として扱い
 //                  通常計算されている炭水化物 * 4kcal から fiber * 4kcal を引いて fiber * 2kcal を足す
 //                  → 実質 fiber * 2kcal の節約
+const FIBER_NET_KCAL_PER_G = 2;   // 食物繊維1gあたりの補正（成分表では炭水化物として4kcal/gで計算されているが、実際は約2kcal/gとして差し引く）
 function calcNetCalories(s) {
   // 食物繊維NETカロリー補正
   // 食物繊維は不溶性は0kcal、可溶性は約2kcal/gで大腸で発酵
   // 標準成分表では炭水化物に含めて4kcal/gで計算されているため差分を補正
-  const fiberAdj = (s.fiber || 0) * 2; // 4kcal→2kcalへの補正分（差引き2kcal節約/g）
+  const fiberAdj = (s.fiber || 0) * FIBER_NET_KCAL_PER_G; // 4kcal→2kcalへの補正分（差引き2kcal節約/g）
 
   const grossCal  = s.cal;
   const netCal    = Math.round(grossCal - fiberAdj);
@@ -1223,17 +1224,17 @@ function showToast(msg, duration = 2000) {
   el._timer = setTimeout(() => el.classList.remove('show'), duration);
 }
 // 削除操作など、取り消し可能にしたい通知用（「元に戻す」ボタン付き）
-function showUndoToast(msg, onUndo, duration = 5000) {
+function showActionToast(msg, actions, duration = 6000) {   // actions: [{label, fn}]。「元に戻す」のボタンには toast-undo-btn を付ける
   let el = document.getElementById('toast');
   if (!el) { el = document.createElement('div'); el.id = 'toast'; document.body.appendChild(el); }
   clearTimeout(el._timer);
-  el.innerHTML = `<span>${msg}</span><button type="button" class="toast-undo-btn">元に戻す</button>`;
+  el.innerHTML = `<span>${msg}</span>` + actions.map((a, i) => `<button type="button" class="${a.label === '元に戻す' ? 'toast-undo-btn' : 'toast-act-btn'}" data-i="${i}">${a.label}</button>`).join('');
   el.classList.add('show', 'toast-action');
-  const btn = el.querySelector('.toast-undo-btn');
   const finish = () => { el.classList.remove('show', 'toast-action'); };
-  btn.onclick = (ev) => { ev.stopPropagation(); clearTimeout(el._timer); finish(); onUndo(); };
+  el.querySelectorAll('button').forEach(btn => { btn.onclick = ev => { ev.stopPropagation(); clearTimeout(el._timer); finish(); actions[Number(btn.dataset.i)].fn(); }; });
   el._timer = setTimeout(finish, duration);
 }
+function showUndoToast(msg, onUndo, duration = 5000) { showActionToast(msg, [{ label: '元に戻す', fn: onUndo }], duration); }
 document.addEventListener('click', e => {
   const btn = e.target.closest('.btn, .meal-add-btn, .nav-btn, .seasoning-btn, .toggle-btn, .period-tab, .chart-tab, .ri');
   if (!btn) return;
@@ -1406,7 +1407,35 @@ function renderActivityCard() {
     </div>`;
 }
 
+// 検索欄へのフォーカスは「＋追加」を押して開いた直後の1回だけ行う。
+// 以前は、追加パネルが開いている間、再描画のたびに検索欄へフォーカスしていた（記録の追加・量の変更・複製・削除・
+// スワイプ・タブ切替・クラウド読み込み・Google Health同期などあらゆる再描画で、キーボードと「最近使った食品」が勝手に出ていた）。
+let _focusAddSearchMeal = null;   // 「＋追加」で開いた食事。描画後に1回だけフォーカスして消す
+function captureAddSearchState() {  // 再描画前の検索欄の状態（入力途中の文字・フォーカス）を覚えておく
+  if (!activeAddMeal) return null;
+  const el = document.getElementById('addSearch_' + activeAddMeal); if (!el) return null;
+  return { meal: activeAddMeal, value: el.value, focused: document.activeElement === el, start: el.selectionStart, end: el.selectionEnd };
+}
+function restoreAddSearchAfterRender(before) {
+  const meal = activeAddMeal; if (!meal) { _focusAddSearchMeal = null; return; }
+  const el = document.getElementById('addSearch_' + meal); if (!el) return;
+  const recordVisible = !!(document.getElementById('panel-record') && document.getElementById('panel-record').classList.contains('active'));
+  // ① 入力途中の文字は、フォーカスの有無にかかわらず残す（再描画で消えない）。入力済みなら候補も復元する
+  if (before && before.meal === meal && before.value) { el.value = before.value; if (typeof onAddSearch === 'function') onAddSearch(before.value, meal); }
+  // ② フォーカス: 開いた直後の1回、または再描画の直前に検索欄を操作していたとき（入力を続けられるように）だけ。他の入力欄・数量シートを操作中は奪わない
+  const wantOpenFocus = _focusAddSearchMeal === meal, wantKeep = !!(before && before.meal === meal && before.focused);
+  _focusAddSearchMeal = null;
+  if (!recordVisible || !(wantOpenFocus || wantKeep)) return;
+  setTimeout(() => {
+    const cur = document.getElementById('addSearch_' + meal); if (!cur || activeAddMeal !== meal) return;
+    const ae = document.activeElement, other = ae && ae !== cur && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.type !== 'checkbox';
+    if (other || (typeof AS !== 'undefined' && AS.open)) return;
+    cur.focus();
+    if (wantKeep && before.start != null) { try { cur.setSelectionRange(before.start, before.end); } catch (e) {} }
+  }, 30);
+}
 function renderRecord() {
+  const searchBefore = captureAddSearchState();
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
   const g = goals();
@@ -1557,12 +1586,11 @@ function renderRecord() {
               <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="flex:1;height:32px">保存</button>
               <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="flex:1;height:32px">取消</button>
             </div>
-            <div class="row" style="margin-bottom:2px;gap:8px;align-items:center"><input type="range" id="easlider${e.id}" min="0" max="${Math.max(200, r1(e.amount*3))}" step="1" value="${e.amount}" style="flex:1" oninput="syncAmountFromSlider(${e.id}, this.value)"></div>
-            <div class="row" style="margin-bottom:4px;gap:3px">${[-10,-5,-1,1,5,10].map(d=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:10px" onclick="nudgeEditAmount(${e.id},${d})">${d>0?'+':''}${d}g</button>`).join('')}</div>
-            <div class="row" style="margin-bottom:5px;gap:4px">
-              <button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="setEditAmountByVolume(${e.id},5)">小さじ1(5ml)</button>
-              <button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="setEditAmountByVolume(${e.id},15)">大さじ1(15ml)</button>
+            <div class="row" style="margin-bottom:8px;gap:4px">
+              <button type="button" class="btn btn-sm" onclick="duplicateEntry(${e.id})" style="flex:1;height:32px">複製</button>
+              <button type="button" class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})" style="flex:1;height:32px">削除</button>
             </div>
+            <div class="row" style="margin-bottom:6px"><button type="button" class="btn btn-sm" style="flex:1;height:40px;font-size:13px" onclick="openAmountSheetForEntry(${e.id})">📏 量を変更（倍率・単位・数字キー）</button></div>
             <div class="row" style="margin-bottom:5px;gap:8px;align-items:center">
               <div class="field" style="flex:1"><label>目標カロリーで調整（PFC比を維持）</label><input type="number" placeholder="例: 100" step="1" onchange="recalcEditByCal(${e.id}, this.value)"></div>
             </div>
@@ -1575,10 +1603,10 @@ function renderRecord() {
           </div>`;
         } else {
           const isGrp = Array.isArray(e.ingredients) && e.ingredients.length > 1, open = isGrp && _grpOpen.has(e.id);
-          html += `<div class="log-item${isGrp ? ' grp' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail">${e.amount}g｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
+          html += `<div class="log-item${isGrp ? ' grp' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail"><span class="amt-pill" onclick="event.stopPropagation();openAmountSheetForEntry(${e.id})" role="button" aria-label="量を変更">${fmtAmt(e.amount)}g</span>｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
           <div class="li-right"><div class="li-cal">${ri(e.cal)}</div>
-          <button class="btn btn-sm btn-ghost" onclick="startEdit(${e.id})" style="padding:2px 6px">✏️</button>
-          <button class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})" style="padding:6px 10px">✕</button></div>${open ? groupMembersHtml(e) : ''}</div>`;
+          <button class="btn btn-sm btn-ghost li-edit" onclick="startEdit(${e.id})" aria-label="編集">✏️</button></div>${open ? groupMembersHtml(e) : ''}
+          <div class="sw-actions"><button type="button" class="btn btn-sm" onclick="duplicateEntry(${e.id})">複製</button><button type="button" class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})">削除</button></div></div>`;
         }
       });
       html += `</div>`;
@@ -1622,7 +1650,7 @@ function renderRecord() {
     html += `</div>`;
   });
   document.getElementById('mealBlocks').innerHTML = html;
-  if (activeAddMeal) setTimeout(() => { const el = document.getElementById('addSearch_'+activeAddMeal); if(el) el.focus(); }, 30);
+  restoreAddSearchAfterRender(searchBefore);
   renderExerciseItems();
 }
 
@@ -1673,16 +1701,17 @@ function localSearch(q) {
 }
 
 const SRC_LABEL = {local:'内蔵',custom:'カスタム',combo:'複合'};
-function resultItemHtml(f, i, meal) {
+function resultItemHtml(f, i, meal, qty) {
   const cat = (f._src === 'custom' || f._src === 'combo') && f.category ? ` ・${fdEsc(f.category)}` : '';
-  return `<div class="ri" onclick="selectAddResult(${i},'${meal}')"><div><div class="ri-name">${fdEsc(f.name)}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}${cat}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`;
+  const qa = qty ? resolveQtyAmount(f, qty) : null;   // 量を打っている場合は、その量でのkcalを右に出す
+  return `<div class="ri" onclick="selectAddResult(${i},'${meal}')"><div><div class="ri-name">${fdEsc(f.name)}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}${cat}</div></div><div class="ri-cal">${qa ? `<span class="ri-amt">${fdEsc(qa.label)}${qa.label.endsWith('g') ? '' : '＝' + fmtAmt(qa.amount) + 'g'}</span>${ri((f.cal || 0) * qa.amount / (f.per || 100))}kcal` : `${f.cal}kcal`}</div></div>`;
 }
-function renderResultsFor(local, meal) {
+function renderResultsFor(local, meal, qty) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
   let html='';
-  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>resultItemHtml(f,i,meal)).join('')}
+  if(local.length){html+=`<div class="rs-label">${qty ? `「${fdEsc(qty.q)}」を ${fmtAmt(qty.num)}${fdEsc(qty.unit)} で記録（タップで確定）` : '内蔵・カスタムDB'}</div>`;html+=local.map((f,i)=>resultItemHtml(f,i,meal,qty)).join('')}
   else {html+=`<div class="no-result">見つかりませんでした</div>`}
-  box.innerHTML=html; box._local=local; box._quick=false; box.style.display='block';
+  box.innerHTML=html; box._local=local; box._quick=false; box._qty=qty||null; box.style.display='block';
 }
 // 検索欄をタップしたとき（未入力）に、最近使った食品とよく使う食品を出して、1タップで記録できるようにする
 function getQuickPickFoods() {
@@ -1705,14 +1734,17 @@ function onAddSearchFocus(meal) {
   let html = '';
   if (recent.length) html += `<div class="rs-label">最近使った食品</div>` + recent.map((f, i) => resultItemHtml(f, i, meal)).join('');
   if (frequent.length) html += `<div class="rs-label">よく使う食品（直近60日）</div>` + frequent.map((f, i) => resultItemHtml(f, recent.length + i, meal)).join('');
-  box.innerHTML = html; box._local = local; box._quick = true; box.style.display = 'block';
+  box.innerHTML = html; box._local = local; box._quick = true; box._qty = null; box.style.display = 'block';
 }
 // （検索欄・結果の外をタップしたときに閉じる処理は、既存の document クリックハンドラが全ての結果ボックスに対して行う）
 if (!window._addBase) window._addBase = {};
 function onAddSearch(q, meal) {
   const box=document.getElementById('addResultsBox_'+meal);
   if(!q.trim()){if(box)box.style.display='none';return}
-  renderResultsFor(localSearch(q),meal);
+  // 名前に量が続く入力（「ご飯150」「卵2個」）は、名前だけで検索し、その量で記録できるようにする。全体で見つかる場合（例「B12」）は通常の検索
+  let local = localSearch(q), qty = null;
+  if (!local.length) { const pq = parseQtyQuery(q); if (pq) { const l2 = localSearch(pq.q); if (l2.length) { local = l2; qty = pq; } } }
+  renderResultsFor(local, meal, qty);
 }
 // 食品(f)を、指定の量(amt: g)で食事記録のエントリにする（複合食品は材料の内訳も実量に換算して持たせる）
 function buildEntryFromFood(f, meal, amt) {
@@ -1754,29 +1786,220 @@ function buildEntryFromFood(f, meal, amt) {
   }
   return newEntry;
 }
-function selectAddResult(i, meal) {
-  const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
-  const f=box._local && box._local[i]; if(!f) return;
-  window._addBase[meal]={...f};
-
-  // ── 検索結果タップ＝即登録。量やその他の栄養素はあとで記録欄のインライン編集で調整する ──
-  const per = f.per || 100;
-  const amt = f.serving || per;
-  const r   = amt / per;
+// ══ 数量の指定（数量シート）・単位・既定量の学習 ══
+// 検索結果をタップしたときの動き: 「確認する」(既定) = 数量シートで量を決めてから記録 / 「すぐ記録」= 既定量で即記録し、通知から量を変更できる。
+// 検索欄に量を打った（例「ご飯150」「卵2個」）場合は、その量でそのまま記録する。
+const AMOUNT_MODE_KEY = 'pfcAmountSheet', AMOUNT_MAX = 5000;
+function getAmountSheetMode() { try { return localStorage.getItem(AMOUNT_MODE_KEY) === 'instant' ? 'instant' : 'ask'; } catch (e) { return 'ask'; } }
+function setAmountSheetMode(m) { try { localStorage.setItem(AMOUNT_MODE_KEY, m === 'instant' ? 'instant' : 'ask'); } catch (e) {} }
+const fmtAmt = v => String(Math.round((v || 0) * 10) / 10);
+// ── 単位（1個＝50g など）──
+function sanitizeUnits(arr) {
+  if (!Array.isArray(arr)) return []; const out = [];
+  arr.forEach(u => {
+    if (!u || typeof u !== 'object') return;
+    const label = String(u.label == null ? '' : u.label).trim().slice(0, 8), g = parseFloat(u.g);
+    if (label && isFinite(g) && g > 0 && g <= AMOUNT_MAX && !out.some(x => x.label === label)) out.push({ label, g: Math.round(g * 10) / 10 });
+  });
+  return out.slice(0, 8);
+}
+function unitsToText(units) { return sanitizeUnits(units).map(u => `${u.label}=${u.g}`).join(', '); }
+function parseUnitsText(txt) {
+  return sanitizeUnits(String(txt || '').normalize('NFKC').split(/[,、，\n]/).map(p => { const m = p.split('='); return m.length >= 2 ? { label: m[0].trim(), g: m[1].replace(/g/i, '') } : null; }).filter(Boolean));
+}
+function foodUnits(f) { return sanitizeUnits(f && f.units); }
+const GENERIC_UNIT_DEFS = [{ label: '小さじ', ml: 5 }, { label: '大さじ', ml: 15 }, { label: 'カップ', ml: 200 }];
+function genericUnitsFor(f) { const d = (f && f.density > 0) ? f.density : (f && f.name ? getFoodDensity(f.name) : 1) || 1; return GENERIC_UNIT_DEFS.map(u => ({ label: u.label, g: r1(u.ml * d), generic: true })); }
+function allUnitsFor(f) { return [...foodUnits(f), ...genericUnitsFor(f)]; }
+// ── 履歴からの既定量・よく使う量 ──
+function foodHistory(name) { const k = normFoodName(name); return entries.filter(e => e.amount > 0 && normFoodName(e.name) === k); }
+function lastAmountFor(name) {
+  let best = null; foodHistory(name).forEach(e => { if (!best || String(e.date) + String(e.time || '') >= String(best.date) + String(best.time || '')) best = e; });
+  return best ? best.amount : null;
+}
+function recentAmountsFor(name, n = 3) {
+  const m = new Map(); foodHistory(name).forEach(e => { const a = Math.round(e.amount * 10) / 10, k = String(e.date) + String(e.time || ''), cur = m.get(a) || { n: 0, last: '' }; cur.n++; if (k > cur.last) cur.last = k; m.set(a, cur); });
+  return [...m.entries()].sort((x, y) => y[1].n - x[1].n || (y[1].last > x[1].last ? 1 : -1)).slice(0, n).map(x => x[0]);
+}
+// 1食分が設定されていればそれ、無ければ前回の量、それも無ければ基準量
+function defaultAmountFor(f) { if (f.serving > 0) return f.serving; const l = lastAmountFor(f.name); return l || f.per || 100; }
+// ── 検索欄の量指定「ご飯150」「卵2個」「納豆 1パック」──
+const QTY_RE = /^(.*?)[\s　]*([0-9]+(?:\.[0-9]+)?)[\s　]*(kg|g|ml|cc|グラム|個|こ|枚|杯|本|パック|切れ|切|丁|玉|袋|缶|人前|食|粒|房|膳|尾|皿|カップ|大さじ|小さじ)?$/i;
+function parseQtyQuery(q) {
+  const n = String(q || '').normalize('NFKC').trim(), m = QTY_RE.exec(n);
+  if (!m || !m[1].trim()) return null;
+  return { q: m[1].trim(), num: parseFloat(m[2]), unit: (m[3] || '').toLowerCase() };
+}
+const UNIT_ALIASES = { 'こ': '個', '切': '切れ', 'グラム': 'g' };
+function resolveQtyAmount(f, qty) {
+  const n = qty.num; if (!(n > 0)) return null;
+  const u = UNIT_ALIASES[qty.unit] || qty.unit, units = allUnitsFor(f), own = foodUnits(f);
+  const ok = (amount, label) => (amount > 0 && amount <= AMOUNT_MAX) ? { amount: Math.round(amount * 10) / 10, label } : null;
+  if (u === '' || u === 'g') {
+    if (u === '' && n <= 10 && own[0] && ok(n * own[0].g)) return ok(n * own[0].g, `${fmtAmt(n)}${own[0].label}`);   // 「卵2」→2個（単位のある食品で、小さい数のとき）
+    return ok(n, `${fmtAmt(n)}g`);
+  }
+  if (u === 'kg') return ok(n * 1000, `${fmtAmt(n)}kg`);
+  if (u === 'ml' || u === 'cc') return ok(n * (((f && f.density) > 0 ? f.density : getFoodDensity(f.name)) || 1), `${fmtAmt(n)}ml`);
+  const hit = units.find(x => x.label === u); if (hit) return ok(n * hit.g, `${fmtAmt(n)}${hit.label}`);
+  if (f.serving > 0 && ['個', '枚', '杯', '本', 'パック', '切れ', '人前', '食', '皿', '膳', '袋', '缶', '丁', '玉', '尾'].includes(u)) return ok(n * f.serving, `${fmtAmt(n)}${u}（1食分${fmtAmt(f.serving)}g）`);
+  return null;
+}
+// ── 記録の登録（数量シート・即記録・検索欄の量指定で共通）──
+function registerFoodEntry(f, meal, amt) {
+  const snap = JSON.parse(JSON.stringify(entries));   // 「元に戻す」用
   const newEntry = buildEntryFromFood(f, meal, amt);
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
-  const { merged } = addOrMergeEntry(newEntry);
+  const { entry, merged } = addOrMergeEntry(newEntry);
   save();
-
-  box.style.display='none';
-  document.getElementById('addSearch_'+meal).value='';
-  const cont = document.getElementById('amtQuickPick_'+meal);
-  if (cont) cont.style.display = 'none';
-
-  renderRecord();
-  renderCalendar();
-  showToast(merged ? `✅「${f.name}」は既存の記録に合算しました` : `✅「${f.name}」を登録しました`);
+  const box = document.getElementById('addResultsBox_' + meal); if (box) box.style.display = 'none';
+  const inp = document.getElementById('addSearch_' + meal); if (inp) inp.value = '';
+  const cont = document.getElementById('amtQuickPick_' + meal); if (cont) cont.style.display = 'none';
+  renderRecord(); renderCalendar();
+  return { entry: entry || newEntry, merged, snap };
 }
+function registerFromSelection(f, meal, amt, offerChange) {
+  const { entry, merged, snap } = registerFoodEntry(f, meal, amt);
+  const msg = merged ? `✅「${fdEsc(f.name)}」を合算しました（+${fmtAmt(amt)}g）` : `✅「${fdEsc(f.name)}」${fmtAmt(amt)}g を記録しました`;
+  const acts = []; if (offerChange) acts.push({ label: '量を変更', fn: () => openAmountSheetForEntry(entry.id) });
+  acts.push({ label: '元に戻す', fn: () => { entries = snap; save(); renderRecord(); renderCalendar(); } });
+  showActionToast(msg, acts, offerChange ? 7000 : 5000);
+}
+function selectAddResult(i, meal) {
+  const box = document.getElementById('addResultsBox_' + meal); if (!box) return;
+  const f = box._local && box._local[i]; if (!f) return;
+  window._addBase[meal] = { ...f };
+  const q = box._qty ? resolveQtyAmount(f, box._qty) : null;
+  if (q) { registerFromSelection(f, meal, q.amount, true); return; }               // 検索欄に量を打った → その量でそのまま記録
+  if (getAmountSheetMode() === 'ask') { box.style.display = 'none'; openAmountSheetForFood(f, meal); return; }   // 数量シートで量を決めてから記録
+  registerFromSelection(f, meal, defaultAmountFor(f), true);                        // すぐ記録（通知から量を変更できる）
+}
+function duplicateEntry(id) {
+  const idx = entries.findIndex(e => e.id === id); if (idx < 0) return;
+  const snap = JSON.parse(JSON.stringify(entries)), copy = JSON.parse(JSON.stringify(entries[idx]));
+  copy.id = Date.now() + Math.random(); copy.time = nowTimeStr(); editingId = null;
+  entries.splice(idx + 1, 0, copy); save(); renderRecord(); renderCalendar();
+  showUndoToast(`「${fdEsc(copy.name)}」を複製しました`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
+}
+// 既存の記録の量を変更する（単品は値を比例配分、材料を持つ記録は材料の量を同じ比率で変える）
+function applyEntryAmount(id, amt) {
+  const e = entries.find(x => x.id === id); if (!e || !(amt > 0)) return;
+  const snap = JSON.parse(JSON.stringify(entries)), old = e.amount || amt, k = amt / old;
+  if (Array.isArray(e.ingredients) && e.ingredients.length) {
+    e.ingredients.forEach(ing => { ing.amount = Math.round(ing.amount * k * 10) / 10; });
+    recomputeEntryFromIngredients(e);
+  } else {
+    e.cal = r1(e.cal * k); e.p = r1(e.p * k); e.f = r1(e.f * k); e.c = r1(e.c * k);
+    MICRO_KEYS.forEach(key => { if (e[key]) e[key] = microRound(key, e[key] * k); });
+    e.amount = Math.round(amt * 10) / 10;
+  }
+  save(); renderRecord(); renderCalendar();
+  showUndoToast(`「${fdEsc(e.name)}」の量を${fmtAmt(old)}g → ${fmtAmt(e.amount)}gに変更しました`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
+}
+// ── 数量シート（画面下から出る量の指定画面）──
+const AS = { open: false, mode: 'add', f: null, meal: null, entryId: null, name: '', ref: null, base: 100, amount: 100, units: [], unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: [], timer: null };
+const amountStep = a => a < 20 ? 1 : a < 100 ? 5 : 10;   // 量が大きいほど刻みを大きく（ボタンは＋/−の2つだけ）
+function asRef(o, refAmt) { return { refAmt: refAmt || 1, cal: o.cal || 0, p: o.p || 0, f: o.f || 0, c: o.c || 0, fiber: o.fiber || 0 }; }
+function openAmountSheetForFood(f, meal, initial) {
+  const base = defaultAmountFor(f);
+  Object.assign(AS, { open: true, mode: 'add', f, meal, entryId: null, name: f.name, ref: asRef(f, f.per || 100), base, amount: initial > 0 ? initial : base, units: allUnitsFor(f), unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: recentAmountsFor(f.name) });
+  showAmountSheet();
+}
+function openAmountSheetForEntry(id) {
+  const e = entries.find(x => x.id === id); if (!e) return;
+  const food = getAllFoods().find(x => normFoodName(x.name) === normFoodName(e.name));
+  Object.assign(AS, { open: true, mode: 'edit', f: food || null, meal: e.meal, entryId: id, name: e.name, ref: asRef(e, e.amount), base: e.amount, amount: e.amount, units: food ? allUnitsFor(food) : genericUnitsFor({ name: e.name }), unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: recentAmountsFor(e.name) });
+  showAmountSheet();
+}
+function asPreview() { const r = AS.ref, k = r.refAmt > 0 ? AS.amount / r.refAmt : 0; return { cal: r.cal * k, p: r.p * k, f: r.f * k, c: r.c * k, fiber: r.fiber * k }; }
+function asWarning() {   // 打ち間違い（小数点の位置など）に気づけるよう、極端な量を知らせる
+  const pv = asPreview(), ratio = AS.base > 0 ? AS.amount / AS.base : 1;
+  if (!(AS.amount > 0)) return { block: true, text: '量を入力してください' };
+  if (AS.amount >= AMOUNT_MAX) return { text: `${AMOUNT_MAX.toLocaleString()}gが上限です` };
+  if (ratio >= 5 && AS.amount >= 50) return { text: `いつもの量（${fmtAmt(AS.base)}g）の${fmtAmt(ratio)}倍です` };
+  if (pv.cal >= 1500) return { text: `${ri(pv.cal)}kcalは1品としては多めです` };
+  return null;
+}
+function showAmountSheet() { const root = document.getElementById('amountSheet'); if (!root) return; root.style.display = 'block'; document.body.style.overflow = 'hidden'; renderAmountSheet(); }
+function closeAmountSheet() { asStopHold(); AS.open = false; const root = document.getElementById('amountSheet'); if (root) root.style.display = 'none'; document.body.style.overflow = ''; }
+function renderAmountSheet() {
+  const panel = document.getElementById('asPanel'); if (!panel) return;
+  const chip = (cls, attrs, label) => `<button type="button" class="as-chip ${cls}" ${attrs}>${label}</button>`;
+  const mults = [[0.5, '½'], [0.75, '¾'], [1, '1×'], [1.5, '1.5×'], [2, '2×'], [3, '3×']];
+  const keypad = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" class="as-key" onclick="asKey('${k}')">${k}</button>`).join('');
+  const rows = AS.keypad
+    ? `<div class="as-keypad">${keypad}</div><div class="as-hint">${AS.unit ? AS.unit.label + 'の数' : 'グラム'}を入力（最初の1桁で入れ替わります）</div>`
+    : `<div class="as-label">いつもの量 ${fmtAmt(AS.base)}g を基準に</div><div class="as-chips">${mults.map(([m, l]) => chip('as-m', `data-m="${m}" onclick="asMultiply(${m})"`, l)).join('')}</div>`
+      + (AS.recent.length ? `<div class="as-label">よく使う量</div><div class="as-chips">${AS.recent.map(a => chip('as-r', `data-a="${a}" onclick="asSetGrams(${a})"`, fmtAmt(a) + 'g')).join('')}</div>` : '')
+      + `<div class="as-label">単位</div><div class="as-chips">${chip('as-g', 'data-g="1" onclick="asGramMode()"', 'g')}${AS.units.map((u, i) => chip('as-u' + (u.generic ? ' as-gen' : ''), `data-u="${i}" onclick="asPickUnit(${i})"`, `${fdEsc(u.label)} <small>${fmtAmt(u.g)}g</small>`)).join('')}</div>`
+      + `<div class="as-stepper"><button type="button" class="as-step" data-step="-1" aria-label="減らす">−</button><button type="button" class="as-step" data-step="1" aria-label="増やす">＋</button></div>`;
+  panel.innerHTML = `<div class="as-grab"></div>
+    <div class="as-head"><div class="as-title">${fdEsc(AS.name)}<span class="as-sub">${AS.mode === 'add' ? fdEsc(AS.meal || '') + 'に記録' : '量の変更'}</span></div><button type="button" class="as-x" onclick="closeAmountSheet()" aria-label="閉じる">✕</button></div>
+    <div class="as-display" onclick="asToggleKeypad()" role="button" aria-label="数字キーで入力"><span id="asNum" class="as-num"></span><span id="asUnit" class="as-unit"></span><span class="as-kp">${AS.keypad ? '▾' : '⌨'}</span></div>
+    <div id="asSub" class="as-subline"></div><div id="asPv" class="as-pv"></div><div id="asWarn" class="as-warn" style="display:none"></div>
+    ${rows}
+    <button type="button" id="asConfirm" class="btn btn-primary as-confirm" onclick="confirmAmountSheet()"></button>
+    <label class="as-toggle"><input type="checkbox" id="asInstant" ${getAmountSheetMode() === 'instant' ? 'checked' : ''} onchange="setAmountSheetMode(this.checked?'instant':'ask')">次回から確認せず、すぐ記録する（記録後の通知から量を変更できます）</label>`;
+  panel.querySelectorAll('[data-step]').forEach(btn => {   // ＋/−は長押しで連続して変わる
+    const dir = Number(btn.dataset.step);
+    btn.addEventListener('pointerdown', ev => { ev.preventDefault(); asStep(dir); asStopHold(); AS.timer = setTimeout(function tick() { asStep(dir); AS.timer = setTimeout(tick, 90); }, 450); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, asStopHold));
+  });
+  updateAmountDisplay();
+}
+function asStopHold() { clearTimeout(AS.timer); AS.timer = null; }
+function updateAmountDisplay() {   // 量が変わったときの更新（押している＋/−ボタンを作り直さないよう、変わる部分だけ書き換える）
+  const $ = id => document.getElementById(id); if (!$('asNum')) return;
+  const pv = asPreview(), w = asWarning();
+  $('asNum').textContent = AS.keypad && !AS.fresh ? (AS.buf || '0') : fmtAmt(AS.unit ? AS.count : AS.amount);
+  $('asUnit').textContent = AS.unit ? AS.unit.label : 'g';
+  $('asSub').textContent = AS.unit ? `＝ ${fmtAmt(AS.amount)}g` : (AS.base > 0 ? `いつもの量の ${fmtAmt(AS.amount / AS.base)} 倍` : '');
+  $('asPv').textContent = `${ri(pv.cal)}kcal　P${r1(pv.p)}　F${r1(pv.f)}　C${r1(pv.c)}${pv.fiber ? '　繊' + r1(pv.fiber) : ''}`;
+  const we = $('asWarn'); if (w && !w.block) { we.style.display = 'block'; we.textContent = '⚠ ' + w.text; } else we.style.display = 'none';
+  const cb = $('asConfirm'), label = AS.mode === 'add' ? `${AS.meal || ''}に記録する` : '量を変更する';
+  cb.textContent = (w && !w.block && AS.warnAck) ? `それでも ${fmtAmt(AS.amount)}g で${AS.mode === 'add' ? '記録する' : '変更する'}` : `${label}　${fmtAmt(AS.amount)}g`;
+  cb.disabled = !!(w && w.block); cb.classList.toggle('as-warnbtn', !!(w && !w.block && AS.warnAck));
+  document.querySelectorAll('#asPanel .as-m').forEach(b => b.classList.toggle('on', !AS.unit && Math.round(AS.base * Number(b.dataset.m) * 10) / 10 === AS.amount));
+  document.querySelectorAll('#asPanel .as-r').forEach(b => b.classList.toggle('on', !AS.unit && Number(b.dataset.a) === AS.amount));
+  document.querySelectorAll('#asPanel .as-u').forEach(b => b.classList.toggle('on', AS.unit === AS.units[Number(b.dataset.u)]));
+  document.querySelectorAll('#asPanel .as-g').forEach(b => b.classList.toggle('on', !AS.unit));
+}
+function asClamp(v) { return Math.min(AMOUNT_MAX, Math.max(0, Math.round(v * 10) / 10)); }
+function asSetGrams(v) { AS.unit = null; AS.amount = asClamp(v); AS.fresh = true; AS.buf = ''; AS.warnAck = false; updateAmountDisplay(); }
+function asGramMode() { AS.unit = null; AS.warnAck = false; updateAmountDisplay(); }
+function asMultiply(m) { asSetGrams(AS.base * m); }
+function asPickUnit(i) { const u = AS.units[i]; if (!u) return; AS.unit = u; AS.count = 1; AS.amount = asClamp(u.g); AS.warnAck = false; updateAmountDisplay(); }
+function asStep(dir) {
+  const EPS = 1e-9;
+  if (AS.unit) {   // 単位モード: 5未満は0.5刻み、それ以上は1刻み（上下で対称）
+    const st = (dir > 0 ? AS.count : AS.count - 0.01) < 5 ? 0.5 : 1;
+    const next = dir > 0 ? Math.floor(AS.count / st + EPS) * st + st : Math.ceil(AS.count / st - EPS) * st - st;
+    AS.count = Math.min(99, Math.max(0.5, next)); AS.amount = asClamp(AS.count * AS.unit.g);
+  } else {         // グラム: 量が大きいほど刻みを大きくし、次のきりのよい値（5の倍数・10の倍数）へ進む
+    const a = AS.amount, st = amountStep(dir > 0 ? a : Math.max(a - 0.1, 0));
+    const next = dir > 0 ? Math.floor(a / st + EPS) * st + st : Math.ceil(a / st - EPS) * st - st;
+    AS.amount = asClamp(Math.max(1, next));
+  }
+  AS.warnAck = false; updateAmountDisplay();
+}
+function asToggleKeypad() { AS.keypad = !AS.keypad; AS.fresh = true; AS.buf = ''; renderAmountSheet(); }
+function asKey(k) {
+  if (k === '⌫') AS.buf = AS.fresh ? '' : AS.buf.slice(0, -1);
+  else { if (AS.fresh) AS.buf = ''; if (k === '.') { if (AS.buf.includes('.')) return; if (AS.buf === '') AS.buf = '0'; } if (AS.buf.length >= 6) return; AS.buf += k; }
+  AS.fresh = false;
+  const v = parseFloat(AS.buf) || 0;
+  if (AS.unit) { AS.count = Math.min(99, v); AS.amount = asClamp(AS.count * AS.unit.g); } else AS.amount = asClamp(v);
+  AS.warnAck = false; updateAmountDisplay();
+}
+function confirmAmountSheet() {
+  const w = asWarning(); if (w && w.block) return;
+  if (w && !AS.warnAck) { AS.warnAck = true; updateAmountDisplay(); return; }   // 極端な量は、もう一度押さないと確定しない
+  const amt = AS.amount, mode = AS.mode, f = AS.f, meal = AS.meal, id = AS.entryId;
+  closeAmountSheet();
+  if (mode === 'add' && f) registerFromSelection(f, meal, amt, false); else if (mode === 'edit') applyEntryAmount(id, amt);
+}
+document.addEventListener('keydown', ev => { if (!AS.open) return; if (ev.key === 'Escape') closeAmountSheet(); else if (ev.key === 'Enter' && !(ev.target && ev.target.type === 'checkbox')) confirmAmountSheet(); });
+document.addEventListener('pointerup', asStopHold); document.addEventListener('touchend', asStopHold);
 // ══ 記録のグループ化（長押し→ドラッグ）と、複合食品への登録 ══
 // 食事記録を長押しして別の記録の上にドロップすると、ひとつの「グループ」記録にまとめる（iOSのフォルダのように）。
 // グループ = 材料(ingredients)を持つ記録。材料の分量はこれまでの複合食品の記録と同じ編集画面で調整でき、合計は自動計算される。
@@ -1937,6 +2160,22 @@ function bindEntryDrag() {
   document.addEventListener('mouseup', () => { if (DRAG.active) dragEnd(true); else dragCancelPending(); });
   document.addEventListener('click', ev => { if (Date.now() < DRAG.suppressUntil) { ev.stopPropagation(); ev.preventDefault(); } }, true);
   document.addEventListener('contextmenu', ev => { if (DRAG.active || DRAG.pending) ev.preventDefault(); });
+}
+// ── 記録の行を左にスワイプ → 「複製」「削除」を表示（押し間違えやすい✕ボタンの代わり）──
+const SW = { row: null, x: 0, y: 0, decided: null, open: null };
+function swipeClose() { if (SW.open) { SW.open.classList.remove('sw-open'); SW.open = null; } }
+function swipeOpen(row) { if (SW.open && SW.open !== row) SW.open.classList.remove('sw-open'); row.classList.add('sw-open'); SW.open = row; DRAG.suppressUntil = Date.now() + 350; }
+function bindEntrySwipe() {
+  const root = document.getElementById('mealBlocks'); if (!root) return;
+  root.addEventListener('touchstart', ev => { if (!ev.touches || ev.touches.length !== 1) return; const t = ev.touches[0]; SW.row = dragRowFromEvent(ev); SW.x = t.clientX; SW.y = t.clientY; SW.decided = null; }, { passive: true });
+  document.addEventListener('touchmove', ev => {
+    if (!SW.row || DRAG.active) return; const t = ev.touches && ev.touches[0]; if (!t) return;
+    const dx = t.clientX - SW.x, dy = t.clientY - SW.y;
+    if (SW.decided === null) { if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.5) SW.decided = 'h'; else if (Math.abs(dy) > 14) SW.decided = 'v'; }   // 縦に動いたらスクロール
+    if (SW.decided === 'h') { if (dx < -50) { swipeOpen(SW.row); SW.row = null; } else if (dx > 50 && SW.row.classList.contains('sw-open')) { swipeClose(); SW.row = null; } }
+  }, { passive: true });
+  document.addEventListener('touchend', () => { SW.row = null; }); document.addEventListener('touchcancel', () => { SW.row = null; });
+  document.addEventListener('click', ev => { if (Date.now() < DRAG.suppressUntil) return; if (SW.open && !(ev.target.closest && ev.target.closest('.sw-actions'))) swipeClose(); }, true);   // 他の場所をタップしたら閉じる
 }
 function dismissDragHint() { try { localStorage.setItem('pfcDragHint', '1'); } catch (e) {} const el = document.getElementById('dragHint'); if (el) el.style.display = 'none'; }
 // ── 調味料クイック登録 ──
@@ -2393,6 +2632,7 @@ function toggleAddPanel(meal) {
   }
   // 開く
   activeAddMeal = meal;
+  _focusAddSearchMeal = meal;   // 開いた直後の1回だけ検索欄にフォーカスする
   editingId = null;
   // 端末の「戻る」操作（スワイプ／戻るボタン）でこのパネルを閉じられるよう履歴を1つ積む
   try { history.pushState({ pfcOverlay: 'addPanel' }, ''); } catch(e) {}
@@ -2412,29 +2652,6 @@ function startEdit(id){
   const src = entries.find(e => e.id === id);
   if (src) window._editOriginal[id] = {...src};
   renderRecord();
-}
-function syncAmountFromSlider(id, val) {
-  const amtEl = document.getElementById('ea'+id);
-  if (!amtEl) return;
-  amtEl.value = val;
-  recalcEdit(id);
-}
-function nudgeEditAmount(id, delta) {
-  const amtEl = document.getElementById('ea'+id);
-  if (!amtEl) return;
-  const cur = parseFloat(amtEl.value) || 0;
-  amtEl.value = Math.max(0.1, r1(cur + delta));
-  recalcEdit(id);
-}
-// 小さじ(5ml)・大さじ(15ml)から量(g)を設定する。食品DBに密度(density)があればそれを使い、
-// 無ければ水とほぼ同じ1.0g/mlとして概算する
-function setEditAmountByVolume(id, ml) {
-  const nameEl = document.getElementById('en'+id);
-  const density = getFoodDensity(nameEl ? nameEl.value.trim() : '');
-  const amtEl = document.getElementById('ea'+id);
-  if (!amtEl) return;
-  amtEl.value = r1(ml * density);
-  recalcEdit(id);
 }
 // 目標カロリーを起点に、PFC比を維持したまま量(g)・各栄養素を比例スケールする
 function recalcEditByCal(id, val) {
@@ -3763,16 +3980,17 @@ function renderCharts() {
 }
 
 // ── CSV ──
-const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble'];
+const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_cal'];
 const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal',
-  'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used'];
+  'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used',
+  'fiber_g','fiber_adj_kcal','net_intake_kcal','net_balance_kcal','net_calc'];
 function exportCSV() {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
   let data=[...entries];
   if(from) data=data.filter(e=>e.date>=from);
   if(to) data=data.filter(e=>e.date<=to);
   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
-  const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })()].join(','))];
+  const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G)].join(','))];
 
   // ── 消費カロリー詳細（日別、1行1日）──
   // 食事記録の対象日を軸に、その日のTDEE内訳・運動消費・摂取との差引をまとめる。
@@ -3788,8 +4006,9 @@ function exportCSV() {
       const tb = getTdeeBreakdown(d);
       const activityDesc = describeActivity(tb).replace(/"/g, '""');
       const exCal = exercises.filter(x => x.date === d).reduce((a,x) => a + (x.cal||0), 0);
-      const intake = r1(sumEntries(getDayEntries(d)).cal);
+      const daySum = sumEntries(getDayEntries(d)), intake = r1(daySum.cal);
       const totalBurn = r1(tb.tdee + exCal);
+      const net = calcNetCalories(daySum);   // 実質カロリー（画面の「実質」表示と同じ計算）
       rows.push([
         d, ri(tb.bmr), `"${activityDesc}"`, tb.simple ? '' : ri(tb.activeCal),
         tb.detail ? (tb.detail.steps||0) : '', tb.tdee, ri(exCal), ri(totalBurn),
@@ -3797,6 +4016,8 @@ function exportCSV() {
         q(describeTdeeFormula(tb)), q(bd.name), q(`${bd.expr} = ${ri(bd.raw)}` + (bd.tempMult !== 1 ? ` × 気温補正${bd.tempMult}(${bd.temp}℃)` : '') + ` → BMR ${ri(bd.bmr)}`),
         bd.tempMult, tb.simple ? '' : getNeatPct(), tdeeActivitySource(tb), tb.simple ? 0 : tb.tef,
         q(`${bd.sex} ${bd.h}cm ${bd.w}kg ${bd.age}歳` + (bd.bf ? ` 体脂肪${bd.bf}%` : '') + '（現在のプロフィール設定）'),
+        r1(daySum.fiber), net.fiberAdj, net.netCal, r1(net.netCal - totalBurn),
+        q(`表示 ${intake}kcal − 食物繊維 ${r1(daySum.fiber)}g × ${FIBER_NET_KCAL_PER_G}kcal = 実質 ${net.netCal}kcal（実質収支 = 実質摂取 − 総消費）`),
       ].join(','));
     });
   }
@@ -3899,6 +4120,7 @@ function sanitizeImportedFood(raw, kind) {
   if (typeof raw.en === 'string' && raw.en.trim()) food.en = raw.en.trim().slice(0, 120);
   if (typeof raw.tags === 'string' && raw.tags.trim()) food.tags = raw.tags.trim().slice(0, 200);
   { const cat = sanitizeCategory(raw.category) || guessFoodCategory(name); if (cat) food.category = cat; }
+  { const u = sanitizeUnits(raw.units); if (u.length) food.units = u; }
   if (raw.digest) food.digest = raw.digest; else food.digest = classifyDigestCategory(name, p || 0);
   if (kind === 'combo' && Array.isArray(raw.ingredients)) {
     food.ingredients = raw.ingredients.map(ing => {
@@ -4340,7 +4562,8 @@ const _fdServUnsetOnly = { custom: false, combo: false };
 function servingRowHtml(kind, f) {
   const sv = f.serving > 0 ? f.serving : f.per, per = f.per || 100;
   return `<div class="custom-item fd-servrow"><div style="flex:1;min-width:0"><div style="font-weight:500">${fdEsc(f.name)} ${foodDbBadge(f)}</div><div style="font-size:10px;color:var(--text-sub)" id="fdSvInfo_${kind}_${f.id}">${servingInfoText(f, sv)}</div></div>
-    <div class="fd-sv"><input type="number" inputmode="decimal" min="0" step="1" value="${f.serving > 0 ? f.serving : ''}" placeholder="${per}" oninput="onFoodServingInput('${kind}', ${f.id}, this.value)" onchange="commitFoodServing('${kind}', ${f.id}, this.value)"><span>g</span></div></div>`;
+    <div class="fd-sv"><input type="number" inputmode="decimal" min="0" step="1" value="${f.serving > 0 ? f.serving : ''}" placeholder="${per}" oninput="onFoodServingInput('${kind}', ${f.id}, this.value)" onchange="commitFoodServing('${kind}', ${f.id}, this.value)"><span>g</span></div>
+    <div class="fd-units-row"><span>単位</span><input type="text" class="fd-units" value="${fdEsc(unitsToText(f.units))}" placeholder="例: 個=50, 切れ=30" onchange="commitFoodUnits('${kind}', ${f.id}, this.value)" autocomplete="off"></div></div>`;
 }
 function servingInfoText(f, sv) { const per = f.per || 100, r = sv / per; return `${f.serving > 0 ? '1食分' : '未設定（基準量'+per+'gで記録）'} ${r1(sv)}g = ${ri(f.cal * r)}kcal P${r1(f.p * r)} F${r1(f.f * r)} C${r1(f.c * r)}`; }
 function onFoodServingInput(kind, id, v) { // 入力中は保存せず、表示だけ更新
@@ -4355,6 +4578,14 @@ function commitFoodServing(kind, id, v) {
   saveCustom();
   const el = document.getElementById(`fdSvInfo_${kind}_${id}`); if (el) el.textContent = servingInfoText(f, f.serving > 0 ? f.serving : (f.per || 100));
   if (_fdServUnsetOnly[kind]) renderFoodDbList(kind);
+}
+// 単位（「個=50, 切れ=30」の形式）を保存する。数量シートの単位ボタンと、検索欄の「卵2個」で使われる
+function commitFoodUnits(kind, id, v) {
+  const f = foodDbList(kind).find(x => x.id === id); if (!f) return;
+  const raw = String(v).trim();
+  if (raw === '') delete f.units;
+  else { const u = parseUnitsText(raw); if (!u.length) { showToast('単位は「個=50, 切れ=30」の形式で入力してください'); renderFoodDbList(kind); return; } f.units = u; }
+  saveCustom(); renderFoodDbList(kind);
 }
 function toggleFoodServingMode(kind) {
   if (_fdSelectMode[kind]) toggleFoodSelectMode(kind); // 選択モードとは同時に使わない
@@ -4664,6 +4895,11 @@ function applyCloudData(data) {
   const mergeDays = (local, cloud) => { const lk = Object.keys(local || {}); const merged = { ...(local || {}), ...(cloud || {}) }; if (lk.some(k => !cloud || !(k in cloud))) needUpload = true; return merged; };
   if (data.dailyActivity || Object.keys(dailyActivity).length) { dailyActivity = mergeDays(dailyActivity, data.dailyActivity); try { localStorage.setItem('pfcDailyActivity', JSON.stringify(dailyActivity)); } catch (e) {} }
   if (data.ghData || Object.keys(ghData).length) { ghData = sanitizeGhData(mergeDays(ghData, sanitizeGhData(data.ghData))); try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch (e) {} }
+  { // AIプロンプトの雛形: クラウドにあればそれを使う。クラウドに無く、端末に保存済み（編集済み）の雛形があれば送り直す
+    const cloudTpl = sanitizePromptTemplates(data.promptTemplates);
+    if (cloudTpl) { promptTemplates = cloudTpl; try { localStorage.setItem('pfcPromptTemplates', JSON.stringify(promptTemplates)); } catch (e) {} if (typeof renderPromptTemplates === 'function') renderPromptTemplates(); }
+    else if (localStorage.getItem('pfcPromptTemplates')) needUpload = true;
+  }
   if (data.updatedAt) _lastCloudStamp = data.updatedAt;
   return needUpload;
 }
@@ -5204,6 +5440,7 @@ function executeAiCommands(commands, backupLabel) {
           ...(typeof food.en === 'string' && food.en.trim() ? { en: food.en.trim().slice(0, 120) } : {}),
           ...(typeof food.tags === 'string' && food.tags.trim() ? { tags: food.tags.trim().slice(0, 200) } : {}),
           ...(() => { const c = sanitizeCategory(food.category) || guessFoodCategory(food.name); return c ? { category: c } : {}; })(),
+          ...(sanitizeUnits(food.units).length ? { units: sanitizeUnits(food.units) } : {}),
           per,
           ...(aiServing > 0 ? { serving: aiServing } : {}),
           cal:     parseFloat(food.cal)     || 0,
@@ -5488,6 +5725,7 @@ function executeAiCommands(commands, backupLabel) {
           // 食物繊維や内訳が更新された場合は、合計と整合させる（内訳が無ければ名前から推定）
           if (['fiber','fibS','fibI'].some(k => updates[k] != null && updates[k] !== '')) reconcileFiberSplit(customFoods[idx]);
           ['en','tags','category'].forEach(k => { if (typeof updates[k] === 'string') { const v = updates[k].trim().slice(0, 200); if (v) customFoods[idx][k] = v; else delete customFoods[idx][k]; } });
+          if (Array.isArray(updates.units)) { const u = sanitizeUnits(updates.units); if (u.length) customFoods[idx].units = u; else delete customFoods[idx].units; }
           // 読み: 指定があれば更新、名前だけ変えた場合は古い読みが残らないよう自動推定に戻す
           if (updates.yomi != null) {
             const y = sanitizeYomi(updates.yomi);
@@ -5520,11 +5758,112 @@ function executeAiCommands(commands, backupLabel) {
   return log;
 }
 
-function sendQuickAiPrompt(text) {
-  const input = document.getElementById('aiInput');
-  if (!input) return;
-  input.value = text;
-  sendAiMessage();
+// ══ AIプロンプトの雛形 ══
+// 押すと送信せずにチャット欄へコピーする（【…】の部分は最初の1つが選択状態になり、そのまま打ち込める）。複数登録でき、編集・並べ替え・削除ができる
+const DEFAULT_PROMPT_TEMPLATES = [
+  { id: 'd-food', title: '🍱 食品を登録', text: '次の食品をカスタム食品DBに登録して。栄養成分は推定で構いません（食物繊維は水溶性・不溶性も）。\n食品名：【食品名】\n基準量：【100】g\n分かる栄養成分：【エネルギー・たんぱく質・脂質・炭水化物など、分かる範囲で】' },
+  { id: 'd-label', title: '🏷 成分表示から登録', text: '次の栄養成分表示から食品を登録して。表示にない栄養素は推定で補ってください。\n商品名：【商品名】\n【100g／1食分○g】あたり：エネルギー【　】kcal、たんぱく質【　】g、脂質【　】g、炭水化物【　】g、食物繊維【　】g、食塩相当量【　】g' },
+  { id: 'd-recipe', title: '🍲 レシピを複合食品に', text: '次のレシピを複合食品として登録して。各材料の栄養値は推定で構いません。\n料理名：【料理名】\n材料：\n・【食材1】【量】g\n・【食材2】【量】g\n・【食材3】【量】g' },
+  { id: 'd-log', title: '🍽 食事を記録', text: '【朝食／昼食／夕食／間食】に【食品名と量（例：卵2個）】を食べました' },
+  { id: 'd-eatout', title: '🏪 外食・市販品を記録', text: '【店名・商品名】を【昼食】に食べました。栄養値が分からなければ推定して記録し、カスタム食品としても登録してください。' },
+  { id: 'd-yesterday', title: '🔁 昨日と同じ', text: '昨日の【朝食】と同じものを、今日の【朝食】に記録して' },
+  { id: 'd-fromlog', title: '🧾 記録をまとめて登録', text: '今日の【昼食】の記録を1つの複合食品「【名前】」としてまとめて登録して（元の記録は【残す／消す】）' },
+  { id: 'd-edit', title: '✏️ 食品の値を修正', text: 'カスタム食品「【食品名】」の【項目（例：たんぱく質）】を【値】に修正して' },
+  { id: 'd-search', title: '🔍 DBにあるか確認', text: '「【食品名】」は食品DBに登録されている？似た名前の食品があれば教えて' },
+];
+const PROMPT_TPL_MAX = 50, PROMPT_TITLE_MAX = 24, PROMPT_TEXT_MAX = 2000;
+function sanitizePromptTemplates(arr) {
+  if (!Array.isArray(arr)) return null;
+  const out = [], seen = new Set();
+  arr.forEach(t => {
+    if (!t || typeof t !== 'object') return;
+    const title = String(t.title == null ? '' : t.title).trim().slice(0, PROMPT_TITLE_MAX), text = String(t.text == null ? '' : t.text).slice(0, PROMPT_TEXT_MAX);
+    if (!title || !text.trim()) return;
+    let id = String(t.id || '').slice(0, 40) || newPromptTplId(); if (seen.has(id)) id = newPromptTplId(); seen.add(id);
+    out.push({ id, title, text });
+  });
+  return out.slice(0, PROMPT_TPL_MAX);
+}
+function newPromptTplId() { return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+function loadPromptTemplates() {
+  try { const raw = localStorage.getItem('pfcPromptTemplates'); if (raw) { const a = sanitizePromptTemplates(JSON.parse(raw)); if (a) return a; } } catch (e) {}
+  return DEFAULT_PROMPT_TEMPLATES.map(t => ({ ...t }));
+}
+let promptTemplates = loadPromptTemplates();
+function savePromptTemplates() { try { localStorage.setItem('pfcPromptTemplates', JSON.stringify(promptTemplates)); } catch (e) {} queueCloudSaveSoon(); }
+let _promptMgrOpen = false, _promptEditId = null;   // _promptEditId: 編集中の雛形のid（'new' は新規）
+function renderPromptTemplates() {
+  const chips = document.getElementById('promptChips');
+  if (chips) chips.innerHTML = promptTemplates.length
+    ? promptTemplates.map(t => `<button class="btn btn-sm prompt-chip" data-tpl="${fdEsc(t.id)}" onclick="usePromptTemplate(this.dataset.tpl)" title="${fdEsc(t.text.slice(0, 120))}">${fdEsc(t.title)}</button>`).join('')
+    : `<span style="font-size:11px;color:var(--text-sub)">雛形がありません。「⚙️ 雛形」から追加できます</span>`;
+  const mgr = document.getElementById('promptMgr'); if (!mgr) return;
+  if (!_promptMgrOpen) { mgr.innerHTML = ''; return; }
+  const editForm = (t) => `<div class="fd-bulk" style="margin:6px 0">
+      <div class="field" style="margin-bottom:6px"><input type="text" id="ptTitle" maxlength="${PROMPT_TITLE_MAX}" placeholder="名前（例：🍱 食品を登録）" value="${fdEsc(t.title)}" autocomplete="off"></div>
+      <div class="field" style="margin-bottom:6px"><textarea id="ptText" rows="6" maxlength="${PROMPT_TEXT_MAX}" placeholder="AIに送る文章。【…】で囲んだ部分は、使うときに最初の1つが選択されます" style="width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;background:var(--surface);color:var(--text);font-family:inherit;line-height:1.5">${fdEsc(t.text)}</textarea></div>
+      <div id="ptMsg" class="status-msg status-err" style="margin-bottom:6px"></div>
+      <div style="display:flex;gap:6px"><button class="btn btn-primary btn-sm" style="flex:1" onclick="savePromptTemplateForm()">保存</button><button class="btn btn-sm" style="flex:1" onclick="cancelPromptEdit()">キャンセル</button></div></div>`;
+  mgr.innerHTML = `<div class="fd-bulk" style="margin:0 0 10px">
+    <div style="font-size:12px;font-weight:500;margin-bottom:6px">プロンプトの雛形（タップでチャット欄にコピー）</div>
+    ${promptTemplates.map((t, i) => _promptEditId === t.id ? editForm(t) : `<div class="fd-bulk-row" style="margin-bottom:4px"><div style="flex:1;min-width:0"><div style="font-size:12px;font-weight:500">${fdEsc(t.title)}</div><div style="font-size:10px;color:var(--text-sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${fdEsc(t.text.replace(/\s+/g, ' '))}</div></div>
+        <button class="btn btn-sm" ${i === 0 ? 'disabled' : ''} onclick="movePromptTemplate('${fdEsc(t.id)}',-1)" aria-label="上へ">↑</button><button class="btn btn-sm" ${i === promptTemplates.length - 1 ? 'disabled' : ''} onclick="movePromptTemplate('${fdEsc(t.id)}',1)" aria-label="下へ">↓</button>
+        <button class="btn btn-sm" onclick="editPromptTemplate('${fdEsc(t.id)}')">編集</button><button class="btn btn-sm btn-danger" onclick="deletePromptTemplate('${fdEsc(t.id)}')">✕</button></div>`).join('')}
+    ${_promptEditId === 'new' ? editForm({ title: '', text: '' }) : ''}
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn btn-sm" onclick="editPromptTemplate('new')" ${promptTemplates.length >= PROMPT_TPL_MAX ? 'disabled' : ''}>＋ 新しい雛形</button>
+      <button class="btn btn-sm" onclick="savePromptFromInput()">入力欄の内容を雛形に保存</button>
+      <button class="btn btn-sm" onclick="resetPromptTemplates()">初期の雛形に戻す</button>
+    </div></div>`;
+}
+function togglePromptMgr() { _promptMgrOpen = !_promptMgrOpen; _promptEditId = null; renderPromptTemplates(); }
+// 雛形をチャット欄にコピーする（送信はしない）。入力済みなら改行して続けて追加し、最初の【…】を選択状態にする
+function usePromptTemplate(id) {
+  const tpl = promptTemplates.find(t => t.id === id), input = document.getElementById('aiInput'); if (!tpl || !input) return;
+  const cur = input.value, prefix = cur.trim() ? cur.replace(/\s+$/, '') + '\n' : '';
+  input.value = prefix + tpl.text;
+  input.style.height = 'auto'; if (input.scrollHeight > 0) input.style.height = Math.min(input.scrollHeight, 200) + 'px';   // 複数行の雛形が見えるように広げる（高さが取れない場合は自動のまま）
+  input.focus();
+  try {
+    const m = /【[^】]*】/.exec(tpl.text);
+    if (m) input.setSelectionRange(prefix.length + m.index, prefix.length + m.index + m[0].length); else input.setSelectionRange(input.value.length, input.value.length);
+  } catch (e) {}
+}
+function editPromptTemplate(id) { _promptEditId = id; renderPromptTemplates(); const el = document.getElementById('ptTitle'); if (el) { el.focus(); el.scrollIntoView({ behavior: 'smooth', block: 'center' }); } }
+function cancelPromptEdit() { _promptEditId = null; renderPromptTemplates(); }
+function savePromptTemplateForm() {
+  const title = (document.getElementById('ptTitle').value || '').trim(), text = document.getElementById('ptText').value || '', msg = document.getElementById('ptMsg');
+  const fail = t => { if (msg) msg.textContent = t; };
+  if (!title) { fail('名前を入力してください'); return; } if (!text.trim()) { fail('文章を入力してください'); return; }
+  if (_promptEditId === 'new') {
+    if (promptTemplates.length >= PROMPT_TPL_MAX) { fail(`雛形は最大${PROMPT_TPL_MAX}個までです`); return; }
+    promptTemplates.push({ id: newPromptTplId(), title: title.slice(0, PROMPT_TITLE_MAX), text: text.slice(0, PROMPT_TEXT_MAX) });
+  } else {
+    const t = promptTemplates.find(x => x.id === _promptEditId); if (!t) { _promptEditId = null; renderPromptTemplates(); return; }
+    t.title = title.slice(0, PROMPT_TITLE_MAX); t.text = text.slice(0, PROMPT_TEXT_MAX);
+  }
+  _promptEditId = null; savePromptTemplates(); renderPromptTemplates();
+}
+function movePromptTemplate(id, dir) {
+  const i = promptTemplates.findIndex(t => t.id === id), j = i + dir; if (i < 0 || j < 0 || j >= promptTemplates.length) return;
+  [promptTemplates[i], promptTemplates[j]] = [promptTemplates[j], promptTemplates[i]]; savePromptTemplates(); renderPromptTemplates();
+}
+function deletePromptTemplate(id) {
+  const snap = promptTemplates.map(t => ({ ...t })), t = promptTemplates.find(x => x.id === id); if (!t) return;
+  promptTemplates = promptTemplates.filter(x => x.id !== id); if (_promptEditId === id) _promptEditId = null; savePromptTemplates(); renderPromptTemplates();
+  showUndoToast(`雛形「${t.title}」を削除しました`, () => { promptTemplates = snap; savePromptTemplates(); renderPromptTemplates(); });
+}
+function resetPromptTemplates() {
+  if (!confirm('雛形を初期の内容に戻しますか？（追加・編集した雛形は消えます。直後なら「元に戻す」で復元できます）')) return;
+  const snap = promptTemplates.map(t => ({ ...t })); promptTemplates = DEFAULT_PROMPT_TEMPLATES.map(t => ({ ...t })); _promptEditId = null; savePromptTemplates(); renderPromptTemplates();
+  showUndoToast('雛形を初期の内容に戻しました', () => { promptTemplates = snap; savePromptTemplates(); renderPromptTemplates(); });
+}
+function savePromptFromInput() {   // いまチャット欄に書いてある文章を、新しい雛形として保存する入力を開く
+  const input = document.getElementById('aiInput'), text = input ? input.value : '';
+  if (!text.trim()) { showToast('チャット欄に雛形にしたい文章を入力してから押してください'); return; }
+  _promptMgrOpen = true; _promptEditId = 'new'; renderPromptTemplates();
+  const t = document.getElementById('ptText'); if (t) t.value = text.slice(0, PROMPT_TEXT_MAX);
+  const ti = document.getElementById('ptTitle'); if (ti) { ti.focus(); ti.scrollIntoView({ behavior: 'smooth', block: 'center' }); }
 }
 // AIのsearch_food_db関数呼び出しを実際に実行する（ユーザーの検索と同じデータソースを使う）
 function searchFoodDbForAi(query) {
@@ -5653,7 +5992,7 @@ async function sendAiMessage() {
   const text = inp ? inp.value.trim() : '';
   if (!text) return;
 
-  inp.value = '';
+  inp.value = ''; inp.style.height = '';
   inp.disabled = true;
   btn.disabled = true;
 
@@ -5760,6 +6099,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       fa: {sat,mufa,n3,n6,trans}（脂質に対する比率、合計0.8〜1.0）/ aa: {leu,ile,val,lys,met,thr,trp,his,score} を付ける
     - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
     - serving（よくある1食分の目安量g）、en（英語名）、tags（検索用キーワード、スペース区切り）も分かれば付ける
+    - units（1個・1枚などの単位。数えて食べる食品だけ）: [{"label":"個","g":50}] のように、単位名と1単位あたりのグラム数
     - category（食品DBの分類）は次のいずれか1つを付ける: 主食 / 主菜 / 副菜 / 果物 / 乳製品 / 間食・菓子 / 飲料 / 調味料 / 外食・惣菜 / サプリ・プロテイン / その他（add_combo_food も同様）
 {
   "commands": [{
@@ -6152,6 +6492,8 @@ document.addEventListener('click', e => {
 
 // ── Init ──
 bindEntryDrag();
+bindEntrySwipe();
+renderPromptTemplates();
 try { if (localStorage.getItem('pfcDragHint') === '1') { const h = document.getElementById('dragHint'); if (h) h.style.display = 'none'; } } catch (e) {}
 updateDateHeader();
 renderCalendar();

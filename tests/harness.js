@@ -8,7 +8,11 @@ function loadApp(opts = {}) {
   const errs = []; const vc = new VirtualConsole(); vc.on('jsdomError', e => errs.push(e.message));
   const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost/', pretendToBeVisual: true, virtualConsole: vc, beforeParse(w) {
     w.Chart = function () { return { destroy() {}, update() {} }; }; w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {} });
-    w.scrollTo = () => {}; w.HTMLElement.prototype.scrollIntoView = () => {}; if (opts.beforeParse) opts.beforeParse(w);
+    w.scrollTo = () => {}; w.HTMLElement.prototype.scrollIntoView = () => {};
+    // jsdom には canvas が無いため、統計タブのグラフ描画（getContext）を何もしない関数に差し替える
+    const ctx = new Proxy(function () {}, { get: (t, k) => k === 'measureText' ? () => ({ width: 0 }) : (k === 'createLinearGradient' || k === 'createRadialGradient' ? () => ({ addColorStop() {} }) : (k === 'canvas' ? {} : () => {})), set: () => true });
+    w.HTMLCanvasElement.prototype.getContext = () => ctx;
+    if (opts.beforeParse) opts.beforeParse(w);
   } });
   return { w: dom.window, errs };
 }
