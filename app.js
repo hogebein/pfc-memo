@@ -1429,13 +1429,14 @@ function restoreAddSearchAfterRender(before) {
   setTimeout(() => {
     const cur = document.getElementById('addSearch_' + meal); if (!cur || activeAddMeal !== meal) return;
     const ae = document.activeElement, other = ae && ae !== cur && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName) && ae.type !== 'checkbox';
-    if (other || (typeof AS !== 'undefined' && AS.open)) return;
+    if (other) return;
     cur.focus();
     if (wantKeep && before.start != null) { try { cur.setSelectionRange(before.start, before.end); } catch (e) {} }
   }, 30);
 }
 function renderRecord() {
   const searchBefore = captureAddSearchState();
+  if (_amtOpen && !getDayEntries(currentDate).some(e => e.id === _amtOpen.id)) _amtOpen = null;   // 別の日に移った・削除された記録の調整は閉じる
   const list = getDayEntries(currentDate);
   const s = sumEntries(list);
   const g = goals();
@@ -1576,7 +1577,7 @@ function renderRecord() {
           window._editBase[e.id] = {cal:e.cal,p:e.p,f:e.f,c:e.c,fiber:e.fiber||0,fibS:fibSInputVal(e),iron:e.iron||0,calcium:e.calcium||0,vitc:e.vitc||0,vitd:e.vitd||0,salt:e.salt||0,per:e.amount,
             ingredients: (e.ingredients||[]).map(ing=>({...ing}))};
           html += `<div class="edit-form" id="editForm_${e.id}">
-            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id})"></div></div>
+            <div class="row" style="margin-bottom:5px"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="en${e.id}" value="${e.name}" onchange="autoSaveEdit(${e.id})"></div><div class="field" style="flex:1.2"><label>量(g)</label><input type="number" id="ea${e.id}" value="${e.amount}" min="0.1" step="0.1" oninput="recalcEdit(${e.id});editAmtRefresh(${e.id})"></div></div>
             ${e.ingredients && e.ingredients.length ? `<div style="margin-bottom:8px">
               <div style="font-size:11px;color:var(--text-sub);margin-bottom:4px">構成食品の分量</div>
               ${e.ingredients.map((ing,idx)=>`<div class="combo-ingredient"><span style="font-weight:500;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${ing.name}</span><input type="number" id="eIng${e.id}_${idx}" value="${ing.amount}" min="0" step="1" inputmode="decimal" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateEditIngredientAmt(${e.id},${idx},this.value)"><span style="font-size:10px;color:var(--text-sub)">g</span></div>`).join('')}
@@ -1586,11 +1587,10 @@ function renderRecord() {
               <button class="btn btn-primary btn-sm" onclick="saveEdit(${e.id})" style="flex:1;height:32px">保存</button>
               <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="flex:1;height:32px">取消</button>
             </div>
-            <div class="row" style="margin-bottom:8px;gap:4px">
-              <button type="button" class="btn btn-sm" onclick="duplicateEntry(${e.id})" style="flex:1;height:32px">複製</button>
-              <button type="button" class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})" style="flex:1;height:32px">削除</button>
+            <div class="row" style="margin-bottom:8px">
+              <button type="button" class="btn btn-sm" onclick="duplicateEntry(${e.id})" style="flex:1;height:36px">＋ 同じものをもう1つ追加（複製）</button>
             </div>
-            <div class="row" style="margin-bottom:6px"><button type="button" class="btn btn-sm" style="flex:1;height:40px;font-size:13px" onclick="openAmountSheetForEntry(${e.id})">📏 量を変更（倍率・単位・数字キー）</button></div>
+            ${editAmtControlsHtml(e)}
             <div class="row" style="margin-bottom:5px;gap:8px;align-items:center">
               <div class="field" style="flex:1"><label>目標カロリーで調整（PFC比を維持）</label><input type="number" placeholder="例: 100" step="1" onchange="recalcEditByCal(${e.id}, this.value)"></div>
             </div>
@@ -1602,11 +1602,11 @@ function renderRecord() {
             <button class="btn btn-sm" onclick="cancelEdit(${e.id})" style="height:32px;margin-top:auto">取消</button></div>
           </div>`;
         } else {
-          const isGrp = Array.isArray(e.ingredients) && e.ingredients.length > 1, open = isGrp && _grpOpen.has(e.id);
-          html += `<div class="log-item${isGrp ? ' grp' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail"><span class="amt-pill" onclick="event.stopPropagation();openAmountSheetForEntry(${e.id})" role="button" aria-label="量を変更">${fmtAmt(e.amount)}g</span>｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
+          const isGrp = Array.isArray(e.ingredients) && e.ingredients.length > 1, open = isGrp && _grpOpen.has(e.id), stripOpen = !!(_amtOpen && _amtOpen.id === e.id);
+          html += `<div class="log-item${isGrp ? ' grp' : ''}${stripOpen ? ' amt-open' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail"><span class="amt-pill" onclick="event.stopPropagation();toggleAmtStrip(${e.id})" role="button" aria-label="量を変更">${fmtAmt(e.amount)}g</span>｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
           <div class="li-right"><div class="li-cal">${ri(e.cal)}</div>
-          <button class="btn btn-sm btn-ghost li-edit" onclick="startEdit(${e.id})" aria-label="編集">✏️</button></div>${open ? groupMembersHtml(e) : ''}
-          <div class="sw-actions"><button type="button" class="btn btn-sm" onclick="duplicateEntry(${e.id})">複製</button><button type="button" class="btn btn-sm btn-danger" onclick="deleteEntry(${e.id})">削除</button></div></div>`;
+          <button class="btn btn-sm btn-ghost li-edit" onclick="startEdit(${e.id})" aria-label="編集">✏️</button>
+          <button class="btn btn-sm btn-danger li-del" onclick="deleteEntry(${e.id})" aria-label="削除">✕</button></div>${open ? groupMembersHtml(e) : ''}${stripOpen ? amtStripHtml(e) : ''}</div>`;
         }
       });
       html += `</div>`;
@@ -1787,30 +1787,10 @@ function buildEntryFromFood(f, meal, amt) {
   return newEntry;
 }
 // ══ 数量の指定（数量シート）・単位・既定量の学習 ══
-// 検索結果をタップしたときの動き: 「確認する」(既定) = 数量シートで量を決めてから記録 / 「すぐ記録」= 既定量で即記録し、通知から量を変更できる。
+// 検索結果をタップすると、既定の量（1食分 → 前回の量 → 基準量の順）ですぐ記録される。量の調整は記録の行の中（量の表示をタップ／✏️）で行う。別ウィンドウは使わない。
 // 検索欄に量を打った（例「ご飯150」「卵2個」）場合は、その量でそのまま記録する。
-const AMOUNT_MODE_KEY = 'pfcAmountSheet', AMOUNT_MAX = 5000;
-function getAmountSheetMode() { try { return localStorage.getItem(AMOUNT_MODE_KEY) === 'instant' ? 'instant' : 'ask'; } catch (e) { return 'ask'; } }
-function setAmountSheetMode(m) { try { localStorage.setItem(AMOUNT_MODE_KEY, m === 'instant' ? 'instant' : 'ask'); } catch (e) {} }
+const AMOUNT_MAX = 5000;
 const fmtAmt = v => String(Math.round((v || 0) * 10) / 10);
-// ── 単位（1個＝50g など）──
-function sanitizeUnits(arr) {
-  if (!Array.isArray(arr)) return []; const out = [];
-  arr.forEach(u => {
-    if (!u || typeof u !== 'object') return;
-    const label = String(u.label == null ? '' : u.label).trim().slice(0, 8), g = parseFloat(u.g);
-    if (label && isFinite(g) && g > 0 && g <= AMOUNT_MAX && !out.some(x => x.label === label)) out.push({ label, g: Math.round(g * 10) / 10 });
-  });
-  return out.slice(0, 8);
-}
-function unitsToText(units) { return sanitizeUnits(units).map(u => `${u.label}=${u.g}`).join(', '); }
-function parseUnitsText(txt) {
-  return sanitizeUnits(String(txt || '').normalize('NFKC').split(/[,、，\n]/).map(p => { const m = p.split('='); return m.length >= 2 ? { label: m[0].trim(), g: m[1].replace(/g/i, '') } : null; }).filter(Boolean));
-}
-function foodUnits(f) { return sanitizeUnits(f && f.units); }
-const GENERIC_UNIT_DEFS = [{ label: '小さじ', ml: 5 }, { label: '大さじ', ml: 15 }, { label: 'カップ', ml: 200 }];
-function genericUnitsFor(f) { const d = (f && f.density > 0) ? f.density : (f && f.name ? getFoodDensity(f.name) : 1) || 1; return GENERIC_UNIT_DEFS.map(u => ({ label: u.label, g: r1(u.ml * d), generic: true })); }
-function allUnitsFor(f) { return [...foodUnits(f), ...genericUnitsFor(f)]; }
 // ── 履歴からの既定量・よく使う量 ──
 function foodHistory(name) { const k = normFoodName(name); return entries.filter(e => e.amount > 0 && normFoodName(e.name) === k); }
 function lastAmountFor(name) {
@@ -1831,18 +1811,17 @@ function parseQtyQuery(q) {
   return { q: m[1].trim(), num: parseFloat(m[2]), unit: (m[3] || '').toLowerCase() };
 }
 const UNIT_ALIASES = { 'こ': '個', '切': '切れ', 'グラム': 'g' };
+const COUNT_UNITS = ['個', '枚', '杯', '本', 'パック', '切れ', '人前', '食', '皿', '膳', '袋', '缶', '丁', '玉', '尾'];
 function resolveQtyAmount(f, qty) {
   const n = qty.num; if (!(n > 0)) return null;
-  const u = UNIT_ALIASES[qty.unit] || qty.unit, units = allUnitsFor(f), own = foodUnits(f);
+  const u = UNIT_ALIASES[qty.unit] || qty.unit;
   const ok = (amount, label) => (amount > 0 && amount <= AMOUNT_MAX) ? { amount: Math.round(amount * 10) / 10, label } : null;
-  if (u === '' || u === 'g') {
-    if (u === '' && n <= 10 && own[0] && ok(n * own[0].g)) return ok(n * own[0].g, `${fmtAmt(n)}${own[0].label}`);   // 「卵2」→2個（単位のある食品で、小さい数のとき）
-    return ok(n, `${fmtAmt(n)}g`);
-  }
+  const dens = (((f && f.density) > 0 ? f.density : getFoodDensity(f.name)) || 1);
+  if (u === '' || u === 'g') return ok(n, `${fmtAmt(n)}g`);
   if (u === 'kg') return ok(n * 1000, `${fmtAmt(n)}kg`);
-  if (u === 'ml' || u === 'cc') return ok(n * (((f && f.density) > 0 ? f.density : getFoodDensity(f.name)) || 1), `${fmtAmt(n)}ml`);
-  const hit = units.find(x => x.label === u); if (hit) return ok(n * hit.g, `${fmtAmt(n)}${hit.label}`);
-  if (f.serving > 0 && ['個', '枚', '杯', '本', 'パック', '切れ', '人前', '食', '皿', '膳', '袋', '缶', '丁', '玉', '尾'].includes(u)) return ok(n * f.serving, `${fmtAmt(n)}${u}（1食分${fmtAmt(f.serving)}g）`);
+  if (u === 'ml' || u === 'cc') return ok(n * dens, `${fmtAmt(n)}ml`);
+  const spoon = { 'カップ': 200, '大さじ': 15, '小さじ': 5 }[u]; if (spoon) return ok(n * spoon * dens, `${fmtAmt(n)}${u}`);
+  if (f.serving > 0 && COUNT_UNITS.includes(u)) return ok(n * f.serving, `${fmtAmt(n)}${u}（1食分${fmtAmt(f.serving)}g）`);   // 「卵2個」→ 1食分(1個ぶん)×2
   return null;
 }
 // ── 記録の登録（数量シート・即記録・検索欄の量指定で共通）──
@@ -1858,148 +1837,111 @@ function registerFoodEntry(f, meal, amt) {
   renderRecord(); renderCalendar();
   return { entry: entry || newEntry, merged, snap };
 }
-function registerFromSelection(f, meal, amt, offerChange) {
+function registerFromSelection(f, meal, amt, offerChange, note) {
   const { entry, merged, snap } = registerFoodEntry(f, meal, amt);
-  const msg = merged ? `✅「${fdEsc(f.name)}」を合算しました（+${fmtAmt(amt)}g）` : `✅「${fdEsc(f.name)}」${fmtAmt(amt)}g を記録しました`;
-  const acts = []; if (offerChange) acts.push({ label: '量を変更', fn: () => openAmountSheetForEntry(entry.id) });
+  const msg = (merged ? `✅「${fdEsc(f.name)}」を合算しました（+${fmtAmt(amt)}g）` : `✅「${fdEsc(f.name)}」${fmtAmt(amt)}g を記録しました`) + (note ? `<br><small>${note}</small>` : '');
+  const acts = []; if (offerChange) acts.push({ label: '量を変更', fn: () => openAmtStrip(entry.id) });
   acts.push({ label: '元に戻す', fn: () => { entries = snap; save(); renderRecord(); renderCalendar(); } });
-  showActionToast(msg, acts, offerChange ? 7000 : 5000);
+  showActionToast(msg, acts, 7000);
 }
 function selectAddResult(i, meal) {
   const box = document.getElementById('addResultsBox_' + meal); if (!box) return;
   const f = box._local && box._local[i]; if (!f) return;
   window._addBase[meal] = { ...f };
   const q = box._qty ? resolveQtyAmount(f, box._qty) : null;
-  if (q) { registerFromSelection(f, meal, q.amount, true); return; }               // 検索欄に量を打った → その量でそのまま記録
-  if (getAmountSheetMode() === 'ask') { box.style.display = 'none'; openAmountSheetForFood(f, meal); return; }   // 数量シートで量を決めてから記録
-  registerFromSelection(f, meal, defaultAmountFor(f), true);                        // すぐ記録（通知から量を変更できる）
+  if (q) { registerFromSelection(f, meal, q.amount, true); return; }   // 検索欄に量を打った → その量でそのまま記録
+  const note = box._qty ? `「${fdEsc(box._qty.unit)}」の換算ができないため、いつもの量で記録しました（目安量で1食分を設定すると使えます）` : '';
+  registerFromSelection(f, meal, defaultAmountFor(f), true, note);
+}
+// ══ 量の調整（記録の行の中で完結する。別ウィンドウは使わない）══
+// 行の量の表示（青いピル）をタップすると、その行の下に「−／数字／＋」と、倍率・前回の量のボタンが開く。変更はその場で反映され、閉じるときに「元に戻す」が出る
+const amountStep = a => a < 20 ? 1 : a < 100 ? 5 : 10;   // 量が大きいほど刻みを大きく（ボタンは＋/−の2つだけ）
+function clampAmt(v) { const n = parseFloat(v); return isFinite(n) ? Math.min(AMOUNT_MAX, Math.max(0, Math.round(n * 10) / 10)) : 0; }
+function stepAmount(a, dir) {   // 次のきりのよい値（5の倍数・10の倍数）へ
+  const EPS = 1e-9, st = amountStep(dir > 0 ? a : Math.max(a - 0.1, 0));
+  return clampAmt(Math.max(1, dir > 0 ? Math.floor(a / st + EPS) * st + st : Math.ceil(a / st - EPS) * st - st));
+}
+function amountWarning(amount, base, cal) {   // 打ち間違い（小数点の位置など）に気づけるよう、極端な量を知らせる（確定をブロックはしない）
+  const ratio = base > 0 ? amount / base : 1;
+  if (amount >= AMOUNT_MAX) return `${AMOUNT_MAX.toLocaleString()}gが上限です`;
+  if (ratio >= 5 && amount >= 50) return `元の量（${fmtAmt(base)}g）の${fmtAmt(ratio)}倍です`;
+  if (cal >= 1500) return `${ri(cal)}kcalは1品としては多めです`;
+  return null;
+}
+const AMT_MULTS = [[0.5, '½'], [1, '1×'], [1.5, '1.5×'], [2, '2×']];
+let _amtOpen = null;   // 量の調整を開いている記録 {id, snap(開いた時点の記録)}
+function scaleEntryFromSnap(e, snap, amt) {   // 開いた時点の値から比例配分する（何度変えても丸め誤差が溜まらない）
+  if (Math.abs(amt - snap.amount) < 1e-9) { Object.assign(e, JSON.parse(JSON.stringify(snap))); return; }   // 元の量に戻すときは、開いた時点の値をそのまま復元する
+  const k = amt / (snap.amount || amt);
+  if (Array.isArray(snap.ingredients) && snap.ingredients.length) { e.ingredients = snap.ingredients.map(i => ({ ...i, amount: Math.round(i.amount * k * 10) / 10 })); recomputeEntryFromIngredients(e); }
+  else {
+    e.cal = r1(snap.cal * k); e.p = r1(snap.p * k); e.f = r1(snap.f * k); e.c = r1(snap.c * k);
+    MICRO_KEYS.forEach(key => { if (snap[key]) e[key] = microRound(key, snap[key] * k); });
+    e.amount = Math.round(amt * 10) / 10;
+  }
+}
+function openAmtStrip(id) {
+  const e = entries.find(x => x.id === id); if (!e) return;
+  if (_amtOpen && _amtOpen.id !== id) closeAmtStrip(false);
+  _amtOpen = { id, snap: JSON.parse(JSON.stringify(e)) };
+  renderRecord();
+  const row = document.querySelector(`#mealBlocks .log-item[data-eid="${id}"]`); if (row && row.scrollIntoView) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function closeAmtStrip(render = true) {
+  const o = _amtOpen; if (!o) return; _amtOpen = null;
+  const e = entries.find(x => x.id === o.id);
+  if (render) { renderRecord(); renderCalendar(); }
+  if (e && Math.abs((e.amount || 0) - (o.snap.amount || 0)) > 1e-9) {
+    showUndoToast(`「${fdEsc(e.name)}」の量を${fmtAmt(o.snap.amount)}g → ${fmtAmt(e.amount)}gに変更しました`, () => { entries = entries.map(x => x.id === o.id ? o.snap : x); save(); renderRecord(); renderCalendar(); });
+  }
+}
+function toggleAmtStrip(id) { if (_amtOpen && _amtOpen.id === id) closeAmtStrip(); else openAmtStrip(id); }
+function amtApply(id, amt) {
+  const e = entries.find(x => x.id === id); if (!e || !_amtOpen || _amtOpen.id !== id) return;
+  scaleEntryFromSnap(e, _amtOpen.snap, amt); save(); renderRecord(); renderCalendar();
+}
+function amtSet(id, v) { const a = clampAmt(v); if (!(a > 0)) { renderRecord(); return; } amtApply(id, a); }
+function amtStep(id, dir) { const e = entries.find(x => x.id === id); if (e) amtApply(id, stepAmount(e.amount, dir)); }
+function amtMul(id, m) { if (_amtOpen && _amtOpen.id === id) amtApply(id, clampAmt(_amtOpen.snap.amount * m)); }
+function amtRevert(id) { if (_amtOpen && _amtOpen.id === id) amtApply(id, _amtOpen.snap.amount); }
+function amtChipsHtml(cur, base, name, mulCall, setCall) {   // mulCall(m) / setCall(a): onclick に入れる呼び出しの文字列を返す関数
+  const recent = recentAmountsFor(name).filter(a => a !== cur).slice(0, 3);
+  return `<div class="amt-chips">${AMT_MULTS.map(([m, l]) => `<button type="button" class="amt-chip${Math.round(base * m * 10) / 10 === cur ? ' on' : ''}" data-m="${m}" onclick="${mulCall(m)}">${l}</button>`).join('')}`
+    + (recent.length ? `<span class="amt-lbl">前回</span>${recent.map(a => `<button type="button" class="amt-chip" onclick="${setCall(a)}">${fmtAmt(a)}</button>`).join('')}` : '') + `</div>`;
+}
+function amtStripHtml(e) {
+  const base = _amtOpen.snap.amount, cur = e.amount, warn = amountWarning(cur, base, e.cal), changed = Math.abs(cur - base) > 1e-9;
+  return `<div class="amt-strip" onclick="event.stopPropagation()">
+    <div class="amt-line"><button type="button" class="amt-step" onclick="amtStep(${e.id},-1)" aria-label="減らす">−</button><input type="number" class="amt-input" inputmode="decimal" step="0.1" min="0.1" value="${fmtAmt(cur)}" onfocus="this.select()" onchange="amtSet(${e.id},this.value)" onkeydown="if(event.key==='Enter')this.blur()" aria-label="量(g)"><span class="amt-g">g</span><button type="button" class="amt-step" onclick="amtStep(${e.id},1)" aria-label="増やす">＋</button></div>
+    ${amtChipsHtml(cur, base, e.name, m => `amtMul(${e.id},${m})`, a => `amtSet(${e.id},${a})`)}
+    ${warn ? `<div class="amt-warn">⚠ ${warn}</div>` : ''}
+    <div class="amt-foot">${changed ? `<button type="button" class="amt-link" onclick="amtRevert(${e.id})">↩ 元の量（${fmtAmt(base)}g）に戻す</button>` : '<span></span>'}<button type="button" class="amt-link" onclick="closeAmtStrip()">閉じる</button></div></div>`;
+}
+// ✏️の編集フォーム内の量の調整（フォームの「量(g)」欄を、同じ操作で動かす）
+function editAmtBase(id) { return (window._editOriginal && window._editOriginal[id]) ? window._editOriginal[id].amount : ((window._editBase && window._editBase[id]) ? window._editBase[id].per : 0); }
+function editAmtSet(id, v) { const el = document.getElementById('ea' + id); if (!el) return; el.value = fmtAmt(clampAmt(v)); recalcEdit(id); editAmtRefresh(id); }
+function editAmtStep(id, dir) { const el = document.getElementById('ea' + id); if (el) editAmtSet(id, stepAmount(parseFloat(el.value) || 0, dir)); }
+function editAmtMul(id, m) { editAmtSet(id, editAmtBase(id) * m); }
+function editAmtRefresh(id) {
+  const el = document.getElementById('ea' + id); if (!el) return;
+  const cur = parseFloat(el.value) || 0, base = editAmtBase(id), e = entries.find(x => x.id === id);
+  const cu = document.getElementById('eaCur' + id); if (cu) cu.textContent = fmtAmt(cur) + 'g';
+  const w = document.getElementById('eaWarn' + id), msg = amountWarning(cur, base, e ? e.cal : 0); if (w) { w.style.display = msg ? 'block' : 'none'; w.textContent = msg ? '⚠ ' + msg : ''; }
+  document.querySelectorAll(`#eaCtl${id} .amt-chip[data-m]`).forEach(b => b.classList.toggle('on', Math.round(base * Number(b.dataset.m) * 10) / 10 === cur));
+}
+function editAmtControlsHtml(e) {
+  const recent = recentAmountsFor(e.name).filter(a => a !== e.amount).slice(0, 3);
+  return `<div class="amt-form" id="eaCtl${e.id}"><div class="amt-line"><button type="button" class="amt-step" onclick="editAmtStep(${e.id},-1)" aria-label="減らす">−</button><span class="amt-cur" id="eaCur${e.id}">${fmtAmt(e.amount)}g</span><button type="button" class="amt-step" onclick="editAmtStep(${e.id},1)" aria-label="増やす">＋</button></div>
+    <div class="amt-chips">${AMT_MULTS.map(([m, l]) => `<button type="button" class="amt-chip${m === 1 ? ' on' : ''}" data-m="${m}" onclick="editAmtMul(${e.id},${m})">${l}</button>`).join('')}${recent.length ? `<span class="amt-lbl">前回</span>${recent.map(a => `<button type="button" class="amt-chip" onclick="editAmtSet(${e.id},${a})">${fmtAmt(a)}</button>`).join('')}` : ''}</div>
+    <div class="amt-warn" id="eaWarn${e.id}" style="display:none"></div></div>`;
 }
 function duplicateEntry(id) {
   const idx = entries.findIndex(e => e.id === id); if (idx < 0) return;
   const snap = JSON.parse(JSON.stringify(entries)), copy = JSON.parse(JSON.stringify(entries[idx]));
-  copy.id = Date.now() + Math.random(); copy.time = nowTimeStr(); editingId = null;
+  copy.id = Date.now() + Math.random(); copy.time = nowTimeStr(); editingId = null; if (_amtOpen) _amtOpen = null;
   entries.splice(idx + 1, 0, copy); save(); renderRecord(); renderCalendar();
   showUndoToast(`「${fdEsc(copy.name)}」を複製しました`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
 }
-// 既存の記録の量を変更する（単品は値を比例配分、材料を持つ記録は材料の量を同じ比率で変える）
-function applyEntryAmount(id, amt) {
-  const e = entries.find(x => x.id === id); if (!e || !(amt > 0)) return;
-  const snap = JSON.parse(JSON.stringify(entries)), old = e.amount || amt, k = amt / old;
-  if (Array.isArray(e.ingredients) && e.ingredients.length) {
-    e.ingredients.forEach(ing => { ing.amount = Math.round(ing.amount * k * 10) / 10; });
-    recomputeEntryFromIngredients(e);
-  } else {
-    e.cal = r1(e.cal * k); e.p = r1(e.p * k); e.f = r1(e.f * k); e.c = r1(e.c * k);
-    MICRO_KEYS.forEach(key => { if (e[key]) e[key] = microRound(key, e[key] * k); });
-    e.amount = Math.round(amt * 10) / 10;
-  }
-  save(); renderRecord(); renderCalendar();
-  showUndoToast(`「${fdEsc(e.name)}」の量を${fmtAmt(old)}g → ${fmtAmt(e.amount)}gに変更しました`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
-}
-// ── 数量シート（画面下から出る量の指定画面）──
-const AS = { open: false, mode: 'add', f: null, meal: null, entryId: null, name: '', ref: null, base: 100, amount: 100, units: [], unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: [], timer: null };
-const amountStep = a => a < 20 ? 1 : a < 100 ? 5 : 10;   // 量が大きいほど刻みを大きく（ボタンは＋/−の2つだけ）
-function asRef(o, refAmt) { return { refAmt: refAmt || 1, cal: o.cal || 0, p: o.p || 0, f: o.f || 0, c: o.c || 0, fiber: o.fiber || 0 }; }
-function openAmountSheetForFood(f, meal, initial) {
-  const base = defaultAmountFor(f);
-  Object.assign(AS, { open: true, mode: 'add', f, meal, entryId: null, name: f.name, ref: asRef(f, f.per || 100), base, amount: initial > 0 ? initial : base, units: allUnitsFor(f), unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: recentAmountsFor(f.name) });
-  showAmountSheet();
-}
-function openAmountSheetForEntry(id) {
-  const e = entries.find(x => x.id === id); if (!e) return;
-  const food = getAllFoods().find(x => normFoodName(x.name) === normFoodName(e.name));
-  Object.assign(AS, { open: true, mode: 'edit', f: food || null, meal: e.meal, entryId: id, name: e.name, ref: asRef(e, e.amount), base: e.amount, amount: e.amount, units: food ? allUnitsFor(food) : genericUnitsFor({ name: e.name }), unit: null, count: 1, keypad: false, buf: '', fresh: true, warnAck: false, recent: recentAmountsFor(e.name) });
-  showAmountSheet();
-}
-function asPreview() { const r = AS.ref, k = r.refAmt > 0 ? AS.amount / r.refAmt : 0; return { cal: r.cal * k, p: r.p * k, f: r.f * k, c: r.c * k, fiber: r.fiber * k }; }
-function asWarning() {   // 打ち間違い（小数点の位置など）に気づけるよう、極端な量を知らせる
-  const pv = asPreview(), ratio = AS.base > 0 ? AS.amount / AS.base : 1;
-  if (!(AS.amount > 0)) return { block: true, text: '量を入力してください' };
-  if (AS.amount >= AMOUNT_MAX) return { text: `${AMOUNT_MAX.toLocaleString()}gが上限です` };
-  if (ratio >= 5 && AS.amount >= 50) return { text: `いつもの量（${fmtAmt(AS.base)}g）の${fmtAmt(ratio)}倍です` };
-  if (pv.cal >= 1500) return { text: `${ri(pv.cal)}kcalは1品としては多めです` };
-  return null;
-}
-function showAmountSheet() { const root = document.getElementById('amountSheet'); if (!root) return; root.style.display = 'block'; document.body.style.overflow = 'hidden'; renderAmountSheet(); }
-function closeAmountSheet() { asStopHold(); AS.open = false; const root = document.getElementById('amountSheet'); if (root) root.style.display = 'none'; document.body.style.overflow = ''; }
-function renderAmountSheet() {
-  const panel = document.getElementById('asPanel'); if (!panel) return;
-  const chip = (cls, attrs, label) => `<button type="button" class="as-chip ${cls}" ${attrs}>${label}</button>`;
-  const mults = [[0.5, '½'], [0.75, '¾'], [1, '1×'], [1.5, '1.5×'], [2, '2×'], [3, '3×']];
-  const keypad = ['7', '8', '9', '4', '5', '6', '1', '2', '3', '.', '0', '⌫'].map(k => `<button type="button" class="as-key" onclick="asKey('${k}')">${k}</button>`).join('');
-  const rows = AS.keypad
-    ? `<div class="as-keypad">${keypad}</div><div class="as-hint">${AS.unit ? AS.unit.label + 'の数' : 'グラム'}を入力（最初の1桁で入れ替わります）</div>`
-    : `<div class="as-label">いつもの量 ${fmtAmt(AS.base)}g を基準に</div><div class="as-chips">${mults.map(([m, l]) => chip('as-m', `data-m="${m}" onclick="asMultiply(${m})"`, l)).join('')}</div>`
-      + (AS.recent.length ? `<div class="as-label">よく使う量</div><div class="as-chips">${AS.recent.map(a => chip('as-r', `data-a="${a}" onclick="asSetGrams(${a})"`, fmtAmt(a) + 'g')).join('')}</div>` : '')
-      + `<div class="as-label">単位</div><div class="as-chips">${chip('as-g', 'data-g="1" onclick="asGramMode()"', 'g')}${AS.units.map((u, i) => chip('as-u' + (u.generic ? ' as-gen' : ''), `data-u="${i}" onclick="asPickUnit(${i})"`, `${fdEsc(u.label)} <small>${fmtAmt(u.g)}g</small>`)).join('')}</div>`
-      + `<div class="as-stepper"><button type="button" class="as-step" data-step="-1" aria-label="減らす">−</button><button type="button" class="as-step" data-step="1" aria-label="増やす">＋</button></div>`;
-  panel.innerHTML = `<div class="as-grab"></div>
-    <div class="as-head"><div class="as-title">${fdEsc(AS.name)}<span class="as-sub">${AS.mode === 'add' ? fdEsc(AS.meal || '') + 'に記録' : '量の変更'}</span></div><button type="button" class="as-x" onclick="closeAmountSheet()" aria-label="閉じる">✕</button></div>
-    <div class="as-display" onclick="asToggleKeypad()" role="button" aria-label="数字キーで入力"><span id="asNum" class="as-num"></span><span id="asUnit" class="as-unit"></span><span class="as-kp">${AS.keypad ? '▾' : '⌨'}</span></div>
-    <div id="asSub" class="as-subline"></div><div id="asPv" class="as-pv"></div><div id="asWarn" class="as-warn" style="display:none"></div>
-    ${rows}
-    <button type="button" id="asConfirm" class="btn btn-primary as-confirm" onclick="confirmAmountSheet()"></button>
-    <label class="as-toggle"><input type="checkbox" id="asInstant" ${getAmountSheetMode() === 'instant' ? 'checked' : ''} onchange="setAmountSheetMode(this.checked?'instant':'ask')">次回から確認せず、すぐ記録する（記録後の通知から量を変更できます）</label>`;
-  panel.querySelectorAll('[data-step]').forEach(btn => {   // ＋/−は長押しで連続して変わる
-    const dir = Number(btn.dataset.step);
-    btn.addEventListener('pointerdown', ev => { ev.preventDefault(); asStep(dir); asStopHold(); AS.timer = setTimeout(function tick() { asStep(dir); AS.timer = setTimeout(tick, 90); }, 450); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(t => btn.addEventListener(t, asStopHold));
-  });
-  updateAmountDisplay();
-}
-function asStopHold() { clearTimeout(AS.timer); AS.timer = null; }
-function updateAmountDisplay() {   // 量が変わったときの更新（押している＋/−ボタンを作り直さないよう、変わる部分だけ書き換える）
-  const $ = id => document.getElementById(id); if (!$('asNum')) return;
-  const pv = asPreview(), w = asWarning();
-  $('asNum').textContent = AS.keypad && !AS.fresh ? (AS.buf || '0') : fmtAmt(AS.unit ? AS.count : AS.amount);
-  $('asUnit').textContent = AS.unit ? AS.unit.label : 'g';
-  $('asSub').textContent = AS.unit ? `＝ ${fmtAmt(AS.amount)}g` : (AS.base > 0 ? `いつもの量の ${fmtAmt(AS.amount / AS.base)} 倍` : '');
-  $('asPv').textContent = `${ri(pv.cal)}kcal　P${r1(pv.p)}　F${r1(pv.f)}　C${r1(pv.c)}${pv.fiber ? '　繊' + r1(pv.fiber) : ''}`;
-  const we = $('asWarn'); if (w && !w.block) { we.style.display = 'block'; we.textContent = '⚠ ' + w.text; } else we.style.display = 'none';
-  const cb = $('asConfirm'), label = AS.mode === 'add' ? `${AS.meal || ''}に記録する` : '量を変更する';
-  cb.textContent = (w && !w.block && AS.warnAck) ? `それでも ${fmtAmt(AS.amount)}g で${AS.mode === 'add' ? '記録する' : '変更する'}` : `${label}　${fmtAmt(AS.amount)}g`;
-  cb.disabled = !!(w && w.block); cb.classList.toggle('as-warnbtn', !!(w && !w.block && AS.warnAck));
-  document.querySelectorAll('#asPanel .as-m').forEach(b => b.classList.toggle('on', !AS.unit && Math.round(AS.base * Number(b.dataset.m) * 10) / 10 === AS.amount));
-  document.querySelectorAll('#asPanel .as-r').forEach(b => b.classList.toggle('on', !AS.unit && Number(b.dataset.a) === AS.amount));
-  document.querySelectorAll('#asPanel .as-u').forEach(b => b.classList.toggle('on', AS.unit === AS.units[Number(b.dataset.u)]));
-  document.querySelectorAll('#asPanel .as-g').forEach(b => b.classList.toggle('on', !AS.unit));
-}
-function asClamp(v) { return Math.min(AMOUNT_MAX, Math.max(0, Math.round(v * 10) / 10)); }
-function asSetGrams(v) { AS.unit = null; AS.amount = asClamp(v); AS.fresh = true; AS.buf = ''; AS.warnAck = false; updateAmountDisplay(); }
-function asGramMode() { AS.unit = null; AS.warnAck = false; updateAmountDisplay(); }
-function asMultiply(m) { asSetGrams(AS.base * m); }
-function asPickUnit(i) { const u = AS.units[i]; if (!u) return; AS.unit = u; AS.count = 1; AS.amount = asClamp(u.g); AS.warnAck = false; updateAmountDisplay(); }
-function asStep(dir) {
-  const EPS = 1e-9;
-  if (AS.unit) {   // 単位モード: 5未満は0.5刻み、それ以上は1刻み（上下で対称）
-    const st = (dir > 0 ? AS.count : AS.count - 0.01) < 5 ? 0.5 : 1;
-    const next = dir > 0 ? Math.floor(AS.count / st + EPS) * st + st : Math.ceil(AS.count / st - EPS) * st - st;
-    AS.count = Math.min(99, Math.max(0.5, next)); AS.amount = asClamp(AS.count * AS.unit.g);
-  } else {         // グラム: 量が大きいほど刻みを大きくし、次のきりのよい値（5の倍数・10の倍数）へ進む
-    const a = AS.amount, st = amountStep(dir > 0 ? a : Math.max(a - 0.1, 0));
-    const next = dir > 0 ? Math.floor(a / st + EPS) * st + st : Math.ceil(a / st - EPS) * st - st;
-    AS.amount = asClamp(Math.max(1, next));
-  }
-  AS.warnAck = false; updateAmountDisplay();
-}
-function asToggleKeypad() { AS.keypad = !AS.keypad; AS.fresh = true; AS.buf = ''; renderAmountSheet(); }
-function asKey(k) {
-  if (k === '⌫') AS.buf = AS.fresh ? '' : AS.buf.slice(0, -1);
-  else { if (AS.fresh) AS.buf = ''; if (k === '.') { if (AS.buf.includes('.')) return; if (AS.buf === '') AS.buf = '0'; } if (AS.buf.length >= 6) return; AS.buf += k; }
-  AS.fresh = false;
-  const v = parseFloat(AS.buf) || 0;
-  if (AS.unit) { AS.count = Math.min(99, v); AS.amount = asClamp(AS.count * AS.unit.g); } else AS.amount = asClamp(v);
-  AS.warnAck = false; updateAmountDisplay();
-}
-function confirmAmountSheet() {
-  const w = asWarning(); if (w && w.block) return;
-  if (w && !AS.warnAck) { AS.warnAck = true; updateAmountDisplay(); return; }   // 極端な量は、もう一度押さないと確定しない
-  const amt = AS.amount, mode = AS.mode, f = AS.f, meal = AS.meal, id = AS.entryId;
-  closeAmountSheet();
-  if (mode === 'add' && f) registerFromSelection(f, meal, amt, false); else if (mode === 'edit') applyEntryAmount(id, amt);
-}
-document.addEventListener('keydown', ev => { if (!AS.open) return; if (ev.key === 'Escape') closeAmountSheet(); else if (ev.key === 'Enter' && !(ev.target && ev.target.type === 'checkbox')) confirmAmountSheet(); });
-document.addEventListener('pointerup', asStopHold); document.addEventListener('touchend', asStopHold);
 // ══ 記録のグループ化（長押し→ドラッグ）と、複合食品への登録 ══
 // 食事記録を長押しして別の記録の上にドロップすると、ひとつの「グループ」記録にまとめる（iOSのフォルダのように）。
 // グループ = 材料(ingredients)を持つ記録。材料の分量はこれまでの複合食品の記録と同じ編集画面で調整でき、合計は自動計算される。
@@ -2101,7 +2043,7 @@ const DRAG_HOLD_MS = 380;
 const DRAG = { timer: null, pending: null, active: false, srcId: null, row: null, ghost: null, target: null, raf: 0, x: 0, y: 0, offX: 0, offY: 0, suppressUntil: 0 };
 function dragRowFromEvent(ev) {
   const t = ev.target; if (!t || !t.closest) return null;
-  if (t.closest('button, input, select, textarea, a, .edit-form, .grp-members')) return null;
+  if (t.closest('button, input, select, textarea, a, .edit-form, .grp-members, .amt-strip')) return null;
   const row = t.closest('.log-item[data-eid]'); return row && row.closest('#mealBlocks') ? row : null;
 }
 function dragPointerStart(ev, x, y) {
@@ -2160,22 +2102,6 @@ function bindEntryDrag() {
   document.addEventListener('mouseup', () => { if (DRAG.active) dragEnd(true); else dragCancelPending(); });
   document.addEventListener('click', ev => { if (Date.now() < DRAG.suppressUntil) { ev.stopPropagation(); ev.preventDefault(); } }, true);
   document.addEventListener('contextmenu', ev => { if (DRAG.active || DRAG.pending) ev.preventDefault(); });
-}
-// ── 記録の行を左にスワイプ → 「複製」「削除」を表示（押し間違えやすい✕ボタンの代わり）──
-const SW = { row: null, x: 0, y: 0, decided: null, open: null };
-function swipeClose() { if (SW.open) { SW.open.classList.remove('sw-open'); SW.open = null; } }
-function swipeOpen(row) { if (SW.open && SW.open !== row) SW.open.classList.remove('sw-open'); row.classList.add('sw-open'); SW.open = row; DRAG.suppressUntil = Date.now() + 350; }
-function bindEntrySwipe() {
-  const root = document.getElementById('mealBlocks'); if (!root) return;
-  root.addEventListener('touchstart', ev => { if (!ev.touches || ev.touches.length !== 1) return; const t = ev.touches[0]; SW.row = dragRowFromEvent(ev); SW.x = t.clientX; SW.y = t.clientY; SW.decided = null; }, { passive: true });
-  document.addEventListener('touchmove', ev => {
-    if (!SW.row || DRAG.active) return; const t = ev.touches && ev.touches[0]; if (!t) return;
-    const dx = t.clientX - SW.x, dy = t.clientY - SW.y;
-    if (SW.decided === null) { if (Math.abs(dx) > 14 && Math.abs(dx) > Math.abs(dy) * 1.5) SW.decided = 'h'; else if (Math.abs(dy) > 14) SW.decided = 'v'; }   // 縦に動いたらスクロール
-    if (SW.decided === 'h') { if (dx < -50) { swipeOpen(SW.row); SW.row = null; } else if (dx > 50 && SW.row.classList.contains('sw-open')) { swipeClose(); SW.row = null; } }
-  }, { passive: true });
-  document.addEventListener('touchend', () => { SW.row = null; }); document.addEventListener('touchcancel', () => { SW.row = null; });
-  document.addEventListener('click', ev => { if (Date.now() < DRAG.suppressUntil) return; if (SW.open && !(ev.target.closest && ev.target.closest('.sw-actions'))) swipeClose(); }, true);   // 他の場所をタップしたら閉じる
 }
 function dismissDragHint() { try { localStorage.setItem('pfcDragHint', '1'); } catch (e) {} const el = document.getElementById('dragHint'); if (el) el.style.display = 'none'; }
 // ── 調味料クイック登録 ──
@@ -2646,6 +2572,7 @@ window.addEventListener('popstate', () => {
   }
 });
 function startEdit(id){
+  if (_amtOpen) closeAmtStrip(false);
   editingId=id;
   activeAddMeal=null; // 検索・食品追加パネルが開いていれば閉じる（同時に開かない）
   window._editOriginal = window._editOriginal || {};
@@ -3980,19 +3907,51 @@ function renderCharts() {
 }
 
 // ── CSV ──
-const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_cal'];
+const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_cal',
+  'day_bmr_kcal','day_tdee_kcal','day_exercise_kcal','day_total_burn_kcal','day_intake_kcal','day_net_intake_kcal','day_balance_kcal','day_net_balance_kcal'];
 const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal',
   'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used',
   'fiber_g','fiber_adj_kcal','net_intake_kcal','net_balance_kcal','net_calc'];
+// その日のエネルギー収支の材料（TDEE内訳・運動消費・摂取・実質カロリー）。食事記録の各行・日別の表・日別CSVで共通に使う
+function dayEnergyInfo(d) {
+  const tb = getTdeeBreakdown(d);
+  const exCal = exercises.filter(x => x.date === d).reduce((a, x) => a + (x.cal || 0), 0);
+  const daySum = sumEntries(getDayEntries(d)), intake = r1(daySum.cal);
+  const totalBurn = r1(tb.tdee + exCal), net = calcNetCalories(daySum);   // 実質カロリーは画面の「実質」表示と同じ計算
+  return { tb, exCal, daySum, intake, totalBurn, net };
+}
+function csvQ(v) { return `"${String(v).replace(/"/g, '""')}"`; }
+// 日別の1行（TDEE_CSV_HEADERS の順）
+function dailyCsvCells(d, bd, x) {
+  const { tb, exCal, daySum, intake, totalBurn, net } = x;
+  return [
+    d, ri(tb.bmr), csvQ(describeActivity(tb)), tb.simple ? '' : ri(tb.activeCal),
+    tb.detail ? (tb.detail.steps || 0) : '', tb.tdee, ri(exCal), ri(totalBurn),
+    intake, r1(intake - totalBurn),
+    csvQ(describeTdeeFormula(tb)), csvQ(bd.name), csvQ(`${bd.expr} = ${ri(bd.raw)}` + (bd.tempMult !== 1 ? ` × 気温補正${bd.tempMult}(${bd.temp}℃)` : '') + ` → BMR ${ri(bd.bmr)}`),
+    bd.tempMult, tb.simple ? '' : getNeatPct(), tdeeActivitySource(tb), tb.simple ? 0 : tb.tef,
+    csvQ(`${bd.sex} ${bd.h}cm ${bd.w}kg ${bd.age}歳` + (bd.bf ? ` 体脂肪${bd.bf}%` : '') + '（現在のプロフィール設定）'),
+    r1(daySum.fiber), net.fiberAdj, net.netCal, r1(net.netCal - totalBurn),
+    csvQ(`表示 ${intake}kcal − 食物繊維 ${r1(daySum.fiber)}g × ${FIBER_NET_KCAL_PER_G}kcal = 実質 ${net.netCal}kcal（実質収支 = 実質摂取 − 総消費）`),
+  ];
+}
+function downloadCsv(rows, filename) {
+  const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+}
 function exportCSV() {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
   let data=[...entries];
   if(from) data=data.filter(e=>e.date>=from);
   if(to) data=data.filter(e=>e.date<=to);
   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
-  const rows=[CSV_HEADERS.join(','),...data.map(e=>[e.date,e.meal,`"${(e.name||'').replace(/"/g,'""')}"`,e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G)].join(','))];
+  // 食事記録の各行には、その日のBMR・TDEE・総消費・摂取・実質摂取・収支も付ける（日別の表を探さなくても、どの行からでもTDEEが分かる）
+  const dayCache = {}, di = d => dayCache[d] || (dayCache[d] = dayEnergyInfo(d));
+  const rows=[CSV_HEADERS.join(','),...data.map(e=>{ const x = di(e.date); return [e.date,e.meal,csvQ(e.name||''),e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G),
+    ri(x.tb.bmr), x.tb.tdee, ri(x.exCal), ri(x.totalBurn), x.intake, x.net.netCal, r1(x.intake - x.totalBurn), r1(x.net.netCal - x.totalBurn)].join(','); })];
 
-  // ── 消費カロリー詳細（日別、1行1日）──
+  // ── 消費カロリー詳細（日別、1行1日）──ファイルの末尾に、空行をはさんで別の表として付ける
   // 食事記録の対象日を軸に、その日のTDEE内訳・運動消費・摂取との差引をまとめる。
   // ※ BMRは現在のプロフィール設定（体重・年齢等）で計算するため、過去に体重や設定を
   //    変えている場合、当時の実際の値とは異なる（このアプリは体組成の履歴を保持していない）
@@ -4000,31 +3959,25 @@ function exportCSV() {
   if (dates.length) {
     rows.push('');
     rows.push(TDEE_CSV_HEADERS.join(','));
-    const q = v => `"${String(v).replace(/"/g, '""')}"`;
     const bd = getBmrDetail();
-    dates.forEach(d => {
-      const tb = getTdeeBreakdown(d);
-      const activityDesc = describeActivity(tb).replace(/"/g, '""');
-      const exCal = exercises.filter(x => x.date === d).reduce((a,x) => a + (x.cal||0), 0);
-      const daySum = sumEntries(getDayEntries(d)), intake = r1(daySum.cal);
-      const totalBurn = r1(tb.tdee + exCal);
-      const net = calcNetCalories(daySum);   // 実質カロリー（画面の「実質」表示と同じ計算）
-      rows.push([
-        d, ri(tb.bmr), `"${activityDesc}"`, tb.simple ? '' : ri(tb.activeCal),
-        tb.detail ? (tb.detail.steps||0) : '', tb.tdee, ri(exCal), ri(totalBurn),
-        intake, r1(intake - totalBurn),
-        q(describeTdeeFormula(tb)), q(bd.name), q(`${bd.expr} = ${ri(bd.raw)}` + (bd.tempMult !== 1 ? ` × 気温補正${bd.tempMult}(${bd.temp}℃)` : '') + ` → BMR ${ri(bd.bmr)}`),
-        bd.tempMult, tb.simple ? '' : getNeatPct(), tdeeActivitySource(tb), tb.simple ? 0 : tb.tef,
-        q(`${bd.sex} ${bd.h}cm ${bd.w}kg ${bd.age}歳` + (bd.bf ? ` 体脂肪${bd.bf}%` : '') + '（現在のプロフィール設定）'),
-        r1(daySum.fiber), net.fiberAdj, net.netCal, r1(net.netCal - totalBurn),
-        q(`表示 ${intake}kcal − 食物繊維 ${r1(daySum.fiber)}g × ${FIBER_NET_KCAL_PER_G}kcal = 実質 ${net.netCal}kcal（実質収支 = 実質摂取 − 総消費）`),
-      ].join(','));
-    });
+    dates.forEach(d => rows.push(dailyCsvCells(d, bd, di(d)).join(',')));
   }
-
-  const blob=new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement('a'); a.href=url; a.download=`pfc_export_${toDateStr(new Date())}.csv`; a.click(); URL.revokeObjectURL(url);
+  downloadCsv(rows, `pfc_export_${toDateStr(new Date())}.csv`);
+}
+// 日別だけを1つの表にしたCSV（TDEE・運動・摂取・実質収支・計算式）。期間内の全日を出す（記録の無い日も含む）。表計算ソフトやpandasでそのまま読める
+const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count'];
+function exportDailyCSV() {
+  let from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
+  const pool = [...entries.map(e => e.date), ...exercises.map(x => x.date), ...Object.keys(dailyActivity)].filter(Boolean).sort();
+  if (!from) from = pool[0]; if (!to) to = pool[pool.length - 1];
+  if (!from || !to) { showToast('出力できる日別データがありません'); return; }
+  if (from > to) [from, to] = [to, from];
+  const dates = []; const MAXD = 1100;
+  for (const d = new Date(from + 'T00:00:00'); toDateStr(d) <= to && dates.length < MAXD; d.setDate(d.getDate() + 1)) dates.push(toDateStr(d));
+  const bd = getBmrDetail();
+  const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length].join(','))];
+  downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`);
+  if (dates.length >= MAXD && toDateStr(new Date(from + 'T00:00:00')) !== to) showToast(`期間が長いため、最初の${MAXD}日分を出力しました`);
 }
 function importCSV() {
   const text=document.getElementById('csvImportArea').value.trim();
@@ -4120,7 +4073,6 @@ function sanitizeImportedFood(raw, kind) {
   if (typeof raw.en === 'string' && raw.en.trim()) food.en = raw.en.trim().slice(0, 120);
   if (typeof raw.tags === 'string' && raw.tags.trim()) food.tags = raw.tags.trim().slice(0, 200);
   { const cat = sanitizeCategory(raw.category) || guessFoodCategory(name); if (cat) food.category = cat; }
-  { const u = sanitizeUnits(raw.units); if (u.length) food.units = u; }
   if (raw.digest) food.digest = raw.digest; else food.digest = classifyDigestCategory(name, p || 0);
   if (kind === 'combo' && Array.isArray(raw.ingredients)) {
     food.ingredients = raw.ingredients.map(ing => {
@@ -4562,8 +4514,7 @@ const _fdServUnsetOnly = { custom: false, combo: false };
 function servingRowHtml(kind, f) {
   const sv = f.serving > 0 ? f.serving : f.per, per = f.per || 100;
   return `<div class="custom-item fd-servrow"><div style="flex:1;min-width:0"><div style="font-weight:500">${fdEsc(f.name)} ${foodDbBadge(f)}</div><div style="font-size:10px;color:var(--text-sub)" id="fdSvInfo_${kind}_${f.id}">${servingInfoText(f, sv)}</div></div>
-    <div class="fd-sv"><input type="number" inputmode="decimal" min="0" step="1" value="${f.serving > 0 ? f.serving : ''}" placeholder="${per}" oninput="onFoodServingInput('${kind}', ${f.id}, this.value)" onchange="commitFoodServing('${kind}', ${f.id}, this.value)"><span>g</span></div>
-    <div class="fd-units-row"><span>単位</span><input type="text" class="fd-units" value="${fdEsc(unitsToText(f.units))}" placeholder="例: 個=50, 切れ=30" onchange="commitFoodUnits('${kind}', ${f.id}, this.value)" autocomplete="off"></div></div>`;
+    <div class="fd-sv"><input type="number" inputmode="decimal" min="0" step="1" value="${f.serving > 0 ? f.serving : ''}" placeholder="${per}" oninput="onFoodServingInput('${kind}', ${f.id}, this.value)" onchange="commitFoodServing('${kind}', ${f.id}, this.value)"><span>g</span></div></div>`;
 }
 function servingInfoText(f, sv) { const per = f.per || 100, r = sv / per; return `${f.serving > 0 ? '1食分' : '未設定（基準量'+per+'gで記録）'} ${r1(sv)}g = ${ri(f.cal * r)}kcal P${r1(f.p * r)} F${r1(f.f * r)} C${r1(f.c * r)}`; }
 function onFoodServingInput(kind, id, v) { // 入力中は保存せず、表示だけ更新
@@ -4578,14 +4529,6 @@ function commitFoodServing(kind, id, v) {
   saveCustom();
   const el = document.getElementById(`fdSvInfo_${kind}_${id}`); if (el) el.textContent = servingInfoText(f, f.serving > 0 ? f.serving : (f.per || 100));
   if (_fdServUnsetOnly[kind]) renderFoodDbList(kind);
-}
-// 単位（「個=50, 切れ=30」の形式）を保存する。数量シートの単位ボタンと、検索欄の「卵2個」で使われる
-function commitFoodUnits(kind, id, v) {
-  const f = foodDbList(kind).find(x => x.id === id); if (!f) return;
-  const raw = String(v).trim();
-  if (raw === '') delete f.units;
-  else { const u = parseUnitsText(raw); if (!u.length) { showToast('単位は「個=50, 切れ=30」の形式で入力してください'); renderFoodDbList(kind); return; } f.units = u; }
-  saveCustom(); renderFoodDbList(kind);
 }
 function toggleFoodServingMode(kind) {
   if (_fdSelectMode[kind]) toggleFoodSelectMode(kind); // 選択モードとは同時に使わない
@@ -5440,7 +5383,6 @@ function executeAiCommands(commands, backupLabel) {
           ...(typeof food.en === 'string' && food.en.trim() ? { en: food.en.trim().slice(0, 120) } : {}),
           ...(typeof food.tags === 'string' && food.tags.trim() ? { tags: food.tags.trim().slice(0, 200) } : {}),
           ...(() => { const c = sanitizeCategory(food.category) || guessFoodCategory(food.name); return c ? { category: c } : {}; })(),
-          ...(sanitizeUnits(food.units).length ? { units: sanitizeUnits(food.units) } : {}),
           per,
           ...(aiServing > 0 ? { serving: aiServing } : {}),
           cal:     parseFloat(food.cal)     || 0,
@@ -5725,7 +5667,6 @@ function executeAiCommands(commands, backupLabel) {
           // 食物繊維や内訳が更新された場合は、合計と整合させる（内訳が無ければ名前から推定）
           if (['fiber','fibS','fibI'].some(k => updates[k] != null && updates[k] !== '')) reconcileFiberSplit(customFoods[idx]);
           ['en','tags','category'].forEach(k => { if (typeof updates[k] === 'string') { const v = updates[k].trim().slice(0, 200); if (v) customFoods[idx][k] = v; else delete customFoods[idx][k]; } });
-          if (Array.isArray(updates.units)) { const u = sanitizeUnits(updates.units); if (u.length) customFoods[idx].units = u; else delete customFoods[idx].units; }
           // 読み: 指定があれば更新、名前だけ変えた場合は古い読みが残らないよう自動推定に戻す
           if (updates.yomi != null) {
             const y = sanitizeYomi(updates.yomi);
@@ -6099,7 +6040,6 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       fa: {sat,mufa,n3,n6,trans}（脂質に対する比率、合計0.8〜1.0）/ aa: {leu,ile,val,lys,met,thr,trp,his,score} を付ける
     - yomi（カタカナの読み）は任意だが、名前に漢字を含む場合は必ず付ける（ひらがな・ローマ字での検索に使われる。数字や記号は含めない）
     - serving（よくある1食分の目安量g）、en（英語名）、tags（検索用キーワード、スペース区切り）も分かれば付ける
-    - units（1個・1枚などの単位。数えて食べる食品だけ）: [{"label":"個","g":50}] のように、単位名と1単位あたりのグラム数
     - category（食品DBの分類）は次のいずれか1つを付ける: 主食 / 主菜 / 副菜 / 果物 / 乳製品 / 間食・菓子 / 飲料 / 調味料 / 外食・惣菜 / サプリ・プロテイン / その他（add_combo_food も同様）
 {
   "commands": [{
@@ -6492,7 +6432,6 @@ document.addEventListener('click', e => {
 
 // ── Init ──
 bindEntryDrag();
-bindEntrySwipe();
 renderPromptTemplates();
 try { if (localStorage.getItem('pfcDragHint') === '1') { const h = document.getElementById('dragHint'); if (h) h.style.display = 'none'; } } catch (e) {}
 updateDateHeader();

@@ -9,7 +9,7 @@ setTimeout(async () => {
     const D = ev('currentDate');
     const base = [{ id: 1, date: D, meal: '朝食', time: '08:00', name: 'テストご飯', amount: 150, cal: 240, p: 3.75, f: 0.45, c: 52.5 }, { id: 2, date: D, meal: '朝食', time: '08:10', name: 'テスト卵', amount: 50, cal: 75, p: 6, f: 5, c: 0.2 }, { id: 3, date: D, meal: '昼食', time: '12:00', name: 'テストオーツ', amount: 40, cal: 152, p: 5, f: 2, c: 27 }];
     const foods = [{ id: 11, name: 'テストご飯', per: 100, cal: 160, p: 2.5, f: 0.3, c: 35, serving: 150 }, { id: 12, name: 'テスト卵', per: 100, cal: 150, p: 12, f: 10, c: 0.3 }];
-    const setup = () => { ev(`customFoods=${JSON.stringify(foods)};comboFoods=[];entries=${JSON.stringify(base)};saveLocal();activeAddMeal=null;editingId=null;_focusAddSearchMeal=null;closeAmountSheet();window.localStorage.setItem('pfcAmountSheet','instant');`); w.switchTab('record'); ev('renderRecord()'); focusLog = []; };
+    const setup = () => { ev(`customFoods=${JSON.stringify(foods)};comboFoods=[];entries=${JSON.stringify(base)};saveLocal();activeAddMeal=null;editingId=null;_focusAddSearchMeal=null;_amtOpen=null;`); w.switchTab('record'); ev('renderRecord()'); focusLog = []; };
     const openPanel = async meal => { w.toggleAddPanel(meal); await sleep(60); };
     const quiet = async (label, fn, wait = 80) => { focusLog = []; fn(); await sleep(wait); const box = $('addResultsBox_朝食'); t(`${label}: search field not focused`, searchFocused() === 0 && !/^addSearch_/.test(activeId())); t(`${label}: quick-pick dropdown not popped up`, !box || box.style.display !== 'block'); };
     // ── 開いた直後は1回だけフォーカス ──
@@ -21,7 +21,7 @@ setTimeout(async () => {
     await quiet('tab switch away and back', () => { w.switchTab('stats'); w.switchTab('record'); });
     await quiet('register a food (instant mode)', () => { const box = $('addResultsBox_朝食'); box._local = [ev("getAllFoods().find(f=>f.name==='テスト卵')")]; box._qty = null; w.selectAddResult(0, '朝食'); });
     await quiet('register via search quantity', () => { const box = $('addResultsBox_朝食'); box._local = [ev("getAllFoods().find(f=>f.name==='テストご飯')")]; box._qty = { q: 'テストご飯', num: 100, unit: '' }; w.selectAddResult(0, '朝食'); });
-    await quiet('change amount (sheet apply)', () => { w.openAmountSheetForEntry(1); w.asMultiply(2); w.confirmAmountSheet(); });
+    await quiet('change amount (inline strip)', () => { w.openAmtStrip(1); w.amtMul(1, 2); w.closeAmtStrip(); });
     await quiet('undo from toast', () => { const u = $('toast').querySelector('.toast-undo-btn'); if (u) u.click(); });
     await quiet('duplicate entry', () => w.duplicateEntry(1));
     await quiet('group entries (drag drop)', () => w.groupEntries(2, 1));
@@ -49,9 +49,9 @@ setTimeout(async () => {
     { const box = $('addResultsBox_朝食'); box._local = [ev("getAllFoods().find(f=>f.name==='テスト卵')")]; box._qty = null; focusLog = []; w.selectAddResult(0, '朝食'); await sleep(80); t('after registering: input cleared, results closed, no focus', $('addSearch_朝食').value === '' && searchFocused() === 0 && $('addResultsBox_朝食').style.display !== 'block'); }
     // ── 他の入力欄を操作中は奪わない ──
     setup(); { const other = w.document.createElement('input'); other.type = 'text'; other.id = 'otherField'; w.document.body.appendChild(other); w.toggleAddPanel('朝食'); other.focus(); await sleep(80); t('another text field in use is not stolen on open', activeId() === 'otherField'); other.remove(); }
-    // ── 数量シートを開いている間は奪わない ──
-    setup(); await openPanel('朝食'); $('addSearch_朝食').blur(); w.openAmountSheetForEntry(1); focusLog = []; ev('renderRecord()'); await sleep(80); t('amount sheet open: no focus', searchFocused() === 0); w.closeAmountSheet();
-    setup(); w.toggleAddPanel('朝食'); w.openAmountSheetForEntry(1); await sleep(80); t('open request is dropped while the sheet is open', searchFocused() === 0); w.closeAmountSheet();
+    // ── 行の中の量の調整を開いている間も、検索欄を奪わない ──
+    setup(); await openPanel('朝食'); $('addSearch_朝食').blur(); w.openAmtStrip(1); focusLog = []; ev('renderRecord()'); await sleep(80); t('inline amount strip open: no focus', searchFocused() === 0 && !!w.document.querySelector('.amt-strip')); w.closeAmtStrip();
+    setup(); w.toggleAddPanel('朝食'); w.openAmtStrip(1); const inl = w.document.querySelector('.amt-input'); inl.focus(); await sleep(80); t('typing in the strip input is not stolen by the search field', activeId() !== 'addSearch_朝食');
     // ── 記録タブが見えていないときは、再描画してもフォーカスしない ──
     setup(); ev("activeAddMeal='朝食'"); w.switchTab('stats'); focusLog = []; ev('_focusAddSearchMeal=\'朝食\';renderRecord()'); await sleep(80); t('record tab hidden: never focus', searchFocused() === 0); t('one-shot flag is cleared', ev('_focusAddSearchMeal') === null);
     // ── 閉じる（✕）・日付移動 ──

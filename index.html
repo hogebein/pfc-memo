@@ -214,49 +214,29 @@
     body.drag-mode { overscroll-behavior: contain; }
     body.drag-mode .log-item:not(.dragging-src):not(.drop-target) { animation: jiggle .28s ease-in-out infinite alternate; }
     @keyframes jiggle { from { transform: rotate(-.35deg); } to { transform: rotate(.35deg); } }
-    /* ── 数量シート・スワイプ操作 ── */
-    .log-item { touch-action: pan-y; }
+    /* ── 記録の行: 量のピルと、行の中で開く量の調整（別ウィンドウは使わない）── */
     .amt-pill { display: inline-block; min-height: 24px; line-height: 24px; padding: 0 9px; margin: -2px 0; border-radius: 999px; background: #e8f0fe; color: #3266ad; font-weight: 600; cursor: pointer; }
-    .li-edit { padding: 8px 10px !important; min-width: 40px; min-height: 40px; }
-    .sw-actions { display: none; flex: 0 0 100%; gap: 8px; margin-top: 8px; }
-    .log-item.sw-open { flex-wrap: wrap; }
-    .log-item.sw-open .sw-actions { display: flex; }
-    .sw-actions .btn { flex: 1; height: 44px; font-size: 14px; }
+    .log-item .li-right { gap: 12px; align-items: center; }
+    .log-item .li-edit, .log-item .li-del { min-width: 44px; min-height: 44px; padding: 0 !important; font-size: 16px; }
+    .log-item .li-del { margin-left: 8px; }
+    .log-item.amt-open { flex-wrap: wrap; }
+    .amt-strip { flex: 0 0 100%; margin-top: 8px; padding: 10px; background: var(--surface2); border-radius: 10px; cursor: default; -webkit-user-select: text; user-select: text; }
+    .amt-form { margin: 4px 0 8px; padding: 10px; background: var(--surface2); border-radius: 10px; }
+    .amt-line { display: flex; align-items: center; gap: 8px; }
+    .amt-step { width: 56px; height: 48px; flex: 0 0 auto; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 26px; font-weight: 500; touch-action: manipulation; }
+    .amt-step:active { background: #e8f0fe; }
+    .amt-input { flex: 1; min-width: 0; height: 48px; text-align: center; font-size: 22px; font-weight: 600; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
+    .amt-g { font-size: 14px; color: var(--text-sub); }
+    .amt-cur { flex: 1; text-align: center; font-size: 22px; font-weight: 600; }
+    .amt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+    .amt-chip { min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 500; }
+    .amt-chip.on { background: #3266ad; border-color: #3266ad; color: #fff; }
+    .amt-lbl { font-size: 11px; color: var(--text-sub); }
+    .amt-warn { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: #fff4e0; color: #b25e00; font-size: 12px; font-weight: 500; }
+    .amt-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .amt-link { border: none; background: transparent; color: #3266ad; font-size: 12px; padding: 8px 4px; min-height: 36px; }
     .ri-amt { display: block; font-size: 10px; color: #3266ad; font-weight: 600; }
-    #amountSheet { position: fixed; inset: 0; z-index: 9000; }
-    .as-backdrop { position: absolute; inset: 0; background: rgba(0,0,0,.4); }
-    .as-panel { position: absolute; left: 0; right: 0; bottom: 0; max-height: 94vh; overflow-y: auto; background: var(--surface); border-radius: 18px 18px 0 0; padding: 8px 16px calc(14px + env(safe-area-inset-bottom, 0px)); box-shadow: 0 -8px 30px rgba(0,0,0,.25); max-width: 560px; margin: 0 auto; }
-    .as-grab { width: 40px; height: 4px; border-radius: 2px; background: var(--border); margin: 0 auto 8px; }
-    .as-head { display: flex; align-items: center; gap: 8px; }
-    .as-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
-    .as-sub { display: block; font-size: 11px; font-weight: 400; color: var(--text-sub); }
-    .as-x { width: 44px; height: 44px; border: none; background: transparent; font-size: 18px; color: var(--text-sub); }
-    .as-display { display: flex; align-items: baseline; justify-content: center; gap: 6px; padding: 6px 0 0; cursor: pointer; }
-    .as-num { font-size: 44px; font-weight: 700; letter-spacing: -1px; }
-    .as-unit { font-size: 18px; color: var(--text-sub); }
-    .as-kp { font-size: 14px; color: var(--text-sub); margin-left: 6px; }
-    .as-subline { text-align: center; font-size: 12px; color: var(--text-sub); min-height: 16px; }
-    .as-pv { text-align: center; font-size: 13px; font-weight: 500; margin: 4px 0 8px; }
-    .as-warn { margin: 0 0 8px; padding: 6px 10px; border-radius: 8px; background: #fff4e0; color: #b25e00; font-size: 12px; font-weight: 500; text-align: center; }
-    .as-label { font-size: 11px; color: var(--text-sub); margin: 8px 0 4px; }
-    .as-chips { display: flex; flex-wrap: wrap; gap: 8px; }
-    .as-chip { min-width: 52px; height: 44px; padding: 0 12px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text); font-size: 15px; font-weight: 500; }
-    .as-chip small { font-size: 10px; color: var(--text-sub); }
-    .as-chip.on { background: #3266ad; border-color: #3266ad; color: #fff; } .as-chip.on small { color: #dbe7fb; }
-    .as-gen { border-style: dashed; }
-    .as-stepper { display: flex; gap: 12px; margin: 12px 0 4px; }
-    .as-step { flex: 1; height: 56px; border-radius: 14px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text); font-size: 28px; font-weight: 500; touch-action: manipulation; -webkit-user-select: none; user-select: none; }
-    .as-step:active { background: #e8f0fe; }
-    .as-keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 8px 0 4px; }
-    .as-key { height: 50px; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface2); color: var(--text); font-size: 22px; font-weight: 500; }
-    .as-key:active { background: #e8f0fe; }
-    .as-hint { text-align: center; font-size: 10px; color: var(--text-sub); margin-bottom: 4px; }
-    .as-confirm { width: 100%; height: 52px; margin-top: 12px; font-size: 16px; }
-    .as-confirm.as-warnbtn { background: #e8880a; }
-    .as-toggle { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 11px; color: var(--text-sub); line-height: 1.5; }
-    .fd-servrow { flex-wrap: wrap; }
-    .fd-units-row { flex: 0 0 100%; display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-sub); }
-    .fd-units { flex: 1; min-width: 0; padding: 6px 8px; font-size: 12px; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface2); color: var(--text); }
+    .fd-servrow { align-items: center; gap: 8px; }
     .prompt-chip { font-size: 11px; white-space: nowrap; flex: 0 0 auto; }
     .fd-servrow { align-items: center; gap: 8px; }
     .fd-sv { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
@@ -938,9 +918,12 @@
     <div class="panel" id="panel-csv">
       <div class="card">
         <div class="sl">CSVエクスポート</div>
-        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">カロリー・PFC・ミクロ栄養素を含む全データをダウンロード</p>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:8px;line-height:1.6">
+          <b>CSVダウンロード</b>: 食事記録（カロリー・PFC・ミクロ栄養素・実質カロリー）。<b>各行の右端に、その日のBMR・TDEE・総消費・摂取・実質収支</b>が付きます。ファイルの末尾には、日別の消費カロリー表（計算式つき）も付きます。<br>
+          <b>日別CSV</b>: TDEE・運動・摂取・実質収支・計算式だけを、期間内の全日（記録のない日も）1つの表にしたファイルです。</p>
         <div class="row" style="margin-bottom:10px"><div class="field"><label>開始日</label><input type="date" id="csvFrom"></div><div class="field"><label>終了日</label><input type="date" id="csvTo"></div></div>
         <button class="btn btn-primary btn-block" onclick="exportCSV()">📥 CSVダウンロード</button>
+        <button class="btn btn-block" onclick="exportDailyCSV()" style="margin-top:8px">📥 日別CSV（TDEE・収支）</button>
       </div>
       <div class="card">
         <div class="sl">CSVインポート</div>
@@ -1236,7 +1219,6 @@
     window.FIREBASE_CONFIG = null;
   }
 </script>
-<div id="amountSheet" style="display:none"><div class="as-backdrop" onclick="closeAmountSheet()"></div><div id="asPanel" class="as-panel" role="dialog" aria-modal="true" aria-label="量の指定"></div></div>
 <script src="foods-db.js"></script>
 <script src="app.js"></script>
 </body>
