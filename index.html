@@ -181,6 +181,69 @@
     .btn-ghost { border-color: transparent; background: none; }
     .btn-ghost:active { background: var(--bg); }
     .btn-sm { padding: 5px 10px; font-size: 11px; border-radius: 7px; font-weight: 500; }
+    /* ── 食品登録タブ: 簡易データベース ── */
+    .fd-toolbar { margin: 2px 0 10px; }
+    .fd-search { width: 100%; box-sizing: border-box; padding: 9px 12px; font-size: 14px; border: 1.5px solid var(--border); border-radius: var(--radius-sm); background: var(--surface2); color: var(--text); margin-bottom: 8px; }
+    .fd-row { display: flex; gap: 6px; align-items: center; margin-bottom: 8px; }
+    .fd-row select { flex: 1; min-width: 0; padding: 7px 8px; font-size: 12px; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface2); color: var(--text); }
+    .fd-chips { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+    .fd-chip { flex: 0 0 auto; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 11px; cursor: pointer; white-space: nowrap; }
+    .fd-chip span { margin-left: 4px; color: var(--text-sub); font-size: 10px; }
+    .fd-chip.on { background: #3266ad; border-color: #3266ad; color: #fff; }
+    .fd-chip.on span { color: #dbe7fb; }
+    .fd-count { font-size: 11px; color: var(--text-sub); margin: 4px 0 6px; }
+    .fd-badge { display: inline-block; font-size: 9px; font-weight: 500; padding: 1px 6px; border-radius: 999px; background: #e8f0fe; color: #3266ad; vertical-align: 1px; margin-left: 2px; }
+    .fd-badge.fd-none { background: var(--surface2); color: var(--text-sub); border: 1px solid var(--border); }
+    .fd-actions { display: flex; gap: 4px; flex: 0 0 auto; align-items: flex-start; }
+    .fd-edit { background: #e8f0fe; color: #3266ad; border: none; }
+    .fd-bulk { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; margin: 6px 0 10px; }
+    .fd-bulk-row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; font-size: 12px; }
+    .fd-bulk-row:last-child { margin-bottom: 0; }
+    .fd-bulk-row input[type=text] { flex: 1; min-width: 0; padding: 7px 8px; font-size: 12px; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); }
+    .fd-selrow { cursor: pointer; align-items: center; gap: 8px; }
+    /* ── 記録のグループ化（長押し→ドラッグ）── */
+    .log-item { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
+    .log-item.grp { flex-wrap: wrap; }
+    .grp-members { flex: 0 0 100%; margin-top: 8px; padding: 8px 10px; background: var(--surface2); border-radius: 8px; font-size: 12px; -webkit-user-select: text; user-select: text; cursor: default; }
+    .grp-m { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+    .grp-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+    .drag-ghost { position: fixed; z-index: 9999; left: 0; top: 0; margin: 0; pointer-events: none; opacity: .93; box-shadow: 0 10px 28px rgba(0,0,0,.28); border-radius: 12px; background: var(--surface); transition: none; }
+    .dragging-src { opacity: .25; }
+    .drop-target { outline: 2.5px solid #3266ad; outline-offset: -2px; background: #e8f0fe !important; transform: scale(1.015); transition: transform .12s; position: relative; }
+    .drop-target::after { content: 'ここにドロップでグループ化'; position: absolute; right: 10px; top: -9px; background: #3266ad; color: #fff; font-size: 10px; padding: 1px 8px; border-radius: 999px; }
+    body.drag-mode { overscroll-behavior: contain; }
+    body.drag-mode .log-item:not(.dragging-src):not(.drop-target) { animation: jiggle .28s ease-in-out infinite alternate; }
+    @keyframes jiggle { from { transform: rotate(-.35deg); } to { transform: rotate(.35deg); } }
+    /* ── 記録の行: 量のピルと、行の中で開く量の調整（別ウィンドウは使わない）── */
+    .amt-pill { display: inline-block; min-height: 24px; line-height: 24px; padding: 0 9px; margin: -2px 0; border-radius: 999px; background: #e8f0fe; color: #3266ad; font-weight: 600; cursor: pointer; }
+    .log-item .li-right { gap: 12px; align-items: center; }
+    .log-item .li-edit, .log-item .li-del { min-width: 44px; min-height: 44px; padding: 0 !important; font-size: 16px; }
+    .log-item .li-del { margin-left: 8px; }
+    .log-item.amt-open { flex-wrap: wrap; }
+    .amt-strip { flex: 0 0 100%; margin-top: 8px; padding: 10px; background: var(--surface2); border-radius: 10px; cursor: default; -webkit-user-select: text; user-select: text; }
+    .amt-form { margin: 4px 0 8px; padding: 10px; background: var(--surface2); border-radius: 10px; }
+    .amt-line { display: flex; align-items: center; gap: 8px; }
+    .amt-step { width: 56px; height: 48px; flex: 0 0 auto; border-radius: 12px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 26px; font-weight: 500; touch-action: manipulation; }
+    .amt-step:active { background: #e8f0fe; }
+    .amt-input { flex: 1; min-width: 0; height: 48px; text-align: center; font-size: 22px; font-weight: 600; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
+    .amt-g { font-size: 14px; color: var(--text-sub); }
+    .amt-cur { flex: 1; text-align: center; font-size: 22px; font-weight: 600; }
+    .amt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+    .amt-chip { min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 500; }
+    .amt-chip.on { background: #3266ad; border-color: #3266ad; color: #fff; }
+    .amt-lbl { font-size: 11px; color: var(--text-sub); }
+    .amt-warn { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: #fff4e0; color: #b25e00; font-size: 12px; font-weight: 500; }
+    .amt-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
+    .amt-link { border: none; background: transparent; color: #3266ad; font-size: 12px; padding: 8px 4px; min-height: 36px; }
+    .ri-amt { display: block; font-size: 10px; color: #3266ad; font-weight: 600; }
+    .fd-servrow { align-items: center; gap: 8px; }
+    .prompt-chip { font-size: 11px; white-space: nowrap; flex: 0 0 auto; }
+    .fd-servrow { align-items: center; gap: 8px; }
+    .fd-sv { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; }
+    .fd-sv input { width: 74px; padding: 7px 8px; font-size: 14px; text-align: right; border: 1.5px solid var(--border); border-radius: 7px; background: var(--surface2); color: var(--text); }
+    .fd-sv span { font-size: 11px; color: var(--text-sub); }
+    .fd-check { width: 18px; height: 18px; flex: 0 0 auto; accent-color: #3266ad; }
+
     .btn-block { width: 100%; margin-top: 4px; }
 
     /* ripple effect */
@@ -462,8 +525,8 @@
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
     #toast.toast-action { pointer-events: auto; display: flex; align-items: center; gap: 10px; white-space: normal; }
-    .toast-undo-btn { flex-shrink: 0; background: transparent; border: 1px solid var(--surface); color: var(--surface); border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
-    .toast-undo-btn:active { background: rgba(255,255,255,.2); }
+    .toast-undo-btn, .toast-act-btn { flex-shrink: 0; background: transparent; border: 1px solid var(--surface); color: var(--surface); border-radius: 12px; padding: 3px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+    .toast-undo-btn:active, .toast-act-btn:active { background: rgba(255,255,255,.2); }
 
     /* ═══════════════════════════════════════
        Reduced motion
@@ -490,7 +553,7 @@
       <div style="font-size:16px;font-weight:600">PFCメモ</div>
       <div class="hdate" id="headerDate"></div>
     </div>
-    <div style="display:flex;align-items:center;gap:8px"><button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGoogleHealth()">📊 同期</button><div id="authArea"></div></div>
+    <div style="display:flex;align-items:center;gap:8px"><button class="garmin-sync-btn" id="garminSyncBtn" onclick="syncGoogleHealth()">📊 同期</button><span id="cloudDot" onclick="cloudDotTap()" style="display:none;width:10px;height:10px;border-radius:50%;cursor:pointer;flex:0 0 auto;box-shadow:0 0 0 2px rgba(255,255,255,.55)"></span><div id="authArea"></div></div>
   </div>
 
   <!-- カレンダーポップオーバー -->
@@ -603,6 +666,7 @@
       </details>
 
       <!-- ④ 食事ブロック -->
+      <div id="dragHint" style="display:flex;align-items:flex-start;gap:8px;margin:0 0 8px;padding:8px 10px;background:var(--surface2);border-radius:var(--radius-sm);font-size:11px;line-height:1.5;color:var(--text-sub)"><span style="flex:1">💡 記録を<b>長押し</b>して別の記録の上に<b>ドラッグ</b>すると、グループ（複合食品）にまとめられます。グループをタップすると中身の確認と複合食品への登録ができます。</span><button class="btn btn-sm btn-ghost" onclick="dismissDragHint()" style="padding:0 6px;flex:0 0 auto" aria-label="閉じる">✕</button></div>
       <div id="mealBlocks"></div>
 
       <!-- ⑤ 調味料クイック登録（折りたたみ） -->
@@ -782,22 +846,42 @@
       <div id="csSinglePanel">
         <div class="card">
           <div class="sl">基本栄養素</div>
-          <div class="row"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="csFoodName" placeholder="自家製プロテインバー など"></div><div class="field"><label>基準量(g)</label><input type="number" id="csPer" value="100" min="1"></div></div>
-          <div class="field" style="margin-bottom:10px"><label>読み（任意・ひらがな可）</label><input type="text" id="csFoodYomi" placeholder="空欄なら食品名から自動で推定します" autocomplete="off"></div>
+          <div class="row"><div class="field" style="flex:3"><label>食品名</label><input type="text" id="csFoodName" placeholder="自家製プロテインバー など"></div><div class="field"><label>基準量(g)</label><input type="number" id="csPer" value="100" min="1"></div><div class="field"><label>1食分(g・任意)</label><input type="number" id="csServing" placeholder="空欄" step="1"></div></div>
+          <div class="row"><div class="field" style="flex:2"><label>読み（任意・ひらがな可）</label><input type="text" id="csFoodYomi" placeholder="空欄なら自動推定" autocomplete="off"></div><div class="field" style="flex:1.4"><label>カテゴリ（任意）</label><input type="text" id="csCat" list="foodCatList" placeholder="空欄なら自動" autocomplete="off"></div></div>
           <div class="macro-row"><div class="field"><label>kcal</label><input type="number" id="csCal" placeholder="0" step="0.1"></div><div class="field"><label>P(g)</label><input type="number" id="csP" placeholder="0" step="0.1"></div><div class="field"><label>F(g)</label><input type="number" id="csF" placeholder="0" step="0.1"></div><div class="field"><label>C(g)</label><input type="number" id="csC" placeholder="0" step="0.1"></div></div>
           <div class="sl" style="margin-top:6px">ミクロ栄養素（任意）</div>
-          <div class="macro-row"><div class="field"><label>食物繊維(g)</label><input type="number" id="csFib" placeholder="0" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="csFe" placeholder="0" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="csCa" placeholder="0" step="0.1"></div></div>
+          <div class="macro-row"><div class="field"><label>食物繊維(g)</label><input type="number" id="csFib" placeholder="0" step="0.1"></div><div class="field"><label>うち水溶性(g)</label><input type="number" id="csFibS" placeholder="自動" step="0.1"></div><div class="field"><label>鉄(mg)</label><input type="number" id="csFe" placeholder="0" step="0.1"></div><div class="field"><label>Ca(mg)</label><input type="number" id="csCa" placeholder="0" step="0.1"></div></div>
           <div class="macro-row"><div class="field"><label>VitC(mg)</label><input type="number" id="csVc" placeholder="0" step="0.1"></div><div class="field"><label>VitD(μg)</label><input type="number" id="csVd" placeholder="0" step="0.1"></div><div class="field"><label>塩分(g)</label><input type="number" id="csSalt" placeholder="0" step="0.01"></div></div>
           <button class="btn btn-primary btn-block" onclick="saveCustomFood()">登録する</button>
           <div id="csSaveMsg" class="status-msg"></div>
         </div>
-        <div class="sl">登録済み食品</div><div id="customFoodList"></div>
+        <div class="sl">登録済み食品</div>
+        <div class="fd-toolbar">
+          <input type="text" class="fd-search" id="fdSearch_custom" placeholder="登録済みを検索（名前・読み・カテゴリ）" oninput="onFoodDbSearch('custom', this.value)" autocomplete="off">
+          <div class="fd-row">
+            <select id="fdSort_custom" onchange="onFoodDbSort('custom', this.value)"></select>
+            <button class="btn btn-sm" onclick="focusFoodForm('custom')">＋ 新規追加</button>
+            <button class="btn btn-sm" onclick="autoCategorizeFoods('custom')">自動分類</button>
+          </div>
+          <div class="fd-row">
+            <button class="btn btn-sm" id="fdSelBtn_custom" onclick="toggleFoodSelectMode('custom')">選択</button>
+            <button class="btn btn-sm" onclick="toggleFoodCatMgr()">カテゴリ管理</button>
+            <button class="btn btn-sm" id="fdServBtn_custom" onclick="toggleFoodServingMode('custom')">目安量</button>
+          </div>
+          <div id="fdServBar_custom"></div>
+          <div id="fdBulk_custom"></div>
+          <div id="fdCatMgr_custom"></div>
+          <div class="fd-chips" id="fdChips_custom"></div>
+          <div class="fd-count" id="fdCount_custom"></div>
+        </div>
+        <div id="customFoodList"></div>
+        <datalist id="foodCatList"></datalist>
       </div>
       <div id="csComboPanel" style="display:none">
         <div class="card">
           <div class="sl">複合食品名</div>
           <div class="field" style="margin-bottom:6px"><input type="text" id="comboName" placeholder="例：自家製プロテインオートミール"></div>
-          <div class="field" style="margin-bottom:10px"><input type="text" id="comboYomi" placeholder="読み（任意・ひらがな可。空欄なら自動推定）" autocomplete="off"></div>
+          <div class="row" style="margin-bottom:10px"><div class="field" style="flex:2"><input type="text" id="comboYomi" placeholder="読み（任意・ひらがな可）" autocomplete="off"></div><div class="field" style="flex:1.4"><input type="text" id="comboCat" list="foodCatList" placeholder="カテゴリ（空欄なら自動）" autocomplete="off"></div></div>
           <div class="sl">食材を検索して追加</div>
           <div class="search-wrap"><input type="text" id="comboSearch" placeholder="食材を検索…" oninput="onComboSearch(this.value)" autocomplete="off"><div class="search-icon-box" id="comboSearchIcon"><svg viewBox="0 0 16 16"><circle cx="6.5" cy="6.5" r="4"/><line x1="10" y1="10" x2="14" y2="14"/></svg></div></div>
           <div class="results-box" id="comboResultsBox"></div>
@@ -807,7 +891,26 @@
           <button id="comboSaveBtn" class="btn btn-success btn-block" onclick="saveComboFood()">複合食品として登録</button>
           <div id="comboSaveMsg" class="status-msg"></div>
         </div>
-        <div class="sl">登録済み複合食品</div><div id="comboFoodList"></div>
+        <div class="sl">登録済み複合食品</div>
+        <div class="fd-toolbar">
+          <input type="text" class="fd-search" id="fdSearch_combo" placeholder="登録済みを検索（名前・読み・カテゴリ・材料）" oninput="onFoodDbSearch('combo', this.value)" autocomplete="off">
+          <div class="fd-row">
+            <select id="fdSort_combo" onchange="onFoodDbSort('combo', this.value)"></select>
+            <button class="btn btn-sm" onclick="focusFoodForm('combo')">＋ 新規追加</button>
+            <button class="btn btn-sm" onclick="autoCategorizeFoods('combo')">自動分類</button>
+          </div>
+          <div class="fd-row">
+            <button class="btn btn-sm" id="fdSelBtn_combo" onclick="toggleFoodSelectMode('combo')">選択</button>
+            <button class="btn btn-sm" onclick="toggleFoodCatMgr()">カテゴリ管理</button>
+            <button class="btn btn-sm" id="fdServBtn_combo" onclick="toggleFoodServingMode('combo')">目安量</button>
+          </div>
+          <div id="fdServBar_combo"></div>
+          <div id="fdBulk_combo"></div>
+          <div id="fdCatMgr_combo"></div>
+          <div class="fd-chips" id="fdChips_combo"></div>
+          <div class="fd-count" id="fdCount_combo"></div>
+        </div>
+        <div id="comboFoodList"></div>
       </div>
     </div>
 
@@ -815,9 +918,12 @@
     <div class="panel" id="panel-csv">
       <div class="card">
         <div class="sl">CSVエクスポート</div>
-        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">カロリー・PFC・ミクロ栄養素を含む全データをダウンロード</p>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:8px;line-height:1.6">
+          <b>CSVダウンロード</b>: 食事記録（カロリー・PFC・ミクロ栄養素・実質カロリー）。<b>各行の右端に、その日のBMR・TDEE・総消費・摂取・実質収支</b>が付きます。ファイルの末尾には、日別の消費カロリー表（計算式つき）も付きます。<br>
+          <b>日別CSV</b>: TDEE・運動・摂取・実質収支・計算式だけを、期間内の全日（記録のない日も）1つの表にしたファイルです。</p>
         <div class="row" style="margin-bottom:10px"><div class="field"><label>開始日</label><input type="date" id="csvFrom"></div><div class="field"><label>終了日</label><input type="date" id="csvTo"></div></div>
         <button class="btn btn-primary btn-block" onclick="exportCSV()">📥 CSVダウンロード</button>
+        <button class="btn btn-block" onclick="exportDailyCSV()" style="margin-top:8px">📥 日別CSV（TDEE・収支）</button>
       </div>
       <div class="card">
         <div class="sl">CSVインポート</div>
@@ -847,7 +953,7 @@
       </div>
       <div class="card">
         <div class="sl">フォーマット</div>
-        <p style="font-size:11px;color:var(--text-sub);line-height:1.7">date, meal, name, amount, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt</p>
+        <p style="font-size:11px;color:var(--text-sub);line-height:1.7">date, meal, name, amount, cal, p, f, c, fiber, iron, calcium, vitc, vitd, salt, fiber_soluble, fiber_insoluble（末尾2列は省略可）</p>
         <p style="font-size:11px;color:var(--text-sub);line-height:1.7;margin-top:8px">食品DB: {"customFoods":[{"name":..,"yomi":..,"per":..,"cal":..,"p":..,"f":..,"c":..,"fiber":..,"fa":{...},"aa":{...}}],"comboFoods":[{"name":..,"ingredients":[...]}]}（食品DBエクスポートで書き出したJSONと同じ形式）</p>
       </div>
     </div>
@@ -1027,11 +1133,11 @@
       </div>
 
       <!-- チャット画面 -->
-      <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
-        <button onclick="sendQuickAiPrompt('直近1週間の食事を分析して、気になる点や改善案を教えて')" class="btn btn-sm" style="font-size:11px">📊 週の分析</button>
-        <button onclick="sendQuickAiPrompt('今日の記録でおかしい点はある？')" class="btn btn-sm" style="font-size:11px">🔍 今日のチェック</button>
-        <button onclick="sendQuickAiPrompt('直近1ヶ月で、目標に対して不足・過剰が続いている栄養素はある？')" class="btn btn-sm" style="font-size:11px">📈 1ヶ月の傾向</button>
+      <div style="display:flex;gap:6px;margin-bottom:8px;align-items:center">
+        <div id="promptChips" style="display:flex;gap:6px;overflow-x:auto;flex:1;min-width:0;padding-bottom:2px;-webkit-overflow-scrolling:touch"></div>
+        <button class="btn btn-sm" onclick="togglePromptMgr()" style="font-size:11px;flex:0 0 auto" aria-label="雛形を編集">⚙️ 雛形</button>
       </div>
+      <div id="promptMgr"></div>
       <div id="aiChatBox" style="
         height: 52vh;
         overflow-y: auto;
