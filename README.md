@@ -308,3 +308,7 @@ jsdom でアプリを読み込んで画面操作まで確認するテストが `
 ```
 npm test    # tests/core.test.js（DB整合・AIコマンドの保存・クラウド同期・食品登録タブ・TDEE）、tests/group-drag.test.js（記録のドラッグ＆グループ化）、tests/prompt-templates.test.js（AIプロンプトの雛形）、tests/amount-inline.test.js（行の中の量の調整・検索欄の量指定・複製）、tests/csv-export.test.js（CSV出力）、tests/search-focus.test.js（記録タブの検索欄フォーカス）
 ```
+
+## アーカイブ
+
+使わなくなった機能のソース（数量シート・左スワイプ・食品ごとの単位・スライダー版の量のUI）と、完全版のスナップショットを `docs/archive/` に残しています。再利用の手順は `docs/archive/README.md` を参照してください。

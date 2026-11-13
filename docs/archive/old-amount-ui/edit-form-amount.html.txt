@@ -1,0 +1,9 @@
+【アーカイブ】✏️編集フォーム内の量の操作（スライダー・±1/5/10gボタン・小さじ/大さじボタン）。
+app.js の renderRecord 内、編集フォームのテンプレート（`${e.id}` を使う文字列）の一部です。
+
+            <div class="row" style="margin-bottom:2px;gap:8px;align-items:center"><input type="range" id="easlider${e.id}" min="0" max="${Math.max(200, r1(e.amount*3))}" step="1" value="${e.amount}" style="flex:1" oninput="syncAmountFromSlider(${e.id}, this.value)"></div>
+            <div class="row" style="margin-bottom:4px;gap:3px">${[-10,-5,-1,1,5,10].map(d=>`<button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:10px" onclick="nudgeEditAmount(${e.id},${d})">${d>0?'+':''}${d}g</button>`).join('')}</div>
+            <div class="row" style="margin-bottom:5px;gap:4px">
+              <button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="setEditAmountByVolume(${e.id},5)">小さじ1(5ml)</button>
+              <button type="button" class="btn btn-sm" style="flex:1;padding:4px 0;font-size:11px" onclick="setEditAmountByVolume(${e.id},15)">大さじ1(15ml)</button>
+            </div>
