@@ -21,6 +21,10 @@
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     },
     {
+      "source": "/strength-model.js",
+      "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+    },
+    {
       "source": "/manifest.json",
       "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
     }

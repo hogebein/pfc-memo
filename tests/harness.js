@@ -4,7 +4,7 @@ const root = path.join(__dirname, '..');
 function loadApp(opts = {}) {
   let html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const inl = f => () => '<script>' + fs.readFileSync(path.join(root, f), 'utf8').replace(/<\/script>/g, '<\\/script>') + '</script>';
-  html = html.replace(/<script src="https:[^>]*><\/script>/g, '').replace(/<script src="foods-db.js"><\/script>/, inl('foods-db.js')).replace(/<script src="app.js"><\/script>/, inl('app.js'));
+  html = html.replace(/<script src="https:[^>]*><\/script>/g, '').replace(/<script src="foods-db.js"><\/script>/, inl('foods-db.js')).replace(/<script src="strength-model.js"><\/script>/, inl('strength-model.js')).replace(/<script src="app.js"><\/script>/, inl('app.js'));
   const errs = []; const vc = new VirtualConsole(); vc.on('jsdomError', e => errs.push(e.message));
   const dom = new JSDOM(html, { runScripts: 'dangerously', url: 'http://localhost/', pretendToBeVisual: true, virtualConsole: vc, beforeParse(w) {
     w.Chart = function () { return { destroy() {}, update() {} }; }; w.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {}, addEventListener() {} });

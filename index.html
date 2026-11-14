@@ -374,6 +374,9 @@
     }
     .ex-item { display: flex; justify-content: space-between; align-items: center; padding: 7px 13px; border-top: 1px solid var(--border); }
     .ex-cal { font-size: 13px; font-weight: 700; color: var(--pink); }
+    .st-draft { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+    .st-chip { display: inline-flex; align-items: center; gap: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 3px 4px 3px 9px; font-size: 12px; }
+    .st-chip button { border: none; background: none; color: var(--text-sub); padding: 4px 6px; cursor: pointer; font-size: 11px; }
 
     /* ═══════════════════════════════════════
        Search / Add panel
@@ -726,6 +729,33 @@
             <div id="exMsg" class="status-msg"></div>
           </div>
         </div>
+
+        <!-- 筋トレ（セット記録） -->
+        <div id="strengthItems"></div>
+        <div style="padding:8px 13px;border-top:1px solid var(--border)">
+          <button class="btn btn-sm" id="stAddBtn" onclick="toggleStrengthPanel()">🏋 筋トレを記録</button>
+        </div>
+        <div id="strengthAddPanel" style="display:none">
+          <div class="add-panel">
+            <div class="row"><div class="field"><label>種目</label><select id="stEx" onchange="onStExChange()"></select></div></div>
+            <div class="row" id="stCustomRow" style="display:none">
+              <div class="field"><label>種目名</label><input type="text" id="stCustomName" placeholder="種目名"></div>
+              <div class="field"><label>鍛える部位</label><select id="stCustomMuscle"></select></div>
+            </div>
+            <div class="row">
+              <div class="field"><label>重量(kg)</label><input type="number" id="stKg" min="0" step="0.5" inputmode="decimal" value="0"></div>
+              <div class="field"><label>回数</label><input type="number" id="stReps" min="1" step="1" inputmode="numeric" value="10"></div>
+              <div class="field"><label>あと何回できた(RIR)</label>
+                <select id="stRir"><option value="">未入力(2)</option><option value="0">0（限界）</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5以上</option></select></div>
+            </div>
+            <button class="btn btn-block" onclick="stAddSet()">＋ セットを追加（同じ重量・回数のまま連続追加できます）</button>
+            <div id="stDraft" class="st-draft"></div>
+            <button class="btn btn-primary btn-block" id="stSaveBtn" onclick="saveStrengthEntry()" disabled>この種目を保存</button>
+            <label style="display:flex;gap:6px;align-items:center;font-size:11px;color:var(--text-sub);margin-top:8px">
+              <input type="checkbox" id="stAutoCal" onchange="setStrengthAutoCal(this.checked)" style="width:16px;height:16px"> セット数から消費kcalを自動で運動に計上（1セット2.5分×4.5METs）</label>
+            <div id="stMsg" class="status-msg"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -750,6 +780,10 @@
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:160px"><canvas id="calChart"></canvas></div></div>
       <div class="sl">PFC推移</div>
       <div class="card" style="padding:10px"><div class="chart-wrap" style="height:150px"><canvas id="pfcChart"></canvas></div></div>
+
+      <!-- 筋トレ評価 -->
+      <div class="sl">筋トレ評価（筋肥大の見込み）</div>
+      <div class="card" style="padding:13px;margin-bottom:8px" id="strengthEval"></div>
 
       <!-- ビタミンD ストック推定 -->
       <div id="vitdStockWrap" style="display:none">
@@ -920,10 +954,12 @@
         <div class="sl">CSVエクスポート</div>
         <p style="font-size:12px;color:var(--text-sub);margin-bottom:8px;line-height:1.6">
           <b>CSVダウンロード</b>: 食事記録（カロリー・PFC・ミクロ栄養素・実質カロリー）。<b>各行の右端に、その日のBMR・TDEE・総消費・摂取・実質収支</b>が付きます。ファイルの末尾には、日別の消費カロリー表（計算式つき）も付きます。<br>
-          <b>日別CSV</b>: TDEE・運動・摂取・実質収支・計算式だけを、期間内の全日（記録のない日も）1つの表にしたファイルです。</p>
+          <b>日別CSV</b>: TDEE・運動・摂取・実質収支・計算式だけを、期間内の全日（記録のない日も）1つの表にしたファイルです。<br>
+          <b>筋トレCSV</b>: 1セット1行（重量・回数・RIR・ボリューム）と、週×部位ごとの有効セット数の表です。</p>
         <div class="row" style="margin-bottom:10px"><div class="field"><label>開始日</label><input type="date" id="csvFrom"></div><div class="field"><label>終了日</label><input type="date" id="csvTo"></div></div>
         <button class="btn btn-primary btn-block" onclick="exportCSV()">📥 CSVダウンロード</button>
         <button class="btn btn-block" onclick="exportDailyCSV()" style="margin-top:8px">📥 日別CSV（TDEE・収支）</button>
+        <button class="btn btn-block" onclick="exportStrengthCSV()" style="margin-top:8px">📥 筋トレCSV（セット・週別部位ボリューム）</button>
       </div>
       <div class="card">
         <div class="sl">CSVインポート</div>
@@ -1220,6 +1256,7 @@
   }
 </script>
 <script src="foods-db.js"></script>
+<script src="strength-model.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

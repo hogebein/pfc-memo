@@ -495,7 +495,7 @@ function withSearchFields(f, src) {
 LOCAL_DB.forEach(f => withSearchFields(f, 'local'));
 
 // ── State ──
-let entries = [], customFoods = [], comboFoods = [], exercises = [];
+let entries = [], customFoods = [], comboFoods = [], exercises = [], strengthLog = [];
 let errorLog = []; // AI操作や通信の失敗を記録する永続ログ（設定タブから閲覧・書き出しできる）
 let userWeight = 65, statsPeriod = 'today', chartMode = 'raw';
 let calChart = null, pfcChart = null, vitdStockChart = null;
@@ -534,6 +534,7 @@ try { entries     = JSON.parse(localStorage.getItem('pfcEntries')    || '[]'); }
 try { customFoods = JSON.parse(localStorage.getItem('pfcCustomFoods')|| '[]'); } catch(e) {}
 try { comboFoods  = JSON.parse(localStorage.getItem('pfcComboFoods') || '[]'); } catch(e) {}
 try { exercises   = JSON.parse(localStorage.getItem('pfcExercises')  || '[]'); } catch(e) {}
+try { strengthLog = JSON.parse(localStorage.getItem('pfcStrength')   || '[]'); } catch(e) {}
 try { userWeight  = parseFloat(localStorage.getItem('pfcWeight') || '65'); } catch(e) {}
 try { ghToken     = localStorage.getItem('ghToken') || null; } catch(e) {}
 try { ghData      = JSON.parse(localStorage.getItem('ghData') || '{}'); } catch(e) {}
@@ -594,6 +595,7 @@ function ri(n) { return Math.round(n); }
 function saveLocal() {
   try { localStorage.setItem('pfcEntries',     JSON.stringify(entries));     } catch(e) {}
   try { localStorage.setItem('pfcExercises',   JSON.stringify(exercises));   } catch(e) {}
+  try { localStorage.setItem('pfcStrength',    JSON.stringify(strengthLog)); } catch(e) {}
   try { localStorage.setItem('pfcCustomFoods', JSON.stringify(customFoods)); } catch(e) {}
   try { localStorage.setItem('pfcComboFoods',  JSON.stringify(comboFoods));  } catch(e) {}
 }
@@ -645,7 +647,7 @@ async function saveToCloud() {
   let retry = false;
   try {
     const { doc, setDoc } = await fsApi();
-    const payload = { entries, exercises, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), promptTemplates, updatedAt: new Date().toISOString() };
+    const payload = { entries, exercises, strengthLog, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), promptTemplates, updatedAt: new Date().toISOString() };
     const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
     if (bytes > CLOUD_DOC_MAX_BYTES) { // 1MiBを超えると保存できない。以前は黙って失敗していた
       _cloudLastError = `データが大きすぎます（${Math.round(bytes / 1024)}KB / 上限1024KB）`;
@@ -2321,16 +2323,21 @@ function executeCopyDay() {
   // 運動コピー
   if (copyEx) {
     if (overwrite) exercises = exercises.filter(e => e.date !== currentDate);
-    fromEx.forEach((e, i) => {
+    fromEx.filter(e => e.auto !== 'strength').forEach((e, i) => {
       exercises.push({ ...e, id: now + 10000 + i, date: currentDate });
     });
+    if (overwrite) strengthLog = strengthLog.filter(e => e.date !== currentDate);
+    strengthLog.filter(e => e.date === fromDate).map(e => ({ ...e, sets: e.sets.map(x => ({ ...x })) })).forEach((e, i) => {
+      strengthLog.push({ ...e, id: now + 20000 + i, date: currentDate });
+    });
+    syncStrengthCalories(currentDate);
   }
 
   save();
   saveExercises();
   renderRecord();
   renderCalendar();
-  renderExerciseItems();
+  renderExerciseItems(); renderStrengthItems();
 
   const copied = fromEntries.length + (copyEx ? fromEx.length : 0);
   if(msg){msg.className='status-msg status-ok';msg.textContent=`✅ ${copied}件をコピーしました`;}
@@ -2863,6 +2870,157 @@ function renderExerciseItems() {
       </div>`
     ).join('')
   }</div>`;
+}
+
+// ── 筋トレ（セット記録・部位別ボリューム・筋肥大の見込み）──
+// 計算モデルは strength-model.js（StrengthModel）。ここは記録UI・保存・評価カードの表示。
+let stDraft = [], stPanelOpen = false;
+function stEsc(t) { return String(t == null ? '' : t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]); }
+function saveStrength() { saveLocal(); queueCloudSave(); }
+const ST_MIN_PER_SET = 2.5, ST_METS = 4.5; // セット記録から消費kcalを出すときの目安（1セットあたり休憩込み2.5分、筋トレ4.5METs）
+
+function initStrengthUI() {
+  const sel = document.getElementById('stEx'); if (!sel || typeof StrengthModel === 'undefined') return;
+  const groups = {};
+  StrengthModel.EXERCISES.forEach(e => { (groups[e.g] = groups[e.g] || []).push(e); });
+  sel.innerHTML = Object.keys(groups).map(g => `<optgroup label="${g}">${groups[g].map(e => `<option value="${e.k}">${e.n}</option>`).join('')}</optgroup>`).join('')
+    + '<option value="__custom">その他（種目名と部位を指定）</option>';
+  const mus = document.getElementById('stCustomMuscle');
+  if (mus) mus.innerHTML = StrengthModel.MUSCLES.map(m => `<option value="${m.key}">${m.name}</option>`).join('');
+  const auto = document.getElementById('stAutoCal'); if (auto) auto.checked = profile.strengthAutoCal !== false;
+  onStExChange(); renderStrengthItems();
+}
+function toggleStrengthPanel() {
+  stPanelOpen = !stPanelOpen;
+  const p = document.getElementById('strengthAddPanel'), b = document.getElementById('stAddBtn');
+  if (p) p.style.display = stPanelOpen ? 'block' : 'none';
+  if (b) b.textContent = stPanelOpen ? '✕ 閉じる' : '🏋 筋トレを記録';
+}
+function onStExChange() {
+  const sel = document.getElementById('stEx'), row = document.getElementById('stCustomRow');
+  if (sel && row) row.style.display = sel.value === '__custom' ? 'flex' : 'none';
+  stDraft = []; renderStDraft();
+}
+function stAddSet() {
+  const kg = parseFloat(document.getElementById('stKg').value), reps = parseInt(document.getElementById('stReps').value, 10);
+  const rirRaw = document.getElementById('stRir').value, msg = document.getElementById('stMsg');
+  if (!(reps > 0) || !(kg >= 0)) { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = '重量(kg)と回数を入力してください（自重は0kg）'; } return; }
+  if (msg) msg.textContent = '';
+  stDraft.push({ kg, reps, rir: rirRaw === '' ? null : parseInt(rirRaw, 10) });
+  renderStDraft();
+}
+function stRemoveDraftSet(i) { stDraft.splice(i, 1); renderStDraft(); }
+function renderStDraft() {
+  const box = document.getElementById('stDraft'); if (!box) return;
+  box.innerHTML = stDraft.map((s, i) => `<span class="st-chip">${i + 1}. ${s.kg}kg×${s.reps}${s.rir != null ? '＠' + s.rir : ''}<button onclick="stRemoveDraftSet(${i})" aria-label="削除">✕</button></span>`).join('');
+  const b = document.getElementById('stSaveBtn'); if (b) b.disabled = !stDraft.length;
+}
+function saveStrengthEntry() {
+  const msg = document.getElementById('stMsg'), sel = document.getElementById('stEx');
+  if (!stDraft.length || !sel) return;
+  const entry = { id: Date.now(), date: currentDate, sets: stDraft.map(s => ({ ...s })) };
+  if (sel.value === '__custom') {
+    const name = (document.getElementById('stCustomName').value || '').trim();
+    if (!name) { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = '種目名を入力してください'; } return; }
+    entry.ex = 'custom'; entry.name = name; entry.custom = [document.getElementById('stCustomMuscle').value];
+  } else {
+    entry.ex = sel.value; entry.name = StrengthModel.EX_BY_KEY[sel.value].n;
+  }
+  strengthLog.push(entry);
+  const n = stDraft.length; stDraft = []; renderStDraft();
+  syncStrengthCalories(currentDate); saveStrength(); saveExercises(); renderStrengthItems(); renderExerciseItems(); renderStrengthEval();
+  if (msg) { msg.className = 'status-msg status-ok'; msg.textContent = `「${entry.name}」${n}セットを保存しました`; setTimeout(() => { if (msg) msg.textContent = ''; }, 2000); }
+}
+function deleteStrengthEntry(id) {
+  const idx = strengthLog.findIndex(e => e.id === id); if (idx === -1) return;
+  const removed = strengthLog[idx]; strengthLog.splice(idx, 1);
+  syncStrengthCalories(removed.date); saveStrength(); saveExercises(); renderStrengthItems(); renderExerciseItems(); renderStrengthEval();
+  showUndoToast(`「${removed.name}」を削除しました`, () => {
+    strengthLog.splice(Math.min(idx, strengthLog.length), 0, removed);
+    syncStrengthCalories(removed.date); saveStrength(); saveExercises(); renderStrengthItems(); renderExerciseItems(); renderStrengthEval();
+  });
+}
+function renderStrengthItems() {
+  const box = document.getElementById('strengthItems'); if (!box) return;
+  const day = strengthLog.filter(e => e.date === currentDate);
+  box.innerHTML = day.length ? `<div class="meal-items">${day.map(e => `<div class="log-item">
+      <div><div class="li-name">🏋 ${stEsc(e.name)}</div>
+      <div class="li-detail">${e.sets.map(s => `${s.kg}kg×${s.reps}${s.rir != null ? '＠' + s.rir : ''}`).join('　')}</div></div>
+      <div class="li-right"><button class="btn btn-sm btn-danger" onclick="deleteStrengthEntry(${e.id})" style="padding:6px 10px">✕</button></div>
+    </div>`).join('')}</div>` : '';
+}
+// その日の筋トレ記録から消費kcalを運動記録へ自動計上する（日ごとに1件。OFFなら自動分を消す）
+function syncStrengthCalories(date) {
+  exercises = exercises.filter(e => !(e.auto === 'strength' && e.date === date));
+  if (profile.strengthAutoCal === false) return;
+  const sets = strengthLog.filter(e => e.date === date).reduce((a, e) => a + e.sets.length, 0);
+  if (!sets) return;
+  const minutes = Math.round(sets * ST_MIN_PER_SET), weight = profile.weight || userWeight || 65;
+  exercises.push({ id: Date.now() + 5, date, name: '筋トレ（セット記録から自動）', minutes, cal: r1(ST_METS * weight * (minutes / 60)), auto: 'strength' });
+}
+function setStrengthAutoCal(on) {
+  profile.strengthAutoCal = !!on;
+  try { localStorage.setItem('pfcProfile', JSON.stringify(profile)); } catch (e) {}
+  [...new Set(strengthLog.map(e => e.date))].forEach(syncStrengthCalories);
+  saveExercises(); renderExerciseItems(); queueCloudSave();
+}
+function saveStrengthSeed() {
+  profile.strengthSeedYears = Math.max(0, parseFloat(document.getElementById('stSeedYears').value) || 0);
+  profile.strengthSeedSets = Math.max(0, parseFloat(document.getElementById('stSeedSets').value) || 0);
+  try { localStorage.setItem('pfcProfile', JSON.stringify(profile)); } catch (e) {}
+  queueCloudSave(); renderStrengthEval();
+}
+
+// 評価に使う食事・エネルギー収支（直近28日のうち食事記録がある日の平均）
+function strengthDietContext(endDate) {
+  const end = new Date(endDate + 'T00:00:00'), days = [];
+  for (let i = 0; i < 28; i++) { const d = new Date(end); d.setDate(d.getDate() - i); const ds = toDateStr(d); if (getDayEntries(ds).length) days.push(ds); }
+  if (days.length < 3) return { days: days.length, deltaKcal: NaN, proteinPerKg: NaN, intake: NaN };
+  let bal = 0, p = 0, cal = 0;
+  days.forEach(d => { const x = dayEnergyInfo(d); bal += x.intake - x.totalBurn; p += x.daySum.p; cal += x.intake; });
+  const w = profile.weight || userWeight || 65;
+  return { days: days.length, deltaKcal: bal / days.length, proteinPerKg: p / days.length / w, intake: cal / days.length };
+}
+function strengthSmm() {
+  const w = profile.weight || userWeight || 65, lbm = profile.bf ? w * (1 - profile.bf / 100) : w * (profile.sex === 'female' ? 0.72 : 0.82);
+  return lbm * 0.5;
+}
+function strengthEstimate(endDate) {
+  const diet = strengthDietContext(endDate);
+  const seedSets = (profile.strengthSeedYears || 0) * 52 * (profile.strengthSeedSets || 0);
+  return { diet, res: StrengthModel.estimate({ log: strengthLog, endDate, seedSets, deltaKcal: diet.deltaKcal, proteinPerKg: diet.proteinPerKg, smm: strengthSmm(), bodyFatPct: profile.bf, sex: profile.sex }) };
+}
+function renderStrengthEval() {
+  const el = document.getElementById('strengthEval'); if (!el || typeof StrengthModel === 'undefined') return;
+  const { diet, res } = strengthEstimate(toDateStr(new Date()));
+  const seedForm = `<details style="margin-top:10px"><summary style="font-size:11px;color:var(--text-sub);cursor:pointer">記録開始前のトレーニング経験（任意）</summary>
+    <div style="font-size:10px;color:var(--text-sub);line-height:1.6;margin:6px 0">経験はこのアプリの累積セット数から自動で見積もります。記録を始める前に長く鍛えていた場合は、おおよその年数と、各部位の週あたりセット数を入れると「伸びしろの残り」が現実に近づきます（未入力＝経験ゼロとして計算し、過大に出ます）。</div>
+    <div class="row"><div class="field"><label>年数</label><input type="number" id="stSeedYears" min="0" step="0.5" value="${profile.strengthSeedYears || 0}" onchange="saveStrengthSeed()"></div>
+    <div class="field"><label>週セット数/部位</label><input type="number" id="stSeedSets" min="0" step="1" value="${profile.strengthSeedSets || 0}" onchange="saveStrengthSeed()"></div></div></details>`;
+  if (res.empty) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub)">記録タブの「運動」から筋トレのセットを記録すると、部位別のボリュームと筋肥大の見込みを評価します。</div>${seedForm}`; return; }
+  const trained = res.muscles.filter(m => m.weeklySets > 0).sort((a, b) => b.weeklySets - a.weeklySets), idle = res.muscles.filter(m => m.weeklySets <= 0);
+  const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(1);
+  const bar = m => `<div style="margin:7px 0"><div style="display:flex;justify-content:space-between;font-size:12px"><span>${m.name}</span><span style="color:var(--text-sub)">${m.weeklySets}セット/週・${m.status}</span></div>
+    <div style="height:6px;background:var(--surface2);border-radius:3px;margin:3px 0"><div style="height:6px;border-radius:3px;background:var(--accent);width:${m.score}%"></div></div>
+    <div style="font-size:11px;color:var(--text-sub)">スコア ${m.score}　4週で筋サイズ ${fmt(m.gainLow)}〜${fmt(m.gainHigh)}%（中央 ${fmt(m.gainMid)}%）　伸びしろ係数 ${m.expFactor}</div></div>`;
+  const dietNote = diet.days < 3 ? '食事記録が3日未満のため、エネルギー・タンパク質の補正は入れていません。'
+    : `直近${diet.days}日の食事から補正：エネルギー収支 ${Math.round(diet.deltaKcal)}kcal/日（係数 ${res.energyFactor.toFixed(2)}${diet.deltaKcal < 0 ? '。軽い赤字ほど影響を小さく、経験が浅い・体脂肪が多いほどさらに小さく見積もっています' + (res.fatShare > 0 ? '' : '（体脂肪率が未入力のため、体脂肪による緩和は入れていません）') : ''}）、タンパク質 ${diet.proteinPerKg.toFixed(2)}g/kg（係数 ${res.proteinFactor.toFixed(2)}）`;
+  el.innerHTML = `<div style="display:grid;grid-template-columns:1fr 1fr ${res.fatKg ? '1fr' : ''};gap:8px;margin-bottom:6px">
+      <div class="card" style="padding:10px;margin:0"><div style="font-size:10px;color:var(--text-sub)">全身の刺激スコア</div><div style="font-size:22px;font-weight:700">${res.overallScore}<span style="font-size:11px;font-weight:400"> /100</span></div></div>
+      <div class="card" style="padding:10px;margin:0"><div style="font-size:10px;color:var(--text-sub)">4週の筋肉量 増加見込み</div><div style="font-size:18px;font-weight:700">${fmt(res.kgLow)}〜${fmt(res.kgHigh)}<span style="font-size:11px;font-weight:400"> kg</span></div></div>
+      ${res.fatKg ? `<div class="card" style="padding:10px;margin:0"><div style="font-size:10px;color:var(--text-sub)">4週の脂肪の変化(推定)</div><div style="font-size:18px;font-weight:700">${fmt(res.fatKg.low)}〜${fmt(res.fatKg.high)}<span style="font-size:11px;font-weight:400"> kg</span></div></div>` : ''}</div>
+    <div style="font-size:10px;color:var(--text-sub);margin-bottom:4px">直近${res.windowDays}日の平均セット数で、今のペースを4週間続けた場合の目安（評価対象の13部位の合計。水分・グリコーゲンは含みません。脂肪は直近の食事収支から、脂肪7200kcal/kg・筋肉4500kcal/kgで見積もった値で、TDEEの誤差の影響を大きく受けます）</div>
+    ${trained.map(bar).join('')}
+    ${idle.length ? `<div style="font-size:10px;color:var(--text-sub);margin-top:6px">未実施: ${idle.map(m => m.name).join('、')}</div>` : ''}
+    <div style="font-size:10px;color:var(--text-sub);line-height:1.6;margin-top:8px">${dietNote}</div>
+    ${seedForm}
+    <details style="margin-top:8px"><summary style="font-size:11px;color:var(--text-sub);cursor:pointer">計算の仕組みと限界</summary>
+    <div style="font-size:10px;color:var(--text-sub);line-height:1.7;margin-top:6px">
+    ・有効セット＝セット数 × 限界までの余力(RIR)の重み × 回数の重み。間接的に使われる部位は0.5セット換算。RIR未入力は2として扱います。<br>
+    ・筋サイズ変化は「有効セットの平方根」に比例（週あたりの逓減）。頻度による上乗せは入れていません（Pelland 2026）。<br>
+    ・エネルギー不足は、論文の回帰直線（平均して約500kcal/日の不足で除脂肪量の増加がゼロ。Murphy & Koehler 2022）のゼロ点を使い、維持カロリー付近では多くの人が増やしていたことと、筋肉を作るエネルギーは小さいこと（Slater 2019）から、軽い赤字ほど影響が小さい形にしています。さらに経験が浅いほど（最大で半分）、体脂肪が多いほど（最大で4割）緩めます（リコンプ: Barakat 2020）。緩め方の数値は本アプリの仮定です。<br>
+    ・RIRの重み（Robinson 2024）、タンパク質1.6g/kgで頭打ち（Morton 2018）は研究に基づきますが、具体的な係数と「累積セット数による伸びしろの減衰」、範囲（×0.55〜×1.5）は本アプリの仮定です。<br>
+    ・個人差が大きく、実測（周径・体組成）の代わりにはなりません。傾向を見るための目安として使ってください。</div></details>`;
 }
 
 // ── Copy ──
@@ -3904,6 +4062,7 @@ function renderCharts() {
   ]},options:{...baseOpts,plugins:{legend:{position:'bottom',labels:{font:{size:10},boxWidth:8,padding:8}}}}});
   renderAminoSection();
   renderMetabolismSection();
+  renderStrengthEval();
 }
 
 // ── CSV ──
@@ -3978,6 +4137,23 @@ function exportDailyCSV() {
   const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length].join(','))];
   downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`);
   if (dates.length >= MAXD && toDateStr(new Date(from + 'T00:00:00')) !== to) showToast(`期間が長いため、最初の${MAXD}日分を出力しました`);
+}
+// 筋トレCSV: 1セット1行の表 + 週×部位ごとの有効セット数の表（食事CSVと同じく期間指定に従う）
+function exportStrengthCSV() {
+  const from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
+  let data = [...strengthLog]; if (from) data = data.filter(e => e.date >= from); if (to) data = data.filter(e => e.date <= to);
+  if (!data.length) { showToast('出力できる筋トレ記録がありません'); return; }
+  data.sort((a, b) => a.date.localeCompare(b.date) || a.id - b.id);
+  const M = StrengthModel, mname = k => (M.MUSCLE_BY_KEY[k] || {}).name || k;
+  const header = ['date', 'exercise', 'set', 'kg', 'reps', 'rir', 'volume_kg', 'set_weight', 'direct_muscles', 'indirect_muscles'];
+  const rows = [header.join(',')];
+  data.forEach(e => {
+    const w = M.muscleWeights(e), direct = Object.keys(w).filter(k => w[k] === 1).map(mname).join('/'), indirect = Object.keys(w).filter(k => w[k] < 1).map(mname).join('/');
+    e.sets.forEach((s, i) => rows.push([e.date, csvQ(e.name), i + 1, s.kg, s.reps, s.rir == null ? '' : s.rir, r1(s.kg * s.reps), r2(M.setQuality(s)), csvQ(direct), csvQ(indirect)].join(',')));
+  });
+  rows.push('', '# 週(月曜始まり)×部位ごとの有効セット数（有効セット = セット数 × RIRの重み × 回数の重み。間接的に使う部位は0.5倍）', 'week_start,muscle,effective_sets');
+  M.weeklyEffectiveSets(data).forEach(r => rows.push([r.week, csvQ(r.name), r.sets].join(',')));
+  downloadCsv(rows, `pfc_strength_${toDateStr(new Date())}.csv`);
 }
 function importCSV() {
   const text=document.getElementById('csvImportArea').value.trim();
@@ -4830,6 +5006,7 @@ function applyCloudData(data) {
   let needUpload = false;
   if (data.entries)     { entries     = data.entries; }
   if (data.exercises)   { exercises   = data.exercises; }
+  if (data.strengthLog) { strengthLog = data.strengthLog; }
   if (data.customFoods) { customFoods = data.customFoods; }
   if (data.comboFoods)  { comboFoods  = data.comboFoods; }
   saveLocal();
@@ -4847,7 +5024,7 @@ function applyCloudData(data) {
   return needUpload;
 }
 function refreshViewsAfterCloud() {
-  ['renderRecord', 'renderCalendar', 'renderExerciseItems', 'renderCustomFoodList', 'renderComboFoodList', 'renderBmrPreview', 'renderActivityCard'].forEach(fn => { try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval('typeof ' + fn) === 'string' && eval('typeof ' + fn) === 'function') eval(fn + '()'); } catch (e) { /* 表示の更新失敗は無視 */ } });
+  ['renderRecord', 'renderCalendar', 'renderExerciseItems', 'renderStrengthItems', 'renderStrengthEval', 'renderCustomFoodList', 'renderComboFoodList', 'renderBmrPreview', 'renderActivityCard'].forEach(fn => { try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval('typeof ' + fn) === 'string' && eval('typeof ' + fn) === 'function') eval(fn + '()'); } catch (e) { /* 表示の更新失敗は無視 */ } });
 }
 async function pullFromCloud() {
   if (!fbDb || !fbUser || fbSyncing) return;
@@ -5227,6 +5404,16 @@ function buildFullContext() {
     if (oldEx.length) {
       const totalOldCal = Math.round(oldEx.reduce((a,e)=>a+(e.cal||0),0));
       lines.push(`【運動記録 過去分】${oldEx.length}件 合計消費${totalOldCal}kcal`);
+    }
+  }
+
+  // ── 筋トレ記録（直近14日）──
+  if (strengthLog.length) {
+    const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 14); return toDateStr(d); })();
+    const recent = strengthLog.filter(e => e.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
+    if (recent.length) {
+      lines.push('【筋トレ記録 直近14日（kg×回数@RIR）】');
+      recent.forEach(e => lines.push(`${dateLabel(e.date)}: ${e.name} ${e.sets.map(x => `${x.kg}×${x.reps}` + (x.rir != null ? `@${x.rir}` : '')).join(', ')}`));
     }
   }
 
@@ -6216,7 +6403,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 体重・プロフィール情報の変更（→「設定」タブで手動変更を案内）
 - グラフや統計の操作（表示のみで変更不可）
 - 15日以上前の記録（コンテキスト外のため参照・操作不可）
-- 運動記録の追加・削除（→「記録」タブの運動ブロックで手動操作を案内）
+- 運動記録・筋トレ記録の追加・削除（→「記録」タブの運動ブロックで手動操作を案内）
 - アプリの設定変更・外部サービス連携操作
 
 【カスタム食品登録のルール】
@@ -6439,6 +6626,7 @@ renderCalendar();
 renderRecord();
 renderQuickSeasonings();
 renderExerciseItems();
+initStrengthUI();
 renderErrorLogPanel();
 renderAuthUI();
 initFirebase(); // Firebase設定がある場合に認証・同期を開始

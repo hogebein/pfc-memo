@@ -24,6 +24,11 @@
     Cache-Control = "no-cache"
 
 [[headers]]
+  for = "/strength-model.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
   for = "/manifest.json"
   [headers.values]
     Cache-Control = "no-cache"
