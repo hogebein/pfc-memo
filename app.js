@@ -592,12 +592,25 @@ function r2(n) { return Math.round(n*100)/100; }
 function ri(n) { return Math.round(n); }
 
 // ローカル保存（常に実行 — オフライン時のキャッシュ）
+// 端末への保存に失敗（容量超過など）しても以前は黙って捨てていた。失敗するとリロード後に登録内容が消えるため、エラーログに残して知らせる
+let _lsFailAt = 0;
+function lsSetLogged(key, value) {
+  try { localStorage.setItem(key, value); return true; }
+  catch (e) {
+    if (Date.now() - _lsFailAt > 600000) {
+      _lsFailAt = Date.now();
+      try { logError('ローカル保存', `端末への保存に失敗しました（${key} / ${Math.round(String(value).length / 1024)}KB / ${(e && (e.name || e.message)) || e}）`, '端末の保存容量が不足している可能性があります。古い記録のCSV出力や、エラーログ・AIチャット履歴の整理を検討してください'); } catch (e2) {}
+      if (typeof showToast === 'function') showToast('⚠️ 端末への保存に失敗しました（エラーログを確認してください）');
+    }
+    return false;
+  }
+}
 function saveLocal() {
-  try { localStorage.setItem('pfcEntries',     JSON.stringify(entries));     } catch(e) {}
-  try { localStorage.setItem('pfcExercises',   JSON.stringify(exercises));   } catch(e) {}
-  try { localStorage.setItem('pfcStrength',    JSON.stringify(strengthLog)); } catch(e) {}
-  try { localStorage.setItem('pfcCustomFoods', JSON.stringify(customFoods)); } catch(e) {}
-  try { localStorage.setItem('pfcComboFoods',  JSON.stringify(comboFoods));  } catch(e) {}
+  lsSetLogged('pfcEntries',     JSON.stringify(entries));
+  lsSetLogged('pfcExercises',   JSON.stringify(exercises));
+  lsSetLogged('pfcStrength',    JSON.stringify(strengthLog));
+  lsSetLogged('pfcCustomFoods', JSON.stringify(customFoods));
+  lsSetLogged('pfcComboFoods',  JSON.stringify(comboFoods));
 }
 
 // Firestore への保存（ログイン済みの場合）
@@ -611,6 +624,27 @@ let cloudDirty = false, cloudStatus = 'idle', _cloudInFlight = false, _cloudRequ
 let CLOUD_RETRY_MS = [5000, 15000, 60000, 180000];
 let _lastCloudStamp = '', _lastForegroundPull = 0;   // クラウド上のデータの updatedAt（最後に確認した値）と、前面復帰時の読み込み時刻
 const CLOUD_DOC_WARN_BYTES = 800000, CLOUD_DOC_MAX_BYTES = 1000000;   // Firestoreの1ドキュメントは1MiBまで
+// 記録が増えると1ドキュメントが1MiBに近づくため、一定サイズを超えたら gzip+base64 に圧縮して保存する（読み込み側は圧縮の有無を自動判別。圧縮が使えない端末は従来どおり）
+const CLOUD_ZIP_THRESHOLD = 400000;
+let _cloudVer = 0;   // 変更のたびに増やす。送信が終わったとき「送信中に新しい変更が入っていないか」を判定して、未送信フラグを誤って下げないために使う
+let _cloudLastKB = 0;
+async function cloudZip(str) {
+  if (window.__zipApi) return window.__zipApi.zip(str);
+  if (typeof CompressionStream === 'undefined') return null;
+  const buf = new Uint8Array(await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer());
+  let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode.apply(null, buf.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+async function cloudUnzip(b64) {
+  if (window.__zipApi) return window.__zipApi.unzip(b64);
+  if (typeof DecompressionStream === 'undefined') throw new Error('この端末は圧縮されたクラウドデータの読み込みに未対応です（ブラウザを更新してください）');
+  const bin = atob(b64), buf = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return new TextDecoder().decode(await new Response(new Blob([buf]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer());
+}
+async function cloudDocData(d) {   // 保存形式（通常 / 圧縮）を吸収して、アプリが使うデータ形に戻す
+  if (!d || !d.z) return d;
+  const data = JSON.parse(await cloudUnzip(d.z)); if (d.updatedAt) data.updatedAt = d.updatedAt; return data;
+}
 let _fsMod = null, _cloudWarnedSize = false, _cloudLastLogged = { msg: '', t: 0 };
 async function fsApi() {
   if (window.__fsApi) return window.__fsApi;   // テスト用の差し替え口
@@ -626,7 +660,7 @@ function setCloudStatus(st, detail) {
   el.title = label + (detail ? `：${detail}` : ''); el.dataset.state = st;
 }
 function cloudDotTap() {
-  const label = { synced: '同期済みです', syncing: '同期中です…', pending: '未送信の変更があります。再試行します', error: '同期に失敗しています。再試行します' + (_cloudLastError ? `（${_cloudLastError}）` : ''), offline: 'オフラインです。接続後に同期します' }[cloudStatus] || '';
+  const label = { synced: '同期済みです' + (_cloudLastKB ? `（クラウド上 ${_cloudLastKB}KB / 上限1024KB）` : ''), syncing: '同期中です…', pending: '未送信の変更があります。再試行します', error: '同期に失敗しています。再試行します' + (_cloudLastError ? `（${_cloudLastError}）` : ''), offline: 'オフラインです。接続後に同期します' }[cloudStatus] || '';
   if (cloudDirty && !_cloudInFlight) saveToCloud();
   if (label && typeof showToast === 'function') showToast(label);
 }
@@ -644,29 +678,38 @@ async function saveToCloud() {
   cloudDirty = true;
   if (_cloudInFlight) { _cloudRequeue = true; return; }
   _cloudInFlight = true; clearTimeout(_cloudRetryTimer); setCloudStatus('syncing');
-  let retry = false;
+  let retry = false, giveUp = false;
   try {
     const { doc, setDoc } = await fsApi();
+    const ver = _cloudVer;   // この内容を送る時点の版。送信中にさらに変更があれば、完了後も未送信のまま残す
     const payload = { entries, exercises, strengthLog, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: sanitizeGhData(ghData), promptTemplates, updatedAt: new Date().toISOString() };
-    const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
-    if (bytes > CLOUD_DOC_MAX_BYTES) { // 1MiBを超えると保存できない。以前は黙って失敗していた
-      _cloudLastError = `データが大きすぎます（${Math.round(bytes / 1024)}KB / 上限1024KB）`;
-      logCloudError(_cloudLastError, '古い記録を整理するか、データの分割保存が必要です'); setCloudStatus('error', _cloudLastError); return;
+    const json = JSON.stringify(payload), bytes = new TextEncoder().encode(json).length;
+    let docObj = payload, stored = bytes;
+    if (bytes > CLOUD_ZIP_THRESHOLD) {
+      const z = await cloudZip(json);
+      if (z) { docObj = { z, zv: 1, updatedAt: payload.updatedAt }; stored = z.length; }
     }
-    if (bytes > CLOUD_DOC_WARN_BYTES && !_cloudWarnedSize) { _cloudWarnedSize = true; logError('クラウド保存', `クラウドのデータが上限に近づいています（${Math.round(bytes / 1024)}KB / 上限1024KB）`, ''); }
-    await setDoc(doc(fbDb, 'users', fbUser.uid), payload);
+    _cloudLastKB = Math.round(stored / 1024);
+    if (stored > CLOUD_DOC_MAX_BYTES) { // 1MiBを超えると保存できない。以前は黙って失敗していた
+      _cloudLastError = `データが大きすぎます（${Math.round(stored / 1024)}KB / 上限1024KB）`;
+      logCloudError(_cloudLastError, docObj === payload ? '圧縮に対応していない端末です。ブラウザを更新するか、古い記録を整理してください' : '古い記録のCSV出力・整理、またはデータの分割保存が必要です');
+      giveUp = true; return;
+    }
+    if (stored > CLOUD_DOC_WARN_BYTES && !_cloudWarnedSize) { _cloudWarnedSize = true; logError('クラウド保存', `クラウドのデータが上限に近づいています（${Math.round(stored / 1024)}KB / 上限1024KB）`, ''); }
+    await setDoc(doc(fbDb, 'users', fbUser.uid), docObj);
     _cloudRetryCount = 0; _cloudLastError = ''; _lastCloudStamp = payload.updatedAt;
-    if (!_cloudRequeue) cloudDirty = false;
+    if (!_cloudRequeue && _cloudVer === ver) cloudDirty = false;
   } catch (e) {
     _cloudLastError = (e && (e.code || e.message)) ? String(e.code || e.message).slice(0, 120) : String(e);
     console.warn('Cloud save failed:', e); logCloudError(`クラウドへの保存に失敗しました（${_cloudLastError}）`, (e && e.stack) || '');
     retry = true;
   } finally {
     _cloudInFlight = false;
-    if (retry) { setCloudStatus(navigator.onLine === false ? 'offline' : 'error', _cloudLastError); scheduleCloudRetry(); }
+    if (giveUp) setCloudStatus('error', _cloudLastError);   // 再試行しても直らないので、エラー表示のまま残す（次の変更時にもう一度試す）
+    else if (retry) { setCloudStatus(navigator.onLine === false ? 'offline' : 'error', _cloudLastError); scheduleCloudRetry(); }
     else if (cloudDirty) { setCloudStatus('syncing'); }
-    else setCloudStatus('synced');
-    if (_cloudRequeue && !retry) { _cloudRequeue = false; saveToCloud(); }
+    else setCloudStatus('synced', _cloudLastKB ? `クラウド上 ${_cloudLastKB}KB / 上限1024KB` : '');
+    if (_cloudRequeue && !retry && !giveUp) { _cloudRequeue = false; saveToCloud(); }
     else _cloudRequeue = false;
   }
 }
@@ -686,7 +729,7 @@ document.addEventListener('visibilitychange', () => { flushCloudSave(); if (docu
 let initialSyncDone = false;
 let pendingCloudSave = false;
 function queueCloudSave() {
-  cloudDirty = true;
+  cloudDirty = true; _cloudVer++;
   if (!initialSyncDone) { pendingCloudSave = true; return; }
   saveToCloud();
 }
@@ -707,14 +750,14 @@ var _cloudSaveTimer = null;
 function saveDebounced() {
   saveLocal();
   clearTimeout(_cloudSaveTimer);
-  cloudDirty = true;
+  cloudDirty = true; _cloudVer++;
   _cloudSaveTimer = setTimeout(() => { _cloudSaveTimer = null; queueCloudSave(); }, 800);
 }
 function saveCustom() { saveLocal(); queueCloudSave(); }
 function saveExercises() { saveLocal(); queueCloudSave(); }
 // 手入力の歩数・Google Healthの日別データも、他の記録と同じようにクラウドへ同期する（入力中の連続保存に備えて少し待ってから送る）
 function queueCloudSaveSoon() {
-  clearTimeout(_cloudSaveTimer); cloudDirty = true;
+  clearTimeout(_cloudSaveTimer); cloudDirty = true; _cloudVer++;
   _cloudSaveTimer = setTimeout(() => { _cloudSaveTimer = null; queueCloudSave(); }, 800);
 }
 function saveGhData() { try { localStorage.setItem('ghData', JSON.stringify(ghData)); } catch(e) {} queueCloudSaveSoon(); }
@@ -5031,9 +5074,16 @@ async function pullFromCloud() {
   fbSyncing = true;
   try {
     const { doc, getDoc } = await fsApi();
+    const ver0 = _cloudVer;
     const snap = await getDoc(doc(fbDb, 'users', fbUser.uid));
     if (snap.exists()) {
-      const needUpload = applyCloudData(snap.data());
+      const data = await cloudDocData(snap.data());
+      const editedDuring = _cloudVer !== ver0;   // 読み込み中にこの端末で入力があった（起動直後・通信が遅いとき）
+      const needUpload = applyCloudData(data);
+      if (editedDuring) {
+        logError('クラウド読み込み', '読み込み完了前に入力された変更は、クラウドの内容で置き換わりました。もう一度入力してください', '通信が遅いと起こります');
+        if (typeof showToast === 'function') showToast('⚠️ 同期の完了前に入力した内容は反映されませんでした。もう一度入力してください');
+      }
       if (needUpload) queueCloudSave();   // 端末にだけあった歩数データなどをクラウドへ送る（ゲート解除後に送信される）
     } else {
       // 初回ログイン：ローカルデータをクラウドにアップロード
@@ -5058,8 +5108,9 @@ async function pullOnForeground() {
     const { doc, getDoc } = await fsApi();
     const snap = await getDoc(doc(fbDb, 'users', fbUser.uid));
     if (!snap.exists()) return;
-    const data = snap.data();
-    if (data.updatedAt && data.updatedAt === _lastCloudStamp) return;     // 変更なし
+    const raw = snap.data();
+    if (raw.updatedAt && raw.updatedAt === _lastCloudStamp) return;       // 変更なし
+    const data = await cloudDocData(raw);
     if (cloudDirty || _cloudInFlight) return;                                // 取得している間に端末側で変更があった → 手元を優先
     const needUpload = applyCloudData(data);
     refreshViewsAfterCloud();

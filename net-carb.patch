@@ -1,0 +1,190 @@
+diff --git a/README.md b/README.md
+index afc8ec3..6355e4f 100644
+--- a/README.md
++++ b/README.md
+@@ -346,3 +346,7 @@ AIチャットで「パン系の複合食品には100gあたり1%の食塩を追
+ - 貯蔵量は全身で約500g（肝臓約100g、筋肉約15g/kg×推定骨格筋量）。持久系の運動は消費カロリーとMETsから糖質使用量を出し、運動の時刻は18時と仮定します。
+ - 誤差範囲は、貯蔵容量・摂取量・消費量・運動の影響・回復速度・開始時の貯蔵量などの不確かさを振った100回の計算の10〜90%の幅です（統計的な信頼区間ではありません）。未記録日は直近の平均摂取で補完し、その分の不確かさも加えます。
+ - 食事の記録が直近14日に2日以上あると表示されます。係数（吸収速度、糖質酸化の割合、回復速度など）は本アプリの仮定です。
++
++## 糖質の表示
++
++記録タブの炭水化物カードに「糖質」（= 炭水化物 − 食物繊維、食品ごとに0未満にならないよう丸めて合計）を追加しました。栄養内訳の炭水化物パネルには糖質と食物繊維の量、統計タブの炭水化物バーの下には期間平均の糖質を表示します。食品CSVには `net_carb` 列、日別CSVには `intake_net_carb_g` 列を追加しました（CSVインポートは列名で読むため影響ありません）。グリコーゲン推定も同じ定義の糖質を使います。
+diff --git a/app.js b/app.js
+index cff8d84..1bf247c 100644
+--- a/app.js
++++ b/app.js
+@@ -1121,6 +1121,9 @@ function goals() {
+   const c = r1((tdee - p*4 - f*9) / 4);
+   return { cal: tdee, p, f, c };
+ }
++// 糖質 = 炭水化物 − 食物繊維（日本の栄養表示の考え方）。食品ごとに0未満にならないよう丸めてから合計する
++function netCarbOf(e) { return Math.max(0, (e.c || 0) - (e.fiber || 0)); }
++function sumNetCarb(list) { return (list || []).reduce((a, e) => a + netCarbOf(e), 0); }
+ function sumEntries(list) {
+   const t = list.reduce((a,e) => ({
+     cal:a.cal+e.cal, p:a.p+e.p, f:a.f+e.f, c:a.c+e.c,
+@@ -1539,6 +1542,7 @@ function renderRecord() {
+   const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
+   const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
+   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
++  const netC = sumNetCarb(list);
+   document.getElementById('energyBreakdown').innerHTML = `
+     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">
+       推定TDEE ${ri(tb.tdee)} kcal（BMR ${bmr_disp} kcal・${bmrFormulaDesc} ${actDesc}）
+@@ -1560,6 +1564,8 @@ function renderRecord() {
+       <div style="background:#e8f5e9;border-radius:8px;padding:7px 4px">
+         <div style="font-size:10px;color:#2f7d3a;font-weight:600">炭水化物</div>
+         <div style="font-weight:700;color:#1a1d23">${r1(s.c)}g</div>
++        <div style="font-size:10px;color:#2f7d3a;font-weight:600">糖質 ${r1(netC)}g</div>
++        <div style="font-size:10px;color:#4b5568">食物繊維 ${r1(s.fiber)}g</div>
+         <div style="font-size:10px;color:#4b5568">${ri(s.c*4)} kcal (${cCalPct}%)</div>
+         <div style="font-size:10px;color:#4b5568">目標 ${g.c}g</div>
+       </div>
+@@ -1569,7 +1575,7 @@ function renderRecord() {
+     <div class="mc"><div class="mc-label">カロリー</div><div class="mc-value">${ri(s.cal)}</div><div class="mc-unit">kcal</div></div>
+     <div class="mc" style="position:relative"><div class="mc-label">タンパク質</div><div class="mc-value">${r1(s.p)}</div><div class="mc-unit">g</div><div style="font-size:9px;color:var(--accent);font-weight:600;margin-top:1px">吸収 ${absP}g</div></div>
+     <div class="mc"><div class="mc-label">脂質</div><div class="mc-value">${r1(s.f)}</div><div class="mc-unit">g</div></div>
+-    <div class="mc"><div class="mc-label">炭水化物</div><div class="mc-value">${r1(s.c)}</div><div class="mc-unit">g</div></div>`;
++    <div class="mc"><div class="mc-label">炭水化物</div><div class="mc-value">${r1(s.c)}</div><div class="mc-unit">g</div><div style="font-size:9px;color:var(--accent);font-weight:600;margin-top:1px">糖質 ${r1(netC)}g</div></div>`;
+   const pcal=s.p*4, fcal=s.f*9, ccal=s.c*4, tot=pcal+fcal+ccal||1;
+   document.getElementById('recBarP').style.width=(pcal/tot*100)+'%';
+   document.getElementById('recBarF').style.width=(fcal/tot*100)+'%';
+@@ -3110,7 +3116,7 @@ function glyHourOf(e) {
+ }
+ function glyAddDays(ds, n) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + n); return toDateStr(d); }
+ // 利用可能炭水化物(g) = 炭水化物 − 食物繊維
+-function glyAvailCarb(e) { return Math.max(0, (e.c || 0) - (e.fiber || 0)); }
++function glyAvailCarb(e) { return netCarbOf(e); }
+ function glycogenInput(today, nowHour) {
+   const weight = profile.weight || userWeight || 65, w = weight;
+   const dates = []; for (let i = GLY_WINDOW_DAYS - 1; i >= 0; i--) dates.push(glyAddDays(today, -i));
+@@ -4090,6 +4096,7 @@ function getAvg(period) {
+   const wd=days.filter(d=>getDayEntries(d).length>0); if(!wd.length) return null;
+   const tot=wd.map(d=>sumEntries(getDayEntries(d))); const n=wd.length;
+   const avg={days:n};
++  avg.net=r1(wd.reduce((a,d)=>a+sumNetCarb(getDayEntries(d)),0)/n);
+   ['cal','p','f','c','fiber','fibS','fibI','fibU','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
+   return avg;
+ }
+@@ -4128,7 +4135,7 @@ function renderStats() {
+     </div>
+     <div style="margin-bottom:10px;font-size:11px;color:var(--text-sub)">体重 <input type="number" value="${userWeight}" min="30" max="200" step="0.5" oninput="userWeight=parseFloat(this.value)||65;localStorage.setItem('pfcWeight',userWeight);renderStats()" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)"> kg → タンパク質目標 ${g.p}g</div>
+     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:8px">PFC・カロリー</div>
+-    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
++    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}<div style="font-size:11px;color:var(--text-sub);margin:-4px 0 8px">うち糖質（炭水化物−食物繊維） <b style="color:var(--text)">${r1(s.net)}g</b>／食物繊維 ${r1(s.fiber)}g</div>
+     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin:12px 0 8px">ビタミン・ミネラル・食物繊維</div>
+     ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${fiberSplitBlock(s)}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('ビタミンA',ri(s.vita),850,'μg','#ff7043')}${goalBar('ビタミンE',r1(s.vite),6.5,'mg','#ab47bc')}${goalBar('ビタミンK',ri(s.vitk),150,'μg','#26a69a')}${goalBar('ヨウ素',ri(s.iodine),130,'μg','#5c6bc0')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
+   ` : `<div style="text-align:center;padding:2rem;color:var(--text-sub);font-size:13px">この期間の記録がありません</div>`;
+@@ -4233,7 +4240,7 @@ function renderCharts() {
+ }
+ 
+ // ── CSV ──
+-const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_cal',
++const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_carb','net_cal',
+   'day_bmr_kcal','day_tdee_kcal','day_exercise_kcal','day_total_burn_kcal','day_intake_kcal','day_net_intake_kcal','day_balance_kcal','day_net_balance_kcal'];
+ const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal',
+   'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used',
+@@ -4274,7 +4281,7 @@ function exportCSV() {
+   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
+   // 食事記録の各行には、その日のBMR・TDEE・総消費・摂取・実質摂取・収支も付ける（日別の表を探さなくても、どの行からでもTDEEが分かる）
+   const dayCache = {}, di = d => dayCache[d] || (dayCache[d] = dayEnergyInfo(d));
+-  const rows=[CSV_HEADERS.join(','),...data.map(e=>{ const x = di(e.date); return [e.date,e.meal,csvQ(e.name||''),e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G),
++  const rows=[CSV_HEADERS.join(','),...data.map(e=>{ const x = di(e.date); return [e.date,e.meal,csvQ(e.name||''),e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1(netCarbOf(e)),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G),
+     ri(x.tb.bmr), x.tb.tdee, ri(x.exCal), ri(x.totalBurn), x.intake, x.net.netCal, r1(x.intake - x.totalBurn), r1(x.net.netCal - x.totalBurn)].join(','); })];
+ 
+   // ── 消費カロリー詳細（日別、1行1日）──ファイルの末尾に、空行をはさんで別の表として付ける
+@@ -4291,7 +4298,7 @@ function exportCSV() {
+   downloadCsv(rows, `pfc_export_${toDateStr(new Date())}.csv`);
+ }
+ // 日別だけを1つの表にしたCSV（TDEE・運動・摂取・実質収支・計算式）。期間内の全日を出す（記録の無い日も含む）。表計算ソフトやpandasでそのまま読める
+-const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count'];
++const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count', 'intake_net_carb_g'];
+ function exportDailyCSV() {
+   let from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
+   const pool = [...entries.map(e => e.date), ...exercises.map(x => x.date), ...Object.keys(dailyActivity)].filter(Boolean).sort();
+@@ -4301,7 +4308,7 @@ function exportDailyCSV() {
+   const dates = []; const MAXD = 1100;
+   for (const d = new Date(from + 'T00:00:00'); toDateStr(d) <= to && dates.length < MAXD; d.setDate(d.getDate() + 1)) dates.push(toDateStr(d));
+   const bd = getBmrDetail();
+-  const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length].join(','))];
++  const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length, r1(sumNetCarb(getDayEntries(d)))].join(','))];
+   downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`);
+   if (dates.length >= MAXD && toDateStr(new Date(from + 'T00:00:00')) !== to) showToast(`期間が長いため、最初の${MAXD}日分を出力しました`);
+ }
+diff --git a/package.json b/package.json
+index 2c9cbd2..4986940 100644
+--- a/package.json
++++ b/package.json
+@@ -5,7 +5,7 @@
+   "scripts": {
+     "build": "node build.js",
+     "import-mext-fiber": "node scripts/import-mext-fiber.js",
+-    "test": "node tests/core.test.js && node tests/group-drag.test.js && node tests/prompt-templates.test.js && node tests/amount-inline.test.js && node tests/csv-export.test.js && node tests/search-focus.test.js && node tests/strength.test.js && node tests/cloud-sync.test.js && node tests/added-salt.test.js && node tests/edit-foods.test.js && node tests/glycogen.test.js"
++    "test": "node tests/core.test.js && node tests/group-drag.test.js && node tests/prompt-templates.test.js && node tests/amount-inline.test.js && node tests/csv-export.test.js && node tests/search-focus.test.js && node tests/strength.test.js && node tests/cloud-sync.test.js && node tests/added-salt.test.js && node tests/edit-foods.test.js && node tests/glycogen.test.js && node tests/net-carb.test.js"
+   },
+   "dependencies": {}
+ }
+diff --git a/tests/csv-export.test.js b/tests/csv-export.test.js
+index cb1ebf8..0a99551 100644
+--- a/tests/csv-export.test.js
++++ b/tests/csv-export.test.js
+@@ -46,7 +46,7 @@ setTimeout(async () => {
+     $('csvFrom').value = '2026-10-05'; $('csvTo').value = '2026-10-08'; captured = ''; w.exportDailyCSV();
+     const dl = captured.replace('\uFEFF', '').split('\n'); const hh = dl[0].split(',');
+     t('daily CSV: single clean table (no blank/second header)', dl.length === 5 && !dl.some(l => l === '') && dl.filter(l => l.startsWith('date,')).length === 1);
+-    t('daily CSV: all columns of the daily table + record_count', hh.slice(0, 10).join() === 'date,bmr_kcal,activity_desc,activity_kcal,steps,tdee_kcal,exercise_kcal,total_burn_kcal,intake_kcal,balance_kcal' && hh.includes('tdee_formula') && hh.includes('net_calc') && hh[hh.length - 1] === 'record_count');
++    t('daily CSV: all columns of the daily table + record_count + intake_net_carb_g', hh.slice(0, 10).join() === 'date,bmr_kcal,activity_desc,activity_kcal,steps,tdee_kcal,exercise_kcal,total_burn_kcal,intake_kcal,balance_kcal' && hh.includes('tdee_formula') && hh.includes('net_calc') && hh[hh.length - 2] === 'record_count' && hh[hh.length - 1] === 'intake_net_carb_g');
+     const rowsD = dl.slice(1).map(l => parse(l)); const g = (row, n) => row[hh.indexOf(n)];
+     t('daily CSV: covers every day in range incl. days without records', rowsD.map(r => r[0]).join() === '2026-10-05,2026-10-06,2026-10-07,2026-10-08' && rowsD.every(r => r.length === hh.length));
+     t('daily CSV: record_count', rowsD.map(r => g(r, 'record_count')).join() === '1,0,1,0'); t('daily CSV: exercise-only day shows burn, zero intake', g(rowsD[1], 'exercise_kcal') === '400' && g(rowsD[1], 'intake_kcal') === '0' && parseFloat(g(rowsD[1], 'balance_kcal')) === -parseFloat(g(rowsD[1], 'total_burn_kcal')));
+diff --git a/tests/net-carb.test.js b/tests/net-carb.test.js
+new file mode 100644
+index 0000000..7720821
+--- /dev/null
++++ b/tests/net-carb.test.js
+@@ -0,0 +1,44 @@
++// 糖質（炭水化物−食物繊維）の表示・集計・CSVのテスト
++const { loadApp, makeT, sleep } = require('./harness');
++const { w, errs } = loadApp(); const t = makeT(); const ev = s => w.eval(s); const $ = id => w.document.getElementById(id);
++const near = (a, b, e = 0.011) => Math.abs(a - b) <= e;
++setTimeout(async () => {
++  try {
++    const today = ev("toDateStr(new Date())");
++    ev(`currentDate='${today}';entries=[
++      {id:1,date:'${today}',meal:'朝食',name:'オートミール',amount:50,cal:190,p:6.9,f:2.8,c:34.2,fiber:4.7,salt:0},
++      {id:2,date:'${today}',meal:'昼食',name:'白米',amount:150,cal:252,p:3.8,f:0.5,c:55.7,fiber:0.5,salt:0},
++      {id:3,date:'${today}',meal:'昼食',name:'繊維多めの食品',amount:100,cal:100,p:5,f:1,c:3,fiber:5,salt:0}]`);
++    t('netCarbOf = carbs − fibre, never below 0 (fibre > carbs → 0)', near(ev("netCarbOf({c:34.2,fiber:4.7})"), 29.5) && ev("netCarbOf({c:3,fiber:5})") === 0 && ev("netCarbOf({c:10})") === 10 && ev("netCarbOf({})") === 0);
++    t('sumNetCarb sums per entry (29.5 + 55.2 + 0 = 84.7)', near(ev("sumNetCarb(entries)"), 84.7));
++    w.renderRecord();
++    const m = $('recMetrics').innerHTML;
++    t('record tab: carbohydrate card shows 糖質 (84.7g) alongside 炭水化物 (92.9g)', />92\.9</.test(m) && /糖質 84\.7g/.test(m));
++    const e = $('energyBreakdown').innerHTML;
++    t('record tab: carbohydrate panel shows 糖質 and 食物繊維 totals', /糖質 84\.7g/.test(e) && /食物繊維 10\.2g/.test(e));
++    t('record tab: other cards unchanged (PFC still present)', /タンパク質/.test(m) && /脂質/.test(m) && /カロリー/.test(m));
++    // 他の日は空 → 0
++    ev("currentDate='2000-01-01'"); w.renderRecord(); t('empty day shows 糖質 0g without errors', /糖質 0g/.test($('recMetrics').innerHTML)); ev(`currentDate='${today}'`);
++    // 統計
++    ev("statsPeriod='7d'"); const avg = w.getAvg('7d');
++    t('getAvg exposes the average net carbs per logged day', avg && near(avg.net, 84.7));
++    w.renderStats(); t('stats tab shows the 糖質 line under the carbohydrate bar', /うち糖質（炭水化物−食物繊維）\s*<b[^>]*>84\.7g<\/b>／食物繊維 10\.2g/.test($('goalBars').innerHTML));
++    // CSV
++    let csv = ''; w.downloadCsv = rows => { csv = rows.join('\n'); };
++    ev("document.getElementById('csvFrom').value='';document.getElementById('csvTo').value=''"); w.exportCSV();
++    const lines = csv.split('\n'), head = lines[0].split(','), idx = head.indexOf('net_carb');
++    t('entries CSV has a net_carb column between fiber_insoluble and net_cal', idx > 0 && head[idx - 1] === 'fiber_insoluble' && head[idx + 1] === 'net_cal');
++    const cells = r => w.eval(`parseCsvLine(${JSON.stringify(r)})`);
++    const r1c = lines.slice(1).map(cells).find(c => c[2] === 'オートミール');
++    t('entries CSV row: net_carb = 29.5 and every row has as many cells as headers', r1c && near(parseFloat(r1c[idx]), 29.5) && lines.slice(1, 4).every(l => cells(l).length === head.length));
++    csv = ''; w.exportDailyCSV(); const dl = csv.split('\n'), dh = dl[0].split(',');
++    t('daily CSV ends with record_count, intake_net_carb_g', dh[dh.length - 2] === 'record_count' && dh[dh.length - 1] === 'intake_net_carb_g');
++    const todayRow = dl.slice(1).find(l => l.startsWith(today)); const tc = cells(todayRow);
++    t('daily CSV: today net carbs 84.7 with 3 records; row length matches header', tc.length === dh.length && near(parseFloat(tc[tc.length - 1]), 84.7) && tc[tc.length - 2] === '3');
++    // CSVインポート: 新しい列があっても既存の取り込みが壊れない（ヘッダー名で読む）
++    ev("entries=[]"); $('csvImportArea').value = lines.slice(0, 4).join('\n'); w.importCSV(); t('CSV re-import still works with the new column', ev('entries.length') === 3);
++    // グリコーゲンは同じ定義を使う
++    t('glycogen input uses the same net-carb definition', ev("glyAvailCarb({c:34.2,fiber:4.7})") === ev("netCarbOf({c:34.2,fiber:4.7})"));
++    t.done(errs);
++  } catch (x) { console.log('EXC', x); process.exit(1); }
++}, 300);
