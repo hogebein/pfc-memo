@@ -1121,6 +1121,9 @@ function goals() {
   const c = r1((tdee - p*4 - f*9) / 4);
   return { cal: tdee, p, f, c };
 }
+// 糖質 = 炭水化物 − 食物繊維（日本の栄養表示の考え方）。食品ごとに0未満にならないよう丸めてから合計する
+function netCarbOf(e) { return Math.max(0, (e.c || 0) - (e.fiber || 0)); }
+function sumNetCarb(list) { return (list || []).reduce((a, e) => a + netCarbOf(e), 0); }
 function sumEntries(list) {
   const t = list.reduce((a,e) => ({
     cal:a.cal+e.cal, p:a.p+e.p, f:a.f+e.f, c:a.c+e.c,
@@ -1539,6 +1542,7 @@ function renderRecord() {
   const pCalPct = s.cal > 0 ? ri(s.p*4/s.cal*100) : 0;
   const fCalPct = s.cal > 0 ? ri(s.f*9/s.cal*100) : 0;
   const cCalPct = s.cal > 0 ? ri(s.c*4/s.cal*100) : 0;
+  const netC = sumNetCarb(list);
   document.getElementById('energyBreakdown').innerHTML = `
     <div style="font-size:11px;color:var(--text-sub);margin-bottom:6px">
       推定TDEE ${ri(tb.tdee)} kcal（BMR ${bmr_disp} kcal・${bmrFormulaDesc} ${actDesc}）
@@ -1560,6 +1564,8 @@ function renderRecord() {
       <div style="background:#e8f5e9;border-radius:8px;padding:7px 4px">
         <div style="font-size:10px;color:#2f7d3a;font-weight:600">炭水化物</div>
         <div style="font-weight:700;color:#1a1d23">${r1(s.c)}g</div>
+        <div style="font-size:10px;color:#2f7d3a;font-weight:600">糖質 ${r1(netC)}g</div>
+        <div style="font-size:10px;color:#4b5568">食物繊維 ${r1(s.fiber)}g</div>
         <div style="font-size:10px;color:#4b5568">${ri(s.c*4)} kcal (${cCalPct}%)</div>
         <div style="font-size:10px;color:#4b5568">目標 ${g.c}g</div>
       </div>
@@ -1569,7 +1575,7 @@ function renderRecord() {
     <div class="mc"><div class="mc-label">カロリー</div><div class="mc-value">${ri(s.cal)}</div><div class="mc-unit">kcal</div></div>
     <div class="mc" style="position:relative"><div class="mc-label">タンパク質</div><div class="mc-value">${r1(s.p)}</div><div class="mc-unit">g</div><div style="font-size:9px;color:var(--accent);font-weight:600;margin-top:1px">吸収 ${absP}g</div></div>
     <div class="mc"><div class="mc-label">脂質</div><div class="mc-value">${r1(s.f)}</div><div class="mc-unit">g</div></div>
-    <div class="mc"><div class="mc-label">炭水化物</div><div class="mc-value">${r1(s.c)}</div><div class="mc-unit">g</div></div>`;
+    <div class="mc"><div class="mc-label">炭水化物</div><div class="mc-value">${r1(s.c)}</div><div class="mc-unit">g</div><div style="font-size:9px;color:var(--accent);font-weight:600;margin-top:1px">糖質 ${r1(netC)}g</div></div>`;
   const pcal=s.p*4, fcal=s.f*9, ccal=s.c*4, tot=pcal+fcal+ccal||1;
   document.getElementById('recBarP').style.width=(pcal/tot*100)+'%';
   document.getElementById('recBarF').style.width=(fcal/tot*100)+'%';
@@ -1590,11 +1596,13 @@ function renderRecord() {
       barHtml = `<div style="display:flex;height:100%;width:100%">${seg(s.fibS||0,'#4fc3f7')}${seg(s.fibI||0,color)}${seg(s.fibU||0,'#bdbdbd')}</div>`;
       subHtml = `<div style="font-size:9px;color:var(--text-sub);margin-top:2px;line-height:1.35">水溶${r1(s.fibS||0)} / 不溶${r1(s.fibI||0)}${(s.fibU||0) > 0.04 ? ' / 不明'+r1(s.fibU) : ''}</div>`;
     }
+    if (k === 'salt' && addedSaltOf(list) > 0) subHtml = `<div style="font-size:9px;color:var(--text-sub);margin-top:2px;line-height:1.35">食品 ${r1(val - addedSaltOf(list))} / 添加 ${r1(addedSaltOf(list))}</div>`;
     microHtml += `<div class="micro-item"><div class="micro-label">${g.label}</div>
       <div class="micro-bar-track">${barHtml}</div>
       <div class="micro-val">${val}<span class="micro-unit"> ${g.unit}/${g.goal}</span></div>${subHtml}</div>`;
   });
   document.getElementById('microGrid').innerHTML = microHtml;
+  renderAddedSaltRow(list);
 
   const grouped = {}; MEALS_ORDER.forEach(m=>{grouped[m]=[]});
   list.forEach(e=>{(grouped[e.meal]||grouped['間食']).push(e)});
@@ -2543,6 +2551,37 @@ function addOrMergeEntry(newEntry, excludeId) {
   return { entry: newEntry, merged: false };
 }
 
+// ── 添加した塩 ──
+// 食品の塩分とは別に、調理中や食卓で足した塩を入力する。実体は食事に入る1件の記録「食塩（添加）」（食塩相当量=入力したg）。
+// 記録として存在するので、日別の塩分合計・統計・CSV・AIの文脈・日付コピー・クラウド同期にそのまま反映され、同じ食事への追加は1件に合算される。
+const ADDED_SALT_NAME = '食塩（添加）';
+function isAddedSalt(e) { return !!e && (e.addedSalt === true || e.name === ADDED_SALT_NAME); }
+function addedSaltOf(list) { return (list || []).reduce((a, e) => a + (isAddedSalt(e) ? (e.salt || 0) : 0), 0); }
+let _asMeal = null;
+function defaultAddedSaltMeal() {
+  const h = new Date().getHours(); return h < 10 ? '朝食' : h < 15 ? '昼食' : h < 21 ? '夕食' : '間食';
+}
+function renderAddedSaltRow(list) {
+  const sel = document.getElementById('asMeal'), info = document.getElementById('addedSaltInfo'); if (!sel) return;
+  const cur = _asMeal || sel.value || defaultAddedSaltMeal();
+  if (!sel.options.length) sel.innerHTML = MEALS_ORDER.map(m => `<option value="${m}">${m}</option>`).join('');
+  sel.value = MEALS_ORDER.includes(cur) ? cur : defaultAddedSaltMeal(); _asMeal = sel.value;
+  sel.onchange = () => { _asMeal = sel.value; };
+  const day = list || getDayEntries(currentDate), added = addedSaltOf(day), total = sumEntries(day).salt;
+  if (info) info.textContent = added > 0 ? `この日の添加塩 ${r2(added)}g（食品由来 ${r2(total - added)}g）。取り消し・修正は各食事の「食塩（添加）」から` : '';
+}
+function addAddedSalt() {
+  const inp = document.getElementById('asG'), sel = document.getElementById('asMeal');
+  const g = parseFloat(inp.value);
+  if (!(g > 0)) { showToast('塩の量(g)を入力してください'); return; }
+  if (g > 30) { showToast('30gを超える量は入力できません（単位を確認してください）'); return; }
+  const meal = MEALS_ORDER.includes(sel.value) ? sel.value : defaultAddedSaltMeal();
+  const snap = JSON.parse(JSON.stringify(entries));
+  addOrMergeEntry({ id: Date.now() + Math.random(), date: currentDate, meal, time: nowTimeStr(), name: ADDED_SALT_NAME, amount: r2(g), cal: 0, p: 0, f: 0, c: 0, salt: r2(g), addedSalt: true });
+  save(); renderRecord(); renderCalendar(); inp.value = '';
+  showUndoToast(`${meal}に塩${r2(g)}gを追加しました`, () => { entries = snap; save(); renderRecord(); renderCalendar(); });
+}
+
 function setMealTime(meal, timeVal) {
   if (!timeVal) { showToast('時刻を選択してください'); return; }
   const list = getDayEntries(currentDate).filter(e => e.meal === meal);
@@ -3064,6 +3103,96 @@ function renderStrengthEval() {
     ・エネルギー不足は、論文の回帰直線（平均して約500kcal/日の不足で除脂肪量の増加がゼロ。Murphy & Koehler 2022）のゼロ点を使い、維持カロリー付近では多くの人が増やしていたことと、筋肉を作るエネルギーは小さいこと（Slater 2019）から、軽い赤字ほど影響が小さい形にしています。さらに経験が浅いほど（最大で半分）、体脂肪が多いほど（最大で4割）緩めます（リコンプ: Barakat 2020）。緩め方の数値は本アプリの仮定です。<br>
     ・RIRの重み（Robinson 2024）、タンパク質1.6g/kgで頭打ち（Morton 2018）は研究に基づきますが、具体的な係数と「累積セット数による伸びしろの減衰」、範囲（×0.55〜×1.5）は本アプリの仮定です。<br>
     ・個人差が大きく、実測（周径・体組成）の代わりにはなりません。傾向を見るための目安として使ってください。</div></details>`;
+}
+
+// ── グリコーゲン推定（肝臓・筋肉）──
+// 計算は glycogen-model.js。ここは食事・運動・消費カロリーの記録からモデルの入力を作る部分と、統計タブのカード。
+const GLY_DEFAULT_MEAL_HOUR = { '朝食': 7, '昼食': 12, '夕食': 19, '間食': 15 };
+const GLY_DEFAULT_EX_HOUR = 18, GLY_WINDOW_DAYS = 14;
+let _glyCache = { key: '', res: null };
+function glyHourOf(e) {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(e.time || ''); if (m) { const h = parseInt(m[1], 10); if (h >= 0 && h < 24) return h; }
+  return GLY_DEFAULT_MEAL_HOUR[e.meal] ?? 12;
+}
+function glyAddDays(ds, n) { const d = new Date(ds + 'T00:00:00'); d.setDate(d.getDate() + n); return toDateStr(d); }
+// 利用可能炭水化物(g) = 炭水化物 − 食物繊維
+function glyAvailCarb(e) { return netCarbOf(e); }
+function glycogenInput(today, nowHour) {
+  const weight = profile.weight || userWeight || 65, w = weight;
+  const dates = []; for (let i = GLY_WINDOW_DAYS - 1; i >= 0; i--) dates.push(glyAddDays(today, -i));
+  const logged = dates.filter(d => getDayEntries(d).length > 0);
+  if (logged.length < 2) return { insufficient: true, loggedDays: logged.length };
+  const start = logged[0], span = dates.filter(d => d >= start);
+  const past = logged.filter(d => d < today), basis = past.length ? past : logged;
+  const avgCarb = basis.reduce((a, d) => a + getDayEntries(d).reduce((s, e) => s + glyAvailCarb(e), 0), 0) / basis.length;
+  const nw = Array.from({ length: 24 }, (_, h) => (h < 7 ? 0.85 : 1)), nwSum = nw.reduce((a, b) => a + b, 0);
+  let imputed = 0;
+  const days = span.map(d => {
+    const list = getDayEntries(d), carbIn = Array(24).fill(0), isImputed = !list.length && d < today;
+    if (isImputed) { imputed++; [7, 12, 19].forEach(h => { carbIn[h] = avgCarb / 3; }); }
+    list.forEach(e => { carbIn[glyHourOf(e)] += glyAvailCarb(e); });
+    const tdee = getTdeeBreakdown(d).tdee, eeRest = nw.map(x => tdee * x / nwSum);
+    const exCho = [];
+    exercises.filter(x => x.date === d && x.auto !== 'strength' && x.cal > 0).forEach(x => {
+      const mins = x.minutes || 0, mets = mins > 0 ? x.cal / (w * mins / 60) : 5, g = x.cal * GlycogenModel.choFractionByMets(mets) / GlycogenModel.KCAL_PER_G_CHO;
+      const n = Math.max(1, Math.ceil(mins / 60)); for (let i = 0; i < n; i++) exCho.push({ hour: (GLY_DEFAULT_EX_HOUR + i) % 24, g: g / n, legs: true });
+    });
+    const sets = {}; strengthLog.filter(e => e.date === d).forEach(e => {
+      const wt = StrengthModel.muscleWeights(e), q = e.sets.reduce((a, s) => a + StrengthModel.setQuality(s), 0);
+      Object.keys(wt).forEach(k => { sets[k] = (sets[k] || 0) + q * wt[k]; });
+    });
+    return { date: d, carbIn, eeRest, exCho, strength: Object.keys(sets).length ? [{ hour: GLY_DEFAULT_EX_HOUR, sets }] : [], imputed: isImputed };
+  });
+  const share = StrengthModel.MUSCLES.reduce((a, m) => a + m.share, 0);
+  const groups = [...StrengthModel.MUSCLES.map(m => ({ key: m.key, share: m.share })), { key: 'other', share: Math.max(0.05, 1 - share) }];
+  const lbm = profile.bf ? weight * (1 - profile.bf / 100) : weight * (profile.sex === 'female' ? 0.72 : 0.82);
+  return { days, groups, body: { lbm, smm: strengthSmm() }, endHour: nowHour, loggedDays: logged.length, imputedDays: imputed, avgCarb };
+}
+function glycogenEstimate(now) {
+  now = now || new Date(); const today = toDateStr(now), nowHour = now.getHours() + (now.getMinutes() >= 30 ? 1 : 0);
+  const inp = glycogenInput(today, Math.min(24, nowHour)); if (inp.insufficient) return inp;
+  const key = JSON.stringify([inp.days, inp.body, inp.endHour]);
+  if (_glyCache.key === key) return _glyCache.res;
+  const res = { ...GlycogenModel.estimate({ days: inp.days, body: inp.body, groups: inp.groups, endHour: inp.endHour, runs: 100 }), inp };
+  _glyCache = { key, res }; return res;
+}
+function glyChartSvg(res) {
+  const days = res.inp.days, ser = res.series, W = 320, H = 120, padL = 30, padB = 16, padT = 6, plotW = W - padL - 6, plotH = H - padB - padT;
+  const show = Math.min(7, days.length), firstDay = days.length - show, pts = ser.filter(s => s.day >= firstDay);
+  if (pts.length < 2) return '';
+  const yMax = Math.max(res.caps.total * 1.2, ...pts.map(p => p.hi)) , x = p => padL + plotW * ((p.day - firstDay) * 24 + p.hour) / (show * 24), y = v => padT + plotH * (1 - v / yMax);
+  const band = pts.map(p => `${x(p).toFixed(1)},${y(p.hi).toFixed(1)}`).join(' ') + ' ' + pts.slice().reverse().map(p => `${x(p).toFixed(1)},${y(p.lo).toFixed(1)}`).join(' ');
+  const line = pts.map(p => `${x(p).toFixed(1)},${y(p.total).toFixed(1)}`).join(' ');
+  const ticks = [0, 200, 400, 600].filter(v => v <= yMax).map(v => `<line x1="${padL}" x2="${W - 6}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/><text x="${padL - 3}" y="${(y(v) + 3).toFixed(1)}" font-size="8" text-anchor="end" fill="var(--text-sub)">${v}</text>`).join('');
+  const dl = []; for (let i = 0; i < show; i++) { const d = days[firstDay + i].date; dl.push(`<text x="${(padL + plotW * (i + 0.5) / show).toFixed(1)}" y="${H - 4}" font-size="8" text-anchor="middle" fill="var(--text-sub)">${+d.slice(5, 7)}/${+d.slice(8, 10)}</text>`); if (i > 0) dl.push(`<line x1="${(padL + plotW * i / show).toFixed(1)}" x2="${(padL + plotW * i / show).toFixed(1)}" y1="${padT}" y2="${H - padB}" stroke="var(--border)" stroke-width="0.5" stroke-dasharray="2,2"/>`); }
+  const capY = y(res.caps.total).toFixed(1);
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;margin:6px 0 2px" role="img" aria-label="グリコーゲン推定の推移">${ticks}${dl.join('')}<line x1="${padL}" x2="${W - 6}" y1="${capY}" y2="${capY}" stroke="var(--text-sub)" stroke-width="0.6" stroke-dasharray="4,3"/><polygon points="${band}" fill="var(--accent)" opacity="0.18"/><polyline points="${line}" fill="none" stroke="var(--accent)" stroke-width="1.5"/></svg>`;
+}
+function renderGlycogenEval() {
+  const el = document.getElementById('glycogenEval'); if (!el || typeof GlycogenModel === 'undefined') return;
+  const res = glycogenEstimate();
+  if (res.insufficient) { el.innerHTML = `<div style="font-size:12px;color:var(--text-sub);line-height:1.6">食事の記録が2日以上（直近${GLY_WINDOW_DAYS}日）あると、肝臓と筋肉のグリコーゲン量を推定します（記録のある日: ${res.loggedDays}日）。</div>`; return; }
+  const n = Math.round, rg = r => `${n(r.lo)}〜${n(r.hi)}`, tot = res.now.total, cap = res.caps.total, fill = Math.round(100 * tot / cap);
+  const lighter = (cap - tot) * 4 / 1000;
+  const grp = res.groups.map(g => ({ name: g.key === 'other' ? 'その他の筋' : (StrengthModel.MUSCLE_BY_KEY[g.key] || {}).name || g.key, g: g.g, cap: g.cap, pct: g.cap > 0 ? 100 * g.g / g.cap : 0 })).sort((a, b) => a.pct - b.pct);
+  const notes = [`直近${res.inp.loggedDays}日の食事記録から推定`]; if (res.inp.imputedDays) notes.push(`未記録${res.inp.imputedDays}日は平均の糖質(${n(res.inp.avgCarb)}g/日)で補完`);
+  el.innerHTML = `<div style="display:flex;align-items:baseline;gap:6px;flex-wrap:wrap"><span style="font-size:11px;color:var(--text-sub)">現在の推定（合計）</span><span style="font-size:26px;font-weight:700">約${n(tot)}</span><span style="font-size:12px">g</span></div>
+    <div style="font-size:12px;color:var(--text-sub)">誤差範囲（80%の幅）${rg(res.range.total)} g　／　満タン目安 約${n(cap)} g（${fill}%）</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 2px">
+      <div class="card" style="padding:9px;margin:0"><div style="font-size:10px;color:var(--text-sub)">肝臓</div><div style="font-size:18px;font-weight:700">約${n(res.now.liver)}<span style="font-size:11px;font-weight:400"> g</span></div><div style="font-size:10px;color:var(--text-sub)">範囲 ${rg(res.range.liver)} g（満タン約${n(res.caps.liver)}）</div></div>
+      <div class="card" style="padding:9px;margin:0"><div style="font-size:10px;color:var(--text-sub)">筋肉</div><div style="font-size:18px;font-weight:700">約${n(res.now.muscle)}<span style="font-size:11px;font-weight:400"> g</span></div><div style="font-size:10px;color:var(--text-sub)">範囲 ${rg(res.range.muscle)} g（満タン約${n(res.caps.muscle)}）</div></div></div>
+    ${lighter >= 0.2 ? `<div style="font-size:11px;color:var(--text-sub);margin-top:6px">満タン時と比べ、グリコーゲンと結合する水分を含めて約${lighter.toFixed(1)}kg軽い見込みです（体重の短期変動の目安）。</div>` : ''}
+    ${glyChartSvg(res)}
+    <div style="font-size:10px;color:var(--text-sub)">直近の推移（線=推定、帯=誤差範囲、点線=満タン目安）。${notes.join('。')}。</div>
+    <details style="margin-top:8px"><summary style="font-size:11px;color:var(--text-sub);cursor:pointer">筋肉の部位別（充填率の低い順）</summary>
+      <div style="font-size:11px;line-height:1.8;margin-top:4px">${grp.map(g => `${g.name}: 約${n(g.g)}g（${n(g.pct)}%）`).join('<br>')}</div></details>
+    <details style="margin-top:6px"><summary style="font-size:11px;color:var(--text-sub);cursor:pointer">計算の仕組みと限界</summary>
+      <div style="font-size:10px;color:var(--text-sub);line-height:1.7;margin-top:6px">
+      ・1時間刻みで、食事の糖質（炭水化物−食物繊維）を摂取後4時間で吸収し、安静時の糖質酸化に使った残りを肝臓・筋肉に貯蔵します。食事の時刻が未入力の分は既定の時刻（朝7・昼12・夕19・間食15時）で計算します。<br>
+      ・肝臓は血糖維持で減ります（絶食24時間で約65%減。Magnusson 1992）。筋肉は血糖を作れないため、絶食中はほとんど減りません。<br>
+      ・筋トレは部位ごとの有効セット数に応じて、その筋肉のグリコーゲンが減ります（1回で24〜40%、Robergs 1991: 3セット約26%・6セット約38%、2025年のメタ解析でも条件で大きくばらつく）。持久系の運動は消費カロリーと強度(METs)から糖質の使用量を出し、運動の時刻は18時と仮定します。<br>
+      ・貯蔵量は全身で約500g（肝臓約100g、筋肉約15g/kg）の標準値を使います。糖質を多く摂った後は標準を超えることがあり、トレーニング歴でも変わります。<br>
+      ・誤差範囲は、貯蔵容量・摂取量・消費量・運動の影響の大きさ・開始時の貯蔵量などの不確かさを振って多数回計算した10〜90%の幅です。<b>統計的な信頼区間ではなく、実測（筋生検）の代わりにもなりません。</b>各係数（吸収速度、糖質酸化の割合、回復速度、分布の幅）は本アプリの仮定です。</div></details>`;
 }
 
 // ── Copy ──
@@ -3967,6 +4096,7 @@ function getAvg(period) {
   const wd=days.filter(d=>getDayEntries(d).length>0); if(!wd.length) return null;
   const tot=wd.map(d=>sumEntries(getDayEntries(d))); const n=wd.length;
   const avg={days:n};
+  avg.net=r1(wd.reduce((a,d)=>a+sumNetCarb(getDayEntries(d)),0)/n);
   ['cal','p','f','c','fiber','fibS','fibI','fibU','iron','calcium','vitc','vitd','vita','vite','vitk','iodine','salt'].forEach(k=>{avg[k]=r1(tot.reduce((a,t)=>a+(t[k]||0),0)/n)});
   return avg;
 }
@@ -4005,7 +4135,7 @@ function renderStats() {
     </div>
     <div style="margin-bottom:10px;font-size:11px;color:var(--text-sub)">体重 <input type="number" value="${userWeight}" min="30" max="200" step="0.5" oninput="userWeight=parseFloat(this.value)||65;localStorage.setItem('pfcWeight',userWeight);renderStats()" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text)"> kg → タンパク質目標 ${g.p}g</div>
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin-bottom:8px">PFC・カロリー</div>
-    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}
+    ${goalBar('カロリー',ri(s.cal),g.cal,'kcal','#3266ad')}${goalBar('タンパク質（摂取）',r1(s.p),g.p,'g','#3266ad')}${goalBar('タンパク質（吸収補正）',statsAbsP,g.p,'g','#3266ad')}${goalBar('脂質',r1(s.f),g.f,'g','#e8a838')}${goalBar('炭水化物',r1(s.c),g.c,'g','#4caf50')}<div style="font-size:11px;color:var(--text-sub);margin:-4px 0 8px">うち糖質（炭水化物−食物繊維） <b style="color:var(--text)">${r1(s.net)}g</b>／食物繊維 ${r1(s.fiber)}g</div>
     <div style="font-size:11px;font-weight:600;color:var(--text-sub);margin:12px 0 8px">ビタミン・ミネラル・食物繊維</div>
     ${goalBar('食物繊維',r1(s.fiber),21,'g','#8bc34a')}${fiberSplitBlock(s)}${goalBar('鉄',r1(s.iron),7,'mg','#e91e63')}${goalBar('カルシウム',ri(s.calcium),700,'mg','#03a9f4')}${goalBar('ビタミンC',ri(s.vitc),100,'mg','#ff9800')}${goalBar('ビタミンD',r1(s.vitd),8.5,'μg','#ffd600')}${goalBar('ビタミンA',ri(s.vita),850,'μg','#ff7043')}${goalBar('ビタミンE',r1(s.vite),6.5,'mg','#ab47bc')}${goalBar('ビタミンK',ri(s.vitk),150,'μg','#26a69a')}${goalBar('ヨウ素',ri(s.iodine),130,'μg','#5c6bc0')}${goalBar('塩分',r1(s.salt),7.5,'g','#9e9e9e',true)}
   ` : `<div style="text-align:center;padding:2rem;color:var(--text-sub);font-size:13px">この期間の記録がありません</div>`;
@@ -4106,10 +4236,11 @@ function renderCharts() {
   renderAminoSection();
   renderMetabolismSection();
   renderStrengthEval();
+  renderGlycogenEval();
 }
 
 // ── CSV ──
-const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_cal',
+const CSV_HEADERS = ['date','meal','name','amount','cal','p','f','c','fiber','iron','calcium','vitc','vitd','salt','fiber_soluble','fiber_insoluble','net_carb','net_cal',
   'day_bmr_kcal','day_tdee_kcal','day_exercise_kcal','day_total_burn_kcal','day_intake_kcal','day_net_intake_kcal','day_balance_kcal','day_net_balance_kcal'];
 const TDEE_CSV_HEADERS = ['date','bmr_kcal','activity_desc','activity_kcal','steps','tdee_kcal','exercise_kcal','total_burn_kcal','intake_kcal','balance_kcal',
   'tdee_formula','bmr_formula','bmr_calc','temp_multiplier','neat_pct','activity_source','tef_kcal','profile_used',
@@ -4150,7 +4281,7 @@ function exportCSV() {
   data=data.sort((a,b)=>a.date.localeCompare(b.date)||MEALS_ORDER.indexOf(a.meal)-MEALS_ORDER.indexOf(b.meal));
   // 食事記録の各行には、その日のBMR・TDEE・総消費・摂取・実質摂取・収支も付ける（日別の表を探さなくても、どの行からでもTDEEが分かる）
   const dayCache = {}, di = d => dayCache[d] || (dayCache[d] = dayEnergyInfo(d));
-  const rows=[CSV_HEADERS.join(','),...data.map(e=>{ const x = di(e.date); return [e.date,e.meal,csvQ(e.name||''),e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G),
+  const rows=[CSV_HEADERS.join(','),...data.map(e=>{ const x = di(e.date); return [e.date,e.meal,csvQ(e.name||''),e.amount||0,r1(e.cal||0),r1(e.p||0),r1(e.f||0),r1(e.c||0),r1(e.fiber||0),r1(e.iron||0),ri(e.calcium||0),ri(e.vitc||0),r1(e.vitd||0),r2(e.salt||0),...(() => { const sp = getFiberSplit(e); return [r1(sp.s), r1(sp.i + sp.u)]; })(),r1(netCarbOf(e)),r1((e.cal||0) - (e.fiber||0) * FIBER_NET_KCAL_PER_G),
     ri(x.tb.bmr), x.tb.tdee, ri(x.exCal), ri(x.totalBurn), x.intake, x.net.netCal, r1(x.intake - x.totalBurn), r1(x.net.netCal - x.totalBurn)].join(','); })];
 
   // ── 消費カロリー詳細（日別、1行1日）──ファイルの末尾に、空行をはさんで別の表として付ける
@@ -4167,7 +4298,7 @@ function exportCSV() {
   downloadCsv(rows, `pfc_export_${toDateStr(new Date())}.csv`);
 }
 // 日別だけを1つの表にしたCSV（TDEE・運動・摂取・実質収支・計算式）。期間内の全日を出す（記録の無い日も含む）。表計算ソフトやpandasでそのまま読める
-const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count'];
+const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count', 'intake_net_carb_g'];
 function exportDailyCSV() {
   let from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
   const pool = [...entries.map(e => e.date), ...exercises.map(x => x.date), ...Object.keys(dailyActivity)].filter(Boolean).sort();
@@ -4177,7 +4308,7 @@ function exportDailyCSV() {
   const dates = []; const MAXD = 1100;
   for (const d = new Date(from + 'T00:00:00'); toDateStr(d) <= to && dates.length < MAXD; d.setDate(d.getDate() + 1)) dates.push(toDateStr(d));
   const bd = getBmrDetail();
-  const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length].join(','))];
+  const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length, r1(sumNetCarb(getDayEntries(d)))].join(','))];
   downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`);
   if (dates.length >= MAXD && toDateStr(new Date(from + 'T00:00:00')) !== to) showToast(`期間が長いため、最初の${MAXD}日分を出力しました`);
 }
@@ -4460,7 +4591,7 @@ function onComboSearch(q) {
 }
 function renderComboResults(local) {
   const box=document.getElementById('comboResultsBox'); let html='';
-  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="addComboIngredient(${i})"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
+  if(local.length){html+=`<div class="rs-label">内蔵・カスタムDB</div>`;html+=local.map((f,i)=>`<div class="ri" onclick="addComboIngredient(${i})"><div><div class="ri-name">${f.name}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c} 繊${r1(f.fiber||0)} 塩${r2(f.salt||0)}</div></div><div class="ri-cal">${f.cal}kcal</div></div>`).join('')}
   else {html+=`<div class="no-result">見つかりませんでした</div>`}
   box.innerHTML=html; box._local=local; box.style.display='block';
 }
@@ -4496,15 +4627,18 @@ function updateComboAmt(i, val) {
   // 入力途中の空欄・無効値では amount を勝手に上書きしない（100gへの巻き戻りを防止）
   if (isNaN(amt) || amt <= 0) { updateComboTotal(); return; }
   comboIngredients[i]={...f, ...comboScaled(f, amt)};
-  // 合計表示だけ更新し、入力欄のDOMは再生成しない（再生成すると入力中にフォーカスが外れてしまう）
+  // 合計と各材料の栄養表示だけ更新し、入力欄のDOMは再生成しない（再生成すると入力中にフォーカスが外れてしまう）
+  updateComboNutriLines();
   updateComboTotal();
 }
 function updateComboTotal() {
-  if (!comboIngredients.length) { document.getElementById('comboTotal').textContent=''; return }
-  const tot = comboTotals(comboIngredients);
-  document.getElementById('comboTotal').textContent=`合計 ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)} 繊${r1(tot.fiber)}g`;
+  const el = document.getElementById('comboTotal');
+  if (!comboIngredients.length) { el.textContent = ''; return }
+  const tot = comboTotals(comboIngredients), w = comboIngredients.reduce((a, f) => a + (f.amount || 0), 0), net = Math.max(0, tot.c - tot.fiber);
+  const head = `合計 ${r1(w)}g ${ri(tot.cal)}kcal P${r1(tot.p)} F${r1(tot.f)} C${r1(tot.c)}（糖質${r1(net)}） 繊${r1(tot.fiber)}g 塩${r2(tot.salt)}g`;
+  el.innerHTML = `<div>${head}</div><details ${comboTotalOpen ? 'open' : ''} ontoggle="comboTotalOpen=this.open"><summary style="cursor:pointer;font-size:11px">全栄養素の合計と100gあたり</summary>${comboNutriTable(tot, w)}</details>`;
 }
-function removeComboIngredient(i){comboIngredients.splice(i,1);renderComboIngredients()}
+function removeComboIngredient(i){comboIngredients.splice(i,1);comboOpen=new Set([...comboOpen].filter(x=>x!==i).map(x=>x>i?x-1:x));renderComboIngredients()}
 let comboReplaceIdx = null; // 入れ替え待ちの材料の位置（検索で選んだ食材に、量を引き継いで差し替える）
 function toggleComboReplace(i) {
   comboReplaceIdx = (comboReplaceIdx === i) ? null : i;
@@ -4512,11 +4646,37 @@ function toggleComboReplace(i) {
   if (inp) { inp.placeholder = comboReplaceIdx != null ? `「${comboIngredients[i].name}」の代わりの食材を検索…` : '食材を検索…'; if (comboReplaceIdx != null) { inp.scrollIntoView({ behavior: 'smooth', block: 'center' }); inp.focus(); } }
   renderComboIngredients();
 }
+// ── 複合食品の登録画面: 材料ごと・合計の栄養表示 ──
+const COMBO_DETAIL_KEYS = ['fiber', 'fibS', 'fibI', 'iron', 'calcium', 'vitc', 'vitd', 'vita', 'vite', 'vitk', 'iodine', 'salt'];
+const COMBO_DETAIL_LABEL = { fibS: '　└水溶性', fibI: '　└不溶性' };
+let comboOpen = new Set(), comboTotalOpen = false;
+function comboToggle(i, open) { if (open) comboOpen.add(i); else comboOpen.delete(i); }
+function comboKcalTotal() { return comboIngredients.reduce((a, f) => a + (f._cal || 0), 0); }
+// 材料1件の栄養（入れた量での値）。全体のカロリーに占める割合つき
+function comboNutriLine(f) {
+  const net = Math.max(0, (f._c || 0) - (f._fiber || 0)), tot = comboKcalTotal(), share = tot > 0 ? Math.round((f._cal || 0) / tot * 100) : 0;
+  return `${ri(f._cal || 0)}kcal（全体の${share}%）　P${r1(f._p || 0)} F${r1(f._f || 0)} C${r1(f._c || 0)}（糖質${r1(net)}）　繊${r1(f._fiber || 0)} 塩${r2(f._salt || 0)}`;
+}
+function comboValRow(label, val, unit) { return `<div>${label}</div><div style="text-align:right">${val}${unit}</div>`; }
+function comboIngDetail(f) {
+  const rows = [comboValRow('カロリー', ri(f._cal || 0), 'kcal'), comboValRow('タンパク質', r1(f._p || 0), 'g'), comboValRow('脂質', r1(f._f || 0), 'g'), comboValRow('炭水化物', r1(f._c || 0), 'g'), comboValRow('糖質', r1(Math.max(0, (f._c || 0) - (f._fiber || 0))), 'g')];
+  COMBO_DETAIL_KEYS.forEach(k => { const g = MICRO_GOALS[k] || { label: COMBO_DETAIL_LABEL[k], unit: 'g' }; rows.push(comboValRow(COMBO_DETAIL_LABEL[k] || g.label, k === 'iron' || k === 'vitd' || k === 'vite' || k === 'salt' ? r2(f['_' + k] || 0) : r1(f['_' + k] || 0), g.unit)); });
+  return `<div style="font-size:10px;color:var(--text-sub);margin-bottom:3px">元のデータ: ${f.per}gあたり ${f.cal}kcal P${f.p} F${f.f} C${f.c}（入れた量 ${f.amount}g）</div><div class="ci-grid">${rows.join('')}</div>`;
+}
+function comboNutriTable(tot, weight) {
+  const per100 = weight > 0 ? 100 / weight : 0, row = (label, v, unit, d) => `<div>${label}</div><div style="text-align:right">${d === 2 ? r2(v) : r1(v)}${unit}</div><div style="text-align:right">${d === 2 ? r2(v * per100) : r1(v * per100)}${unit}</div>`;
+  const rows = [`<div style="font-size:10px"></div><div style="text-align:right;font-size:10px">合計</div><div style="text-align:right;font-size:10px">100gあたり</div>`, row('カロリー', tot.cal, 'kcal', 1), row('タンパク質', tot.p, 'g', 1), row('脂質', tot.f, 'g', 1), row('炭水化物', tot.c, 'g', 1), row('糖質', Math.max(0, tot.c - tot.fiber), 'g', 1)];
+  COMBO_DETAIL_KEYS.forEach(k => { const g = MICRO_GOALS[k] || { label: COMBO_DETAIL_LABEL[k], unit: 'g' }; rows.push(row(COMBO_DETAIL_LABEL[k] || g.label, tot[k] || 0, g.unit, (k === 'iron' || k === 'vitd' || k === 'vite' || k === 'salt') ? 2 : 1)); });
+  return `<div class="ci-grid ci-grid3" style="margin-top:4px">${rows.join('')}</div>`;
+}
+function updateComboNutriLines() {   // 量の入力中に、DOMを作り直さず各材料の表示だけ更新する
+  comboIngredients.forEach((f, j) => { const a = document.getElementById('cin' + j), b = document.getElementById('cid' + j); if (a) a.textContent = comboNutriLine(f); if (b) b.innerHTML = comboIngDetail(f); });
+}
 function renderComboIngredients() {
   const cont=document.getElementById('comboIngredients');
   if (comboReplaceIdx != null && !comboIngredients[comboReplaceIdx]) comboReplaceIdx = null;
   if(!comboIngredients.length){cont.innerHTML=`<div style="font-size:12px;color:var(--text-sub);padding:4px 0">食材を検索して追加してください</div>`;document.getElementById('comboTotal').textContent='';return}
-  cont.innerHTML=comboIngredients.map((f,i)=>`<div class="combo-ingredient"${comboReplaceIdx===i?' style="outline:2px solid #3266ad;border-radius:7px"':''}><span style="font-weight:500;flex:1">${fdEsc(f.name)}${comboReplaceIdx===i?' <span class="fd-badge" style="background:#3266ad;color:#fff">入れ替え待ち</span>':''}</span><input type="number" value="${f.amount}" min="1" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateComboAmt(${i},this.value)"><span style="font-size:10px;color:var(--text-sub);margin-right:5px">g</span><button class="btn btn-sm" style="margin-right:4px" title="別の食材に入れ替え（量は引き継ぎ）" onclick="toggleComboReplace(${i})">⇄</button><button class="btn btn-sm btn-danger" onclick="removeComboIngredient(${i})">✕</button></div>`).join('');
+  cont.innerHTML=comboIngredients.map((f,i)=>`<div class="combo-ingredient"${comboReplaceIdx===i?' style="outline:2px solid #3266ad;border-radius:7px"':''}><span style="font-weight:500;flex:1">${fdEsc(f.name)}${comboReplaceIdx===i?' <span class="fd-badge" style="background:#3266ad;color:#fff">入れ替え待ち</span>':''}</span><input type="number" value="${f.amount}" min="1" style="width:50px;font-size:12px;padding:2px 5px;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--text);margin:0 6px" oninput="updateComboAmt(${i},this.value)"><span style="font-size:10px;color:var(--text-sub);margin-right:5px">g</span><button class="btn btn-sm" style="margin-right:4px" title="別の食材に入れ替え（量は引き継ぎ）" onclick="toggleComboReplace(${i})">⇄</button><button class="btn btn-sm btn-danger" onclick="removeComboIngredient(${i})">✕</button><div class="ci-n" id="cin${i}">${comboNutriLine(f)}</div><details class="ci-d" ${comboOpen.has(i) ? 'open' : ''} ontoggle="comboToggle(${i},this.open)"><summary>全栄養素</summary><div id="cid${i}">${comboIngDetail(f)}</div></details></div>`).join('');
   updateComboTotal();
 }
 function editComboFood(id) {
@@ -5067,7 +5227,7 @@ function applyCloudData(data) {
   return needUpload;
 }
 function refreshViewsAfterCloud() {
-  ['renderRecord', 'renderCalendar', 'renderExerciseItems', 'renderStrengthItems', 'renderStrengthEval', 'renderCustomFoodList', 'renderComboFoodList', 'renderBmrPreview', 'renderActivityCard'].forEach(fn => { try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval('typeof ' + fn) === 'string' && eval('typeof ' + fn) === 'function') eval(fn + '()'); } catch (e) { /* 表示の更新失敗は無視 */ } });
+  ['renderRecord', 'renderCalendar', 'renderExerciseItems', 'renderStrengthItems', 'renderStrengthEval', 'renderGlycogenEval', 'renderCustomFoodList', 'renderComboFoodList', 'renderBmrPreview', 'renderActivityCard'].forEach(fn => { try { if (typeof window[fn] === 'function') window[fn](); else if (typeof eval('typeof ' + fn) === 'string' && eval('typeof ' + fn) === 'function') eval(fn + '()'); } catch (e) { /* 表示の更新失敗は無視 */ } });
 }
 async function pullFromCloud() {
   if (!fbDb || !fbUser || fbSyncing) return;
@@ -5916,6 +6076,12 @@ function executeAiCommands(commands, backupLabel) {
       }
       changed = true;
     }
+    // ── edit_foods: 条件に合う食品DB(カスタム/複合)をルールで一括修正 ──
+    else if (cmd.type === 'edit_foods') {
+      const r = executeEditFoods(cmd);
+      r.lines.forEach(l => log.push(l));
+      if (r.changed) changed = true;
+    }
     // ── 未対応のコマンド種別 ──
     // 以前はここに何も無く、AIがタイプミスしたコマンドや未実装のコマンド種別を送ってきた場合、
     // 何のエラーも出さずに黙って無視していた（「AIに依頼したのに理由も無く失敗する」不具合の主因の一つ）。
@@ -5935,6 +6101,96 @@ function executeAiCommands(commands, backupLabel) {
   // 次に別の操作で保存されるまで localStorage にもクラウドにも反映されなかった（アプリを閉じると消える・クラウドに上がらない不具合の主因）
   if (changed) save();
   return log;
+}
+
+// ── AIによる食品DBの一括修正（edit_foods） ──
+// AIは「どの食品に・どんなルールを」だけを短いコマンドで返し、対象の絞り込みと計算・保存はアプリ側で行う（食品ごとの値をAIに返させない＝トークンを使わない）。
+//   target: { db:'custom'|'combo'|'both', names:[完全一致], name_contains:[部分一致(OR)], exclude_contains:[除外], category:'主食' }  ※絞り込み条件が1つも無い指定は拒否
+//   ops:    [{ field:'salt', mode:'add_per100', value:1 }]  mode = add_per100(100gあたり+x) / set_per100(100gあたりx) / mul(x倍) / add(登録値に+x) / set(登録値をx)
+//   dry_run:true なら対象の一覧だけ返して変更しない。実行前にAIバックアップが取られるので、AIタブの履歴から元に戻せる。
+const EDIT_FOODS_MAX = 100;
+const EDIT_FOODS_FIELDS = ['cal', 'p', 'f', 'c', ...MICRO_KEYS];
+const EDIT_FOODS_MODES = ['add_per100', 'set_per100', 'mul', 'add', 'set'];
+const EDIT_FOODS_PER100_MAX = { cal: 900, p: 100, f: 100, c: 100, fiber: 100, fibS: 100, fibI: 100, salt: 100 };   // 100gあたりでありえない上限（AIの桁間違いを弾く）
+const ADDED_SALT_ING = '食塩（添加）', AI_ADJ_ING = '調整（AI）';
+function editFoodsRound(k, v) { return (k === 'cal' || k === 'p' || k === 'f' || k === 'c') ? r1(v) : microRound(k, v); }
+function editFoodsMatch(target) {
+  const t = target || {}, norm = x => normFoodName(String(x)), list = a => (Array.isArray(a) ? a : (a ? [a] : [])).map(norm).filter(Boolean);
+  const names = list(t.names), inc = list(t.name_contains), exc = list(t.exclude_contains), cat = t.category ? norm(t.category) : '';
+  if (!names.length && !inc.length && !cat) return null;   // 絞り込み条件なし
+  const db = ['custom', 'combo'].includes(t.db) ? t.db : 'both', out = [];
+  const test = f => {
+    const n = normFoodName(f.name), hay = n + '|' + normFoodName(f.en || '') + '|' + normFoodName(f.tags || '');
+    if (names.length && !names.includes(n)) return false;
+    if (inc.length && !inc.some(k => hay.includes(k))) return false;
+    if (cat && normFoodName(f.category || '') !== cat) return false;
+    if (exc.some(k => hay.includes(k))) return false;
+    return true;
+  };
+  if (db !== 'combo') customFoods.forEach(f => { if (test(f)) out.push({ kind: 'custom', food: f }); });
+  if (db !== 'custom') comboFoods.forEach(f => { if (test(f)) out.push({ kind: 'combo', food: f }); });
+  return out;
+}
+// 複合食品を材料から再計算する（保存画面と同じ方式: 基準量=材料の総重量、合計は材料の実量から）
+function recomputeComboFromIngredients(food) {
+  const ings = food.ingredients, tot = comboTotals(ings.map(ing => comboScaled(ing, ing.amount)));
+  const oldPer = food.per, newPer = r1(ings.reduce((a, ing) => a + Math.max(0, ing.amount || 0), 0));
+  food.per = newPer; if (!food.serving || food.serving === oldPer) food.serving = newPer;
+  ['cal', 'p', 'f', 'c'].forEach(k => { food[k] = r1(tot[k]); });
+  MICRO_KEYS.forEach(k => { food[k] = microRound(k, tot[k]); });
+}
+function editFoodOne(kind, food, ops) {
+  const before = {}; ops.forEach(o => { before[o.field] = food[o.field] || 0; });
+  const hasIng = kind === 'combo' && Array.isArray(food.ingredients) && food.ingredients.length > 0;
+  ops.forEach(o => {
+    const k = o.field, per = food.per || 100, old = food[k] || 0;
+    let nv = old;
+    if (o.mode === 'mul') nv = old * o.value;
+    else if (o.mode === 'add_per100') nv = old + o.value * per / 100;
+    else if (o.mode === 'set_per100') nv = o.value * per / 100;
+    else if (o.mode === 'add') nv = old + o.value;
+    else nv = o.value;
+    nv = Math.max(0, nv);
+    if (!hasIng) { food[k] = editFoodsRound(k, nv); if (['fiber', 'fibS', 'fibI'].includes(k)) reconcileFiberSplit(food); return; }
+    // 複合食品は「材料」が正。合計だけを書き換えると、複合食品の編集や記録の材料編集のたびに元に戻ってしまうため、材料側に反映する
+    if (o.mode === 'mul') { food.ingredients.forEach(ing => { if (ing[k]) ing[k] = editFoodsRound(k, ing[k] * o.value); }); return; }
+    const delta = nv - old; if (Math.abs(delta) < 1e-9) return;
+    const salt = food.ingredients.find(i => i.name === ADDED_SALT_ING);
+    if (k === 'salt' && (delta > 0 || salt)) {   // 食塩は実在の材料「食塩（添加）」として足す（重さも増える）。減らす場合は足した分から引く
+      if (salt) { salt.amount = r2(Math.max(0, salt.amount + delta)); if (salt.amount <= 0) food.ingredients.splice(food.ingredients.indexOf(salt), 1); }
+      else food.ingredients.push({ name: ADDED_SALT_ING, amount: r2(delta), per: 100, cal: 0, p: 0, f: 0, c: 0, ...Object.fromEntries(MICRO_KEYS.map(m => [m, m === 'salt' ? 100 : 0])) });
+      return;
+    }
+    // それ以外の栄養素は、重さ0.1gの「調整（AI）」材料に差分を持たせる（材料一覧に明示される）
+    let adj = food.ingredients.find(i => i.name === AI_ADJ_ING);
+    if (!adj) { adj = { name: AI_ADJ_ING, amount: 0.1, per: 0.1, cal: 0, p: 0, f: 0, c: 0, ...Object.fromEntries(MICRO_KEYS.map(m => [m, 0])) }; food.ingredients.push(adj); }
+    adj[k] = (adj[k] || 0) + Math.max(delta, -old);
+  });
+  if (hasIng) recomputeComboFromIngredients(food);
+  return ops.map(o => ({ field: o.field, from: before[o.field], to: food[o.field] || 0 }));
+}
+function executeEditFoods(cmd) {
+  const lines = [];
+  const ops = (Array.isArray(cmd.ops) ? cmd.ops : []).map(o => ({ field: o && o.field, mode: o && o.mode, value: parseFloat(o && o.value) }));
+  const bad = ops.find(o => !EDIT_FOODS_FIELDS.includes(o.field) || !EDIT_FOODS_MODES.includes(o.mode) || !isFinite(o.value) || o.value < 0
+    || (o.mode === 'mul' && o.value > 10) || ((o.mode === 'add_per100' || o.mode === 'set_per100') && o.value > (EDIT_FOODS_PER100_MAX[o.field] ?? 10000)));
+  if (!ops.length || bad) {
+    const msg = `edit_foods の ops が不正です（${bad ? `field=${bad.field}, mode=${bad.mode}, value=${bad.value}` : 'opsが空'}）`;
+    lines.push(`❌ ${msg}`); logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500)); return { lines, changed: false };
+  }
+  const hits = editFoodsMatch(cmd.target);
+  if (hits === null) { const msg = 'edit_foods の target に絞り込み条件（names / name_contains / category）がありません'; lines.push(`❌ ${msg}`); logError('AI操作', msg, JSON.stringify(cmd).slice(0, 500)); return { lines, changed: false }; }
+  const label = o => `${(MICRO_GOALS[o.field] || {}).label || o.field}${{ add_per100: '+', set_per100: '=', mul: '×', add: '+', set: '=' }[o.mode]}${o.value}${o.mode === 'add_per100' || o.mode === 'set_per100' ? '/100g' : ''}`;
+  const rule = ops.map(label).join('、');
+  if (!hits.length) { lines.push(`⚠️ 条件に合う食品がありません（${JSON.stringify(cmd.target).slice(0, 160)}）`); return { lines, changed: false }; }
+  const names = (n, max) => hits.slice(0, max).map(h => `・${h.food.name}${h.kind === 'combo' ? '（複合）' : ''}`).join('\n') + (hits.length > max ? `\n…ほか${hits.length - max}件` : '');
+  if (hits.length > EDIT_FOODS_MAX) { lines.push(`⚠️ 対象が${hits.length}件と多すぎるため中止しました（上限${EDIT_FOODS_MAX}件）。条件を絞ってください`); return { lines, changed: false }; }
+  if (cmd.dry_run) { lines.push(`🔎 対象${hits.length}件（変更なし / ルール: ${rule}）\n${names(0, 40)}`); return { lines, changed: false }; }
+  const detail = []; let nc = 0, nb = 0;
+  hits.forEach(h => { const ch = editFoodOne(h.kind, h.food, ops); if (h.kind === 'combo') nb++; else nc++; const c0 = ch && ch[0]; if (c0) detail.push(`・${h.food.name}: ${(MICRO_GOALS[c0.field] || {}).label || c0.field} ${r2(c0.from)}→${r2(c0.to)}`); });
+  saveCustom(); if (typeof renderCustomFoodList === 'function') { renderCustomFoodList(); renderComboFoodList(); }
+  lines.push(`✏️ 食品DBを${hits.length}件更新しました（${rule} / カスタム${nc}・複合${nb}）\n${detail.slice(0, 15).join('\n')}${detail.length > 15 ? `\n…ほか${detail.length - 15}件` : ''}\n※記録済みの食事は変わりません。元に戻す場合はAI操作の履歴から復元できます`);
+  return { lines, changed: true };
 }
 
 // ══ AIプロンプトの雛形 ══
@@ -6110,7 +6366,7 @@ function parseAiResponse(rawText) {
 }
 // AIが返答の末尾のJSONで出す「操作コマンド」の種別（関数呼び出し(function call)ではない）
 const AI_COMMAND_TYPES = ['add','add_combo_food','add_custom_food','add_quick_seasoning','combo_food_from_log','delete_by_date_meal','delete_by_id',
-  'delete_combo_food','delete_custom_food','delete_quick_seasoning','edit_custom_food','register_combo_from_log','register_logged_food','replace'];
+  'delete_combo_food','delete_custom_food','delete_quick_seasoning','edit_custom_food','edit_foods','register_combo_from_log','register_logged_food','replace'];
 // AIが「未対応」「できない」「システムエラー」などを理由に実行を断っているか（実際には対応済みの操作でこう言われることがある）
 function claimsCannot(text) {
   return /未対応|対応していません|対応しておりません|サポートしていません|サポートされていません|利用できません|使用できません|使えません|システムエラー|エラーが発生|失敗しました|登録できません|実行できません|(削除|更新|追加|記録|保存|置き換え|変更|修正|反映)(することが)?できません/.test(String(text || ''));
@@ -6245,6 +6501,8 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "ユーザーへの返答"
 }
 
+【添加した塩】「塩を2g足した」のように、食品とは別に添加した塩を記録するときは、add コマンドで name を「食塩（添加）」、amount と salt に同じg数、cal/p/f/c は0として登録してください（同じ食事の既存の「食塩（添加）」には自動で合算されます）。
+
 2. delete_by_id — IDを指定して削除（コンテキストのidフィールドを使用）
 {
   "commands": [{"type": "delete_by_id", "ids": [1234567890]}],
@@ -6348,6 +6606,12 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   "message": "更新しました"
 }
 
+8b. edit_foods — 条件に合うカスタム食品・複合食品を、ルールで一括修正する（食品ごとの値は出力しない。絞り込みと計算はアプリが行う）。
+    target: db("custom"/"combo"/"both") + names(完全一致) / name_contains(部分一致・複数可=OR) / exclude_contains / category のいずれか必須。ops: field(cal,p,f,c,fiber,iron,calcium,vitc,vitd,vita,vite,vitk,iodine,salt)×mode。
+    mode: add_per100(100gあたり+x。例「100gあたり1%の食塩」=salt add_per100 1) / set_per100 / mul(x倍) / add / set。複合食品の食塩追加は材料「食塩（添加）」として足され、重さも増える。
+    曖昧で対象が読めないときは dry_run:true で一覧だけ取得してから実行する。名前の部分一致は「パン」のような短い語を複数並べる（例 ["パン","ロール","バゲット"]）。
+{"commands":[{"type":"edit_foods","target":{"db":"combo","name_contains":["パン"]},"ops":[{"field":"salt","mode":"add_per100","value":1}]}],"backup_label":"食品DB一括修正","message":"…"}
+
 9. delete_custom_food — カスタム食品DBから削除
 {
   "commands": [{"type": "delete_custom_food", "names": ["食品名"]}],
@@ -6418,6 +6682,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   材料ごとの内訳がDB上でも残る。単に合計の栄養値だけでよく内訳が不要なら add_custom_food で十分）
 - 「〇〇を削除して」→ 対象がid特定できれば delete_by_id、できなければ delete_by_date_meal（ただし対象がコンテキストの【複合食品】一覧にある名前なら delete_combo_food、【カスタム食品】一覧にある名前なら delete_custom_food）
 - 「カスタム食品の〇〇のカロリーを△△に直して」「〇〇の名前を△△に変更して」など、既存のカスタム食品の内容を修正したい依頼 → edit_custom_food（updatesには変更したいフィールドだけを入れる。対象がコンテキストの【カスタム食品】一覧に見当たらない場合は無理に実行せず確認する）
+- 「パン系の複合食品に塩を足して」など、複数の食品にまとめて同じ修正をしたい依頼 → edit_foods（1件ずつ edit_custom_food を並べない。ルールで指定する）
 - 「〇〇に変えて」「〇〇で置き換えて」→ replace
 - 「今週の〇〇を全部〇〇にして」→ replace を dates に全日付列挙して1コマンドで
 
@@ -6438,7 +6703,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - add と add_custom_food を混同しない。食べた記録は add、DBへの保存は add_custom_food
 - register_logged_food / register_combo_from_log / combo_food_from_log の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
 - register_combo_from_log の name は必ずコンテキストの【カスタム食品】一覧と重複しないこと。似た名前になりそうな場合は「（自家製）」「（〇月〇日）」等を付けて区別する
-- カスタム食品DBへの登録・編集・削除系コマンド（add_custom_food / register_logged_food / register_combo_from_log / edit_custom_food / delete_custom_food）は、ユーザーの明示的な依頼がある場合のみ実行する。他の会話の流れから先回りして実行しない
+- カスタム食品DBへの登録・編集・削除系コマンド（add_custom_food / register_logged_food / register_combo_from_log / edit_custom_food / edit_foods / delete_custom_food）は、ユーザーの明示的な依頼がある場合のみ実行する。他の会話の流れから先回りして実行しない
 - "今週" は ${weekDates[0]}〜${weekDates[6]}（${weekDates.length}日間）
 - "昨日" は ${getLastNDates(2)[0]}、"一昨日" は ${getLastNDates(3)[0]}
 - 記録の読み取り・質問・雑談のみの場合は commands 不要、message だけ返す

@@ -7,6 +7,7 @@ const ASSETS = [
   '/app.js',
   '/foods-db.js',
   '/strength-model.js',
+  '/glycogen-model.js',
   '/manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js'
 ];

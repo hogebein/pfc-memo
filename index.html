@@ -320,6 +320,12 @@
     /* ═══════════════════════════════════════
        Micro nutrients
     ═══════════════════════════════════════ */
+    .added-salt-row { display: flex; align-items: center; gap: 6px; margin: -4px 0 6px; font-size: 12px; }
+    .added-salt-row .as-label { color: var(--text-sub); white-space: nowrap; }
+    .added-salt-row select, .added-salt-row input { padding: 5px 6px; font-size: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text); }
+    .added-salt-row input { width: 64px; }
+    .added-salt-row .as-unit { color: var(--text-sub); }
+    .added-salt-info { font-size: 10px; color: var(--text-sub); line-height: 1.6; margin-bottom: 10px; }
     .micro-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 6px; margin-bottom: 12px; }
     .micro-item { background: var(--surface2); border-radius: var(--radius-sm); padding: 8px; border: 1px solid var(--border); }
     .micro-label { font-size: 9px; color: var(--text-sub); margin-bottom: 3px; font-weight: 600; }
@@ -494,7 +500,12 @@
     .ci-title { font-size: 13px; font-weight: 600; }
     .ci-food { font-size: 11px; color: var(--text-sub); padding: 1px 0; }
     .custom-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
-    .combo-ingredient { display: flex; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--surface2); border-radius: var(--radius-sm); margin-bottom: 5px; font-size: 13px; border: 1px solid var(--border); }
+    .ci-n { width: 100%; font-size: 10px; color: var(--text-sub); margin-top: 4px; line-height: 1.5; }
+    .ci-d { width: 100%; font-size: 11px; margin-top: 2px; }
+    .ci-d summary { cursor: pointer; color: var(--text-sub); font-size: 10px; }
+    .ci-grid { display: grid; grid-template-columns: 1fr auto; gap: 1px 14px; font-size: 11px; padding: 4px 2px; }
+    .ci-grid3 { grid-template-columns: 1fr auto auto; }
+    .combo-ingredient { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; padding: 6px 9px; background: var(--surface2); border-radius: var(--radius-sm); margin-bottom: 5px; font-size: 13px; border: 1px solid var(--border); }
 
     /* ═══════════════════════════════════════
        CSV
@@ -659,6 +670,15 @@
           <div>
             <div style="font-size:10px;font-weight:700;color:var(--text-sub);letter-spacing:.06em;margin-bottom:6px">ビタミン・ミネラル</div>
             <div class="micro-grid" id="microGrid"></div>
+            <!-- 添加した塩（調理中・食卓で足した塩など、食品の塩分とは別に加える分） -->
+            <div class="added-salt-row">
+              <span class="as-label">🧂 添加した塩</span>
+              <select id="asMeal" aria-label="食事"></select>
+              <input type="number" id="asG" min="0" step="0.1" inputmode="decimal" placeholder="0" onkeydown="if(event.key==='Enter'){event.preventDefault();addAddedSalt();}">
+              <span class="as-unit">g</span>
+              <button class="btn btn-sm" onclick="addAddedSalt()">追加</button>
+            </div>
+            <div id="addedSaltInfo" class="added-salt-info"></div>
           </div>
           <!-- 脂肪酸プロファイル -->
           <div>
@@ -784,6 +804,10 @@
       <!-- 筋トレ評価 -->
       <div class="sl">筋トレ評価（筋肥大の見込み）</div>
       <div class="card" style="padding:13px;margin-bottom:8px" id="strengthEval"></div>
+
+      <!-- グリコーゲン推定 -->
+      <div class="sl">グリコーゲン推定（肝臓・筋肉）</div>
+      <div class="card" style="padding:13px;margin-bottom:8px" id="glycogenEval"></div>
 
       <!-- ビタミンD ストック推定 -->
       <div id="vitdStockWrap" style="display:none">
@@ -1257,6 +1281,7 @@
 </script>
 <script src="foods-db.js"></script>
 <script src="strength-model.js"></script>
+<script src="glycogen-model.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

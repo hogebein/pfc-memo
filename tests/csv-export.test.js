@@ -46,7 +46,7 @@ setTimeout(async () => {
     $('csvFrom').value = '2026-10-05'; $('csvTo').value = '2026-10-08'; captured = ''; w.exportDailyCSV();
     const dl = captured.replace('\uFEFF', '').split('\n'); const hh = dl[0].split(',');
     t('daily CSV: single clean table (no blank/second header)', dl.length === 5 && !dl.some(l => l === '') && dl.filter(l => l.startsWith('date,')).length === 1);
-    t('daily CSV: all columns of the daily table + record_count', hh.slice(0, 10).join() === 'date,bmr_kcal,activity_desc,activity_kcal,steps,tdee_kcal,exercise_kcal,total_burn_kcal,intake_kcal,balance_kcal' && hh.includes('tdee_formula') && hh.includes('net_calc') && hh[hh.length - 1] === 'record_count');
+    t('daily CSV: all columns of the daily table + record_count + intake_net_carb_g', hh.slice(0, 10).join() === 'date,bmr_kcal,activity_desc,activity_kcal,steps,tdee_kcal,exercise_kcal,total_burn_kcal,intake_kcal,balance_kcal' && hh.includes('tdee_formula') && hh.includes('net_calc') && hh[hh.length - 2] === 'record_count' && hh[hh.length - 1] === 'intake_net_carb_g');
     const rowsD = dl.slice(1).map(l => parse(l)); const g = (row, n) => row[hh.indexOf(n)];
     t('daily CSV: covers every day in range incl. days without records', rowsD.map(r => r[0]).join() === '2026-10-05,2026-10-06,2026-10-07,2026-10-08' && rowsD.every(r => r.length === hh.length));
     t('daily CSV: record_count', rowsD.map(r => g(r, 'record_count')).join() === '1,0,1,0'); t('daily CSV: exercise-only day shows burn, zero intake', g(rowsD[1], 'exercise_kcal') === '400' && g(rowsD[1], 'intake_kcal') === '0' && parseFloat(g(rowsD[1], 'balance_kcal')) === -parseFloat(g(rowsD[1], 'total_burn_kcal')));
