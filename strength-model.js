@@ -89,7 +89,9 @@
     const lo = Math.floor(r), hi = Math.ceil(r); return RIR_Q[lo] + (RIR_Q[hi] - RIR_Q[lo]) * (r - lo);
   }
   // ★ 回数による重み。5〜30回は満額（Lopez 2021: 限界近くなら負荷によらず同程度）。1〜4回・31回超は根拠が薄いため割引
+  // 回数が未入力（数えていない）なら、5〜30回の範囲として満額で扱う。重要なのはセット数とRIR（きつさ）で、回数は極端な値の補正にしか使わない
   function repQuality(reps) {
+    if (reps == null || reps === '' || (typeof reps === 'number' && isNaN(reps))) return 1;
     if (!(reps > 0)) return 0; if (reps < 5) return 0.75; if (reps <= 30) return 1; if (reps <= 40) return 0.85; return 0.6;
   }
   function setQuality(s) { return rirQuality(s.rir) * repQuality(s.reps); }

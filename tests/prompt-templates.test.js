@@ -5,7 +5,7 @@ const { w, errs } = loadApp(); const t = makeT(); const ev = s => w.eval(s); con
 setTimeout(async () => {
   try {
     w.confirm = () => true;
-    let sent = 0; w.fetch = async () => { sent++; return { ok: true, status: 200, json: async () => ({ content: [{ text: 'ok' }] }) }; };
+    let sent = 0; w.fetch = async () => { sent++; return { ok: true, status: 200, text: async () => JSON.stringify({ content: [{ text: 'ok' }] }) }; };
     const chips = () => [...$('promptChips').querySelectorAll('.prompt-chip')]; const titles = () => ev('promptTemplates.map(t=>t.title)'); const undo = () => $('toast').querySelector('.toast-undo-btn').click();
     const stored = () => JSON.parse(w.localStorage.getItem('pfcPromptTemplates') || 'null');
     // ── 旧ボタンの撤去と初期の雛形 ──

@@ -56,7 +56,8 @@ setTimeout(async () => {
     ev(`customFoods.push({id:9,name:'ビタミンB12ドリンク',per:100,cal:10,p:0,f:0,c:2})`); w.onAddSearch('B12', '朝食'); t('whole query with results stays a normal search', $('addResultsBox_朝食')._qty === null && /ビタミンB12/.test($('addResultsBox_朝食').textContent));
     // ── 行の中の量の調整 ──
     setup(base1()); row(1).querySelector('.amt-pill').click(); t('pill tap opens the strip inside the row', !!strip(1) && row(1).classList.contains('amt-open') && strip(1).parentElement === row(1) && !!strip(1).querySelector('.amt-input') && strip(1).querySelectorAll('.amt-step').length === 2);
-    t('strip: input shows the amount, chips ½ 1× 1.5× 2×', strip(1).querySelector('.amt-input').value === '150' && [...strip(1).querySelectorAll('.amt-chip[data-m]')].map(b => b.textContent).join() === '½,1×,1.5×,2×' && strip(1).querySelector('.amt-chip[data-m="1"]').classList.contains('on'));
+    t('strip: input shows the amount, chips ½ 1.5× 2× (no redundant 1×)', strip(1).querySelector('.amt-input').value === '150' && [...strip(1).querySelectorAll('.amt-chip[data-m]')].map(b => b.textContent).join() === '½,1.5×,2×' && !strip(1).querySelector('.amt-chip[data-m="1"]') && !strip(1).querySelector('.amt-chip.on[data-m]'));
+    t('strip: multiplier chips sit in their own row (3 chips, cannot spill into the 前回 row)', strip(1).querySelector('.amt-chips > .amt-row').querySelectorAll('.amt-chip').length === 3 && [...strip(1).querySelectorAll('.amt-row')].every(r => !r.querySelector('.amt-row')));
     t('strip: no revert link before any change', !strip(1).querySelector('.amt-foot .amt-link[onclick^="amtRevert"]'));
     w.amtStep(1, 1); t('＋ steps to the next round number (10g above 100g) and applies live', getE(1).amount === 160 && getE(1).cal === 256 && Math.abs(getE(1).p - 4) < 0.01 && strip(1).querySelector('.amt-input').value === '160');
     t('live apply persists locally', ls().find(e => e.id === 1).amount === 160); t('day totals follow the change', /256/.test($('mealBlocks').textContent));
@@ -87,10 +88,11 @@ setTimeout(async () => {
     setup(base1()); w.openAmtStrip(1); w.amtMul(1, 2); w.startEdit(1);
     t('startEdit closes the strip (keeping the change)', ev('_amtOpen') === null && !strip(1) && getE(1).amount === 300); w.cancelEdit(1); t('cancelEdit restores the opening state', getE(1).amount === 300 || getE(1).amount === 150);
     setup(base1()); w.startEdit(1); const form = $('mealBlocks');
-    t('edit form: ±, current amount, chips, no slider', !!$('eaCtl1') && !form.querySelector('input[type=range]') && $('eaCtl1').querySelectorAll('.amt-step').length === 2 && /150g/.test($('eaCur1').textContent) && [...$('eaCtl1').querySelectorAll('.amt-chip[data-m]')].length === 4);
+    t('edit form: ±, current amount, chips, no slider', !!$('eaCtl1') && !form.querySelector('input[type=range]') && $('eaCtl1').querySelectorAll('.amt-step').length === 2 && /150g/.test($('eaCur1').textContent) && [...$('eaCtl1').querySelectorAll('.amt-chip[data-m]')].length === 3);
     t('edit form: ea input still available for typing', !!$('ea1') && $('ea1').value === '150'); w.editAmtStep(1, 1); t('edit form: ＋ updates input, display and (live) the record', $('ea1').value === '160' && /160g/.test($('eaCur1').textContent) && getE(1).amount === 160 && getE(1).cal === 256);
     w.editAmtMul(1, 2); t('edit form: 2× is relative to the opening amount', $('ea1').value === '300' && getE(1).cal === 480 && $('eaCtl1').querySelector('.amt-chip[data-m="2"]').classList.contains('on')); w.editAmtSet(1, 123.4); t('edit form: set value', $('ea1').value === '123.4');
-    w.editAmtMul(1, 6); t('edit form: warning', $('eaWarn1').style.display === 'block' && /6倍/.test($('eaWarn1').textContent)); w.editAmtMul(1, 1); t('edit form: warning cleared', $('eaWarn1').style.display === 'none');
+    t('edit form: revert link is visible after a change and shows the opening amount', $('eaRev1').style.display !== 'none' && /元の量（150g）に戻す/.test($('eaRev1').textContent));
+    w.editAmtMul(1, 6); t('edit form: warning', $('eaWarn1').style.display === 'block' && /6倍/.test($('eaWarn1').textContent)); w.editAmtMul(1, 1); t('edit form: warning cleared', $('eaWarn1').style.display === 'none'); t('edit form: revert link hides again at the opening amount', $('eaRev1').style.display === 'none');
     $('ea1').value = '200'; $('ea1').dispatchEvent(new w.Event('input')); t('edit form: typing keeps the display in sync', /200g/.test($('eaCur1').textContent) && getE(1).amount === 200);
     w.cancelEdit(1); t('edit form: 取消 restores the original', getE(1).amount === 150 && getE(1).cal === 240);
     // 複製（✏️フォームの中）

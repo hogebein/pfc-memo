@@ -8,6 +8,12 @@
 
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
+// 関数の実行時間には上限がある（Vercelの無料枠は既定10秒）。超えるとプラットフォームがHTMLのエラーページを返し、
+// アプリ側で「Unexpected token '<'」になっていたため、上限の少し手前で待機を打ち切って JSON で「時間切れ(504)」を返す。
+// 上限を延ばした場合は環境変数 AI_FUNCTION_TIMEOUT_SEC に秒数を入れる。
+const FUNCTION_LIMIT_SEC = Math.max(5, Number(process.env.AI_FUNCTION_TIMEOUT_SEC) || 10);
+const GEMINI_WAIT_MS = Math.max(3000, FUNCTION_LIMIT_SEC * 1000 - 1500);
+
 module.exports = async (req, res) => {
   setCors(res);
   if (req.method === 'OPTIONS') return res.status(204).end();
@@ -71,19 +77,26 @@ module.exports = async (req, res) => {
       // gemini-2.5-flash は既定で「思考」を行い、その思考トークンも maxOutputTokens に含まれる。
       // 上限が小さいと、思考で使い切って本文（操作用JSON）が途中で切れる（MAX_TOKENS）ため、
       // 思考量に上限を設けつつ出力上限を広げる
-      maxOutputTokens: 16384,
-      thinkingConfig: { thinkingBudget: 1024 },
-      temperature: 0.7,
+      // lite: 時間切れの再試行用。思考を止め、出力上限を下げて速く返す
+      maxOutputTokens: body.lite ? 8192 : 16384,
+      thinkingConfig: { thinkingBudget: body.lite ? 0 : 1024 },
+      temperature: body.lite ? 0.4 : 0.7,
     },
   };
 
   try {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${apiKey}`;
-    const geminiRes = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(geminiBody),
-    });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), GEMINI_WAIT_MS);
+    let geminiRes;
+    try {
+      geminiRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(geminiBody),
+        signal: ctrl.signal,
+      });
+    } finally { clearTimeout(timer); }
 
     const data = await geminiRes.json();
 
@@ -128,6 +141,9 @@ module.exports = async (req, res) => {
     return json(res, 200, { content: [{ type: 'text', text }], usage: data.usageMetadata || null });
 
   } catch (err) {
+    if (err && err.name === 'AbortError') {
+      return json(res, 504, { error: `AIの応答が制限時間（${FUNCTION_LIMIT_SEC}秒）内に終わりませんでした。出力が長い依頼は時間切れになりやすいため、品目を分けてお試しください。`, timeout: true });
+    }
     return json(res, 502, { error: `Gemini API への接続に失敗しました: ${err.message}` });
   }
 };

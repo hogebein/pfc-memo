@@ -228,10 +228,12 @@
     .amt-input { flex: 1; min-width: 0; height: 48px; text-align: center; font-size: 22px; font-weight: 600; border: 1.5px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); }
     .amt-g { font-size: 14px; color: var(--text-sub); }
     .amt-cur { flex: 1; text-align: center; font-size: 22px; font-weight: 600; }
-    .amt-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
-    .amt-chip { min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 500; }
+    .amt-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+    .amt-row { display: flex; align-items: center; gap: 8px; }
+    .amt-row .amt-chip { flex: 1 1 0; min-width: 0; padding: 0 4px; }
+    .amt-chip { min-width: 48px; height: 40px; padding: 0 12px; border-radius: 10px; border: 1.5px solid var(--border); background: var(--surface); color: var(--text); font-size: 14px; font-weight: 500; white-space: nowrap; }
     .amt-chip.on { background: #3266ad; border-color: #3266ad; color: #fff; }
-    .amt-lbl { font-size: 11px; color: var(--text-sub); }
+    .amt-lbl { flex: 0 0 auto; font-size: 11px; color: var(--text-sub); }
     .amt-warn { margin-top: 8px; padding: 6px 10px; border-radius: 8px; background: #fff4e0; color: #b25e00; font-size: 12px; font-weight: 500; }
     .amt-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 4px; }
     .amt-link { border: none; background: transparent; color: #3266ad; font-size: 12px; padding: 8px 4px; min-height: 36px; }
@@ -414,6 +416,15 @@
     .ri-name { font-size: 13px; font-weight: 500; }
     .ri-sub { font-size: 10px; color: var(--text-sub); margin-top: 1px; }
     .ri-cal { font-size: 12px; color: var(--accent); font-weight: 700; white-space: nowrap; margin-left: 6px; }
+    .ri-plus { flex: 0 0 auto; width: 34px; height: 34px; margin-left: 8px; border-radius: 50%; border: 1.5px solid var(--accent); background: transparent; color: var(--accent); font-size: 20px; line-height: 1; padding: 0; cursor: pointer; }
+    .ri-plus:active { background: var(--accent); color: #fff; }
+    .keep-add { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-sub); margin: -2px 0 8px; cursor: pointer; user-select: none; }
+    .keep-add input { position: absolute; opacity: 0; width: 0; height: 0; }
+    .keep-sw { position: relative; width: 34px; height: 20px; border-radius: 10px; background: var(--border); transition: background var(--transition); flex: 0 0 auto; }
+    .keep-sw::after { content: ''; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform var(--transition); box-shadow: 0 1px 2px rgba(0,0,0,.3); }
+    .keep-add input:checked + .keep-sw { background: var(--accent); }
+    .keep-add input:checked + .keep-sw::after { transform: translateX(14px); }
+    .keep-add input:focus-visible + .keep-sw { outline: 2px solid var(--accent); outline-offset: 2px; }
     .badge { font-size: 9px; padding: 1px 5px; border-radius: 4px; margin-left: 4px; font-weight: 600; }
     .badge-local { background: var(--green-light); color: var(--green); }
     .badge-custom { background: var(--amber-light); color: #c67c00; }
@@ -500,6 +511,9 @@
     .ci-title { font-size: 13px; font-weight: 600; }
     .ci-food { font-size: 11px; color: var(--text-sub); padding: 1px 0; }
     .custom-item { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 9px 11px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; font-size: 13px; }
+    .csv-out { display: flex; gap: 8px; }
+    .csv-out + .csv-out { margin-top: 8px; }
+    .csv-out .btn:first-child { flex: 1; }
     .ci-n { width: 100%; font-size: 10px; color: var(--text-sub); margin-top: 4px; line-height: 1.5; }
     .ci-d { width: 100%; font-size: 11px; margin-top: 2px; }
     .ci-d summary { cursor: pointer; color: var(--text-sub); font-size: 10px; }
@@ -764,9 +778,10 @@
             </div>
             <div class="row">
               <div class="field"><label>重量(kg)</label><input type="number" id="stKg" min="0" step="0.5" inputmode="decimal" value="0"></div>
-              <div class="field"><label>回数</label><input type="number" id="stReps" min="1" step="1" inputmode="numeric" value="10"></div>
-              <div class="field"><label>あと何回できた(RIR)</label>
-                <select id="stRir"><option value="">未入力(2)</option><option value="0">0（限界）</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5以上</option></select></div>
+              <div class="field"><label>回数（任意）</label><input type="number" id="stReps" min="1" step="1" inputmode="numeric" placeholder="数えなくてOK"></div>
+              <div class="field"><label>セット数</label><input type="number" id="stSets" min="1" max="20" step="1" inputmode="numeric" value="1"></div>
+              <div class="field"><label>きつさ（あと何回できそうか）</label>
+                <select id="stRir"><option value="">未入力（あと2回くらい扱い）</option><option value="0">限界（もう1回もできない）</option><option value="1">あと1回できそう</option><option value="2">あと2回くらいできそう</option><option value="3">余裕あり（あと3回くらい）</option><option value="4">かなり余裕（あと4回くらい）</option><option value="5">ウォームアップ程度（5回以上）</option></select></div>
             </div>
             <button class="btn btn-block" onclick="stAddSet()">＋ セットを追加（同じ重量・回数のまま連続追加できます）</button>
             <div id="stDraft" class="st-draft"></div>
@@ -981,9 +996,10 @@
           <b>日別CSV</b>: TDEE・運動・摂取・実質収支・計算式だけを、期間内の全日（記録のない日も）1つの表にしたファイルです。<br>
           <b>筋トレCSV</b>: 1セット1行（重量・回数・RIR・ボリューム）と、週×部位ごとの有効セット数の表です。</p>
         <div class="row" style="margin-bottom:10px"><div class="field"><label>開始日</label><input type="date" id="csvFrom"></div><div class="field"><label>終了日</label><input type="date" id="csvTo"></div></div>
-        <button class="btn btn-primary btn-block" onclick="exportCSV()">📥 CSVダウンロード</button>
-        <button class="btn btn-block" onclick="exportDailyCSV()" style="margin-top:8px">📥 日別CSV（TDEE・収支）</button>
-        <button class="btn btn-block" onclick="exportStrengthCSV()" style="margin-top:8px">📥 筋トレCSV（セット・週別部位ボリューム）</button>
+        <div class="csv-out"><button class="btn btn-primary" onclick="exportCSV()">📥 CSVダウンロード</button><button class="btn" onclick="exportCSV('copy')" title="クリップボードにコピー">📋 コピー</button></div>
+        <div class="csv-out"><button class="btn" onclick="exportDailyCSV()">📥 日別CSV（TDEE・収支）</button><button class="btn" onclick="exportDailyCSV('copy')" title="クリップボードにコピー">📋 コピー</button></div>
+        <div class="csv-out"><button class="btn" onclick="exportStrengthCSV()">📥 筋トレCSV（セット・週別部位ボリューム）</button><button class="btn" onclick="exportStrengthCSV('copy')" title="クリップボードにコピー">📋 コピー</button></div>
+        <textarea class="csv-area" id="csvCopyArea" readonly style="display:none;margin-top:8px" aria-label="コピー用のCSV"></textarea>
       </div>
       <div class="card">
         <div class="sl">CSVインポート</div>
@@ -1004,6 +1020,12 @@
         <textarea class="csv-area" id="fooddbImportArea" placeholder="食品DBのJSONをここに貼り付け、または上でファイルを選択してください…"></textarea>
         <div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-success" onclick="importFoodDb()" style="flex:1">📤 インポート実行</button><button class="btn" onclick="document.getElementById('fooddbImportArea').value='';document.getElementById('fooddbFileInput').value=''">クリア</button></div>
         <div id="fooddbImportMsg" class="status-msg"></div>
+      </div>
+      <div class="card">
+        <div class="sl">クラウドデータの容量</div>
+        <p style="font-size:12px;color:var(--text-sub);margin-bottom:10px">クラウドには1つのドキュメントとして保存され、上限（約1MB）があります。大きくなると自動で圧縮します。「上限に近づいています」の警告が出たときの確認にも使えます。</p>
+        <button class="btn btn-block" onclick="showCloudSizeInfo()">📊 容量と内訳を調べる</button>
+        <div id="cloudSizeInfo"></div>
       </div>
       <div class="card">
         <div class="sl">エラーログ（<span id="errorLogCount">0</span>件）</div>

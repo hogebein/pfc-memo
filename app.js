@@ -605,6 +605,37 @@ function lsSetLogged(key, value) {
     return false;
   }
 }
+// ── クラウドデータの容量（内訳・圧縮後の大きさ・上限までの目安）──
+// 「クラウドのデータが上限に近づいています」の警告が出たときに、何が大きいか・あと何日分か・圧縮が効いているかを確認するためのもの
+async function cloudSizeReport() {
+  const enc = v => new TextEncoder().encode(JSON.stringify(v)).length, n = v => Array.isArray(v) ? v.length : Object.keys(v || {}).length;
+  const gh = sanitizeGhData(ghData);
+  const parts = [['食事記録', entries, '件'], ['運動記録', exercises, '件'], ['筋トレ記録', strengthLog, '件'], ['カスタム食品', customFoods, '件'], ['複合食品', comboFoods, '件'], ['調味料ショートカット', quickSeasonings, '件'], ['プロフィール', profile, ''], ['日別の活動量', dailyActivity, '日'], ['Google Health', gh, '日'], ['AIひな形', promptTemplates, '件']]
+    .map(([label, v, unit]) => ({ label, bytes: enc(v), count: n(v), unit })).sort((a, b) => b.bytes - a.bytes);
+  const total = enc({ entries, exercises, strengthLog, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: gh, promptTemplates, updatedAt: new Date().toISOString() });
+  let z = null; try { z = total > CLOUD_ZIP_THRESHOLD ? await cloudZip(JSON.stringify({ entries, exercises, strengthLog, customFoods, comboFoods, quickSeasonings, profile, dailyActivity, ghData: gh, promptTemplates })) : null; } catch (e) {}
+  const stored = z ? z.length : total, ratio = stored / total;
+  // 直近30日の増加ペース（記録は日付つきの配列。それ以外はほぼ増えない）
+  const cutoff = (() => { const d = new Date(); d.setDate(d.getDate() - 30); return toDateStr(d); })();
+  const recent = [entries, exercises, strengthLog].reduce((a, arr) => a + arr.filter(e => e.date >= cutoff).reduce((x, e) => x + enc(e) + 1, 0), 0);
+  const firstDate = [...entries, ...exercises, ...strengthLog].map(e => e.date).filter(Boolean).sort()[0];
+  const spanDays = firstDate ? Math.max(7, Math.min(30, Math.round((Date.now() - new Date(firstDate + 'T00:00:00')) / 86400000) + 1)) : 30;
+  const perDayRaw = recent / spanDays, perDay = perDayRaw * ratio;
+  const daysLeft = perDay > 0 ? Math.max(0, (CLOUD_DOC_MAX_BYTES - stored) / perDay) : Infinity;
+  return { parts, total, stored, compressed: !!z, compressSupported: typeof CompressionStream !== 'undefined' || !!window.__zipApi, perDay, daysLeft };
+}
+async function showCloudSizeInfo() {
+  const box = document.getElementById('cloudSizeInfo'); if (!box) return; box.textContent = '計算中…';
+  const r = await cloudSizeReport(), kb = b => Math.round(b / 1024), maxKb = Math.round(CLOUD_DOC_MAX_BYTES / 1024), pct = x => Math.round(100 * x / r.total);
+  const lines = [`<div><b>クラウドに保存される大きさ: ${kb(r.stored)}KB / 上限${maxKb}KB（${Math.round(100 * r.stored / CLOUD_DOC_MAX_BYTES)}%）</b></div>`];
+  if (r.compressed) lines.push(`<div style="color:var(--text-sub)">元のデータ ${kb(r.total)}KB を圧縮して保存しています（約${Math.round(r.total / r.stored)}分の1）。</div>`);
+  else if (r.total > CLOUD_ZIP_THRESHOLD) lines.push(`<div style="color:#c0392b">圧縮されていません（元のデータ ${kb(r.total)}KB）。${r.compressSupported ? 'アプリを最新版に更新してから、もう一度開いてください。' : 'このブラウザは圧縮に未対応です。ブラウザ/OSを更新してください（Chrome 80+・Safari 16.4+・Firefox 113+）。'}</div>`);
+  else lines.push(`<div style="color:var(--text-sub)">まだ小さいので圧縮していません（${kb(CLOUD_ZIP_THRESHOLD)}KBを超えると自動で圧縮します）。</div>`);
+  lines.push(`<div style="margin-top:6px">内訳（元のデータ）</div>` + r.parts.filter(p => p.bytes > 50).map(p => `<div style="display:flex;justify-content:space-between"><span>${p.label}${p.unit ? `（${p.count}${p.unit}）` : ''}</span><span>${kb(p.bytes)}KB（${pct(p.bytes)}%）</span></div>`).join(''));
+  lines.push(r.perDay > 0 ? `<div style="margin-top:6px">増加ペース: 約${(r.perDay / 1024).toFixed(1)}KB/日${r.compressed ? '（圧縮後）' : ''} → 上限まで ${r.daysLeft > 3650 ? '十分な余裕があります' : `約${Math.round(r.daysLeft)}日`}</div>` : `<div style="margin-top:6px">増加ペース: 記録が増えていないため、ほぼ増えません</div>`);
+  box.innerHTML = `<div style="font-size:12px;line-height:1.7;margin-top:8px">${lines.join('')}</div>`;
+}
+
 function saveLocal() {
   lsSetLogged('pfcEntries',     JSON.stringify(entries));
   lsSetLogged('pfcExercises',   JSON.stringify(exercises));
@@ -1465,7 +1496,8 @@ function captureAddSearchState() {  // 再描画前の検索欄の状態（入�
   return { meal: activeAddMeal, value: el.value, focused: document.activeElement === el, start: el.selectionStart, end: el.selectionEnd };
 }
 function restoreAddSearchAfterRender(before) {
-  const meal = activeAddMeal; if (!meal) { _focusAddSearchMeal = null; return; }
+  const meal = activeAddMeal; if (_keepAddMeal && _keepAddMeal !== meal) _keepAddMeal = null;   // 検索パネルを閉じた／別の食事に移ったら連続登録はOFFに戻す
+  if (!meal) { _focusAddSearchMeal = null; return; }
   const el = document.getElementById('addSearch_' + meal); if (!el) return;
   const recordVisible = !!(document.getElementById('panel-record') && document.getElementById('panel-record').classList.contains('active'));
   // ① 入力途中の文字は、フォーカスの有無にかかわらず残す（再描画で消えない）。入力済みなら候補も復元する
@@ -1656,7 +1688,7 @@ function renderRecord() {
           </div>`;
         } else {
           const isGrp = Array.isArray(e.ingredients) && e.ingredients.length > 1, open = isGrp && _grpOpen.has(e.id), stripOpen = !!(_amtOpen && _amtOpen.id === e.id);
-          html += `<div class="log-item${isGrp ? ' grp' : ''}${stripOpen ? ' amt-open' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail"><span class="amt-pill" onclick="event.stopPropagation();toggleAmtStrip(${e.id})" role="button" aria-label="量を変更">${fmtAmt(e.amount)}g</span>｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
+          html += `<div class="log-item${isGrp ? ' grp' : ''}${stripOpen ? ' amt-open' : ''}" data-eid="${e.id}"><div${isGrp ? ` onclick="toggleGroupOpen(${e.id})" style="cursor:pointer"` : ''}><div class="li-name">${isGrp ? '🗂 ' : ''}${fdEsc(e.name)}${isGrp ? ` <span class="fd-badge">${e.ingredients.length}品 ${open ? '▾' : '▸'}</span>` : ''}</div><div class="li-detail"><span class="amt-pill" onclick="event.stopPropagation();toggleAmtStrip(${e.id})" role="button" aria-label="量を変更">${fmtAmt(e.amount)}g</span>｜P${r1(e.p)} F${r1(e.f)} C${r1(e.c)}${e.fiber?'｜繊'+r1(e.fiber):''}${e.salt?'｜塩'+r2(e.salt):''}${e.vitd?'｜D'+r1(e.vitd)+'μg':''}</div></div>
           <div class="li-right"><div class="li-cal">${ri(e.cal)}</div>
           <button class="btn btn-sm btn-ghost li-edit" onclick="startEdit(${e.id})" aria-label="編集">✏️</button>
           <button class="btn btn-sm btn-danger li-del" onclick="deleteEntry(${e.id})" aria-label="削除">✕</button></div>${open ? groupMembersHtml(e) : ''}${stripOpen ? amtStripHtml(e) : ''}</div>`;
@@ -1673,6 +1705,7 @@ function renderRecord() {
           </div>
           <button type="button" class="btn btn-sm" onclick="toggleAddPanel('${meal}')" aria-label="閉じる" style="height:38px;padding:0 13px;flex-shrink:0">✕</button>
         </div>
+        <label class="keep-add"><input type="checkbox" id="addKeep_${meal}" ${_keepAddMeal === meal ? 'checked' : ''} onchange="setKeepAdd('${meal}',this.checked)"><span class="keep-sw" aria-hidden="true"></span><span>連続登録（選んでも検索を閉じない）</span></label>
         <div class="results-box" id="addResultsBox_${meal}"></div>
         <details style="margin-top:2px">
           <summary style="font-size:12px;color:var(--text-sub);cursor:pointer;padding:4px 0">見つからない場合は手入力で追加</summary>
@@ -1757,7 +1790,7 @@ const SRC_LABEL = {local:'内蔵',custom:'カスタム',combo:'複合'};
 function resultItemHtml(f, i, meal, qty) {
   const cat = (f._src === 'custom' || f._src === 'combo') && f.category ? ` ・${fdEsc(f.category)}` : '';
   const qa = qty ? resolveQtyAmount(f, qty) : null;   // 量を打っている場合は、その量でのkcalを右に出す
-  return `<div class="ri" onclick="selectAddResult(${i},'${meal}')"><div><div class="ri-name">${fdEsc(f.name)}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}${cat}</div></div><div class="ri-cal">${qa ? `<span class="ri-amt">${fdEsc(qa.label)}${qa.label.endsWith('g') ? '' : '＝' + fmtAmt(qa.amount) + 'g'}</span>${ri((f.cal || 0) * qa.amount / (f.per || 100))}kcal` : `${f.cal}kcal`}</div></div>`;
+  return `<div class="ri" onclick="selectAddResult(${i},'${meal}',false,event)"><div><div class="ri-name">${fdEsc(f.name)}<span class="badge badge-${f._src||'local'}">${SRC_LABEL[f._src||'local']}</span></div><div class="ri-sub">${f.per}gあたり P${f.p} F${f.f} C${f.c}${f.fiber?' 繊'+f.fiber:''}${(f.aa&&f.aa.score!=null&&f.p>=3)?' <span style="color:var(--text-sub)">・P吸収スコア'+Math.round(f.aa.score*100)+'%</span>':''}${cat}</div></div><div class="ri-cal">${qa ? `<span class="ri-amt">${fdEsc(qa.label)}${qa.label.endsWith('g') ? '' : '＝' + fmtAmt(qa.amount) + 'g'}</span>${ri((f.cal || 0) * qa.amount / (f.per || 100))}kcal` : `${f.cal}kcal`}</div><button type="button" class="ri-plus" onclick="event.stopPropagation();selectAddResult(${i},'${meal}',true)" aria-label="記録して、検索を閉じずに続けて追加">＋</button></div>`;
 }
 function renderResultsFor(local, meal, qty) {
   const box=document.getElementById('addResultsBox_'+meal); if(!box) return;
@@ -1878,33 +1911,46 @@ function resolveQtyAmount(f, qty) {
   return null;
 }
 // ── 記録の登録（数量シート・即記録・検索欄の量指定で共通）──
-function registerFoodEntry(f, meal, amt) {
+// keep=true（連続登録）: 検索欄の文字と候補を残したまま記録する。再描画で検索欄の文字・候補は captureAddSearchState / restoreAddSearchAfterRender が復元する
+function registerFoodEntry(f, meal, amt, keep) {
   const snap = JSON.parse(JSON.stringify(entries));   // 「元に戻す」用
   const newEntry = buildEntryFromFood(f, meal, amt);
   if (!newEntry.fa || !newEntry.aa) enrichFoodProfile(newEntry);
   const { entry, merged } = addOrMergeEntry(newEntry);
   save();
-  const box = document.getElementById('addResultsBox_' + meal); if (box) box.style.display = 'none';
-  const inp = document.getElementById('addSearch_' + meal); if (inp) inp.value = '';
-  const cont = document.getElementById('amtQuickPick_' + meal); if (cont) cont.style.display = 'none';
+  if (!keep) {
+    const box = document.getElementById('addResultsBox_' + meal); if (box) box.style.display = 'none';
+    const inp = document.getElementById('addSearch_' + meal); if (inp) inp.value = '';
+    const cont = document.getElementById('amtQuickPick_' + meal); if (cont) cont.style.display = 'none';
+  }
   renderRecord(); renderCalendar();
+  if (keep) {   // 検索欄が空（最近・よく使う食品の一覧）だった場合は一覧を出し直す。文字ありの場合は再描画の復元処理が候補を戻す
+    const inp2 = document.getElementById('addSearch_' + meal), box2 = document.getElementById('addResultsBox_' + meal);
+    if (inp2 && !inp2.value.trim() && box2 && box2.style.display !== 'block') onAddSearchFocus(meal);
+  }
   return { entry: entry || newEntry, merged, snap };
 }
-function registerFromSelection(f, meal, amt, offerChange, note) {
-  const { entry, merged, snap } = registerFoodEntry(f, meal, amt);
+function registerFromSelection(f, meal, amt, offerChange, note, keep) {
+  const { entry, merged, snap } = registerFoodEntry(f, meal, amt, keep);
   const msg = (merged ? `✅「${fdEsc(f.name)}」を合算しました（+${fmtAmt(amt)}g）` : `✅「${fdEsc(f.name)}」${fmtAmt(amt)}g を記録しました`) + (note ? `<br><small>${note}</small>` : '');
   const acts = []; if (offerChange) acts.push({ label: '量を変更', fn: () => openAmtStrip(entry.id) });
   acts.push({ label: '元に戻す', fn: () => { entries = snap; save(); renderRecord(); renderCalendar(); } });
   showActionToast(msg, acts, 7000);
 }
-function selectAddResult(i, meal) {
+// 連続登録: 行の右端の「＋」は、その1件だけ記録して検索を閉じない。検索欄の「連続登録」スイッチをONにすると、行をタップしても閉じない（スイッチは、その食事の検索パネルを閉じるとOFFに戻る）
+let _keepAddMeal = null;
+function setKeepAdd(meal, on) { _keepAddMeal = on ? meal : null; }
+function selectAddResult(i, meal, keepOpen, ev) {
+  const keep = !!keepOpen || _keepAddMeal === meal;
+  // 連続登録では、記録後の再描画でクリックされた行が画面から消える。そのクリックが document に伝わると「検索欄・結果の外をタップした」と判定されて候補が閉じてしまうため、ここで止める
+  if (keep && ev && ev.stopPropagation) ev.stopPropagation();
   const box = document.getElementById('addResultsBox_' + meal); if (!box) return;
   const f = box._local && box._local[i]; if (!f) return;
   window._addBase[meal] = { ...f };
   const q = box._qty ? resolveQtyAmount(f, box._qty) : null;
-  if (q) { registerFromSelection(f, meal, q.amount, true); return; }   // 検索欄に量を打った → その量でそのまま記録
+  if (q) { registerFromSelection(f, meal, q.amount, true, undefined, keep); return; }   // 検索欄に量を打った → その量でそのまま記録
   const note = box._qty ? `「${fdEsc(box._qty.unit)}」の換算ができないため、いつもの量で記録しました（目安量で1食分を設定すると使えます）` : '';
-  registerFromSelection(f, meal, defaultAmountFor(f), true, note);
+  registerFromSelection(f, meal, defaultAmountFor(f), true, note, keep);
 }
 // ══ 量の調整（記録の行の中で完結する。別ウィンドウは使わない）══
 // 行の量の表示（青いピル）をタップすると、その行の下に「−／数字／＋」と、倍率・前回の量のボタンが開く。変更はその場で反映され、閉じるときに「元に戻す」が出る
@@ -1921,7 +1967,8 @@ function amountWarning(amount, base, cal) {   // 打ち間違い（小数点の�
   if (cal >= 1500) return `${ri(cal)}kcalは1品としては多めです`;
   return null;
 }
-const AMT_MULTS = [[0.5, '½'], [1, '1×'], [1.5, '1.5×'], [2, '2×']];
+// 倍率ボタン。「1×」は開いた時点の量そのもので何も変わらないため置かない（元の量に戻すのは「↩ 元の量に戻す」）。狭い画面でも折り返さないよう3つ＋「前回」の量は別の行にする
+const AMT_MULTS = [[0.5, '½'], [1.5, '1.5×'], [2, '2×']];
 let _amtOpen = null;   // 量の調整を開いている記録 {id, snap(開いた時点の記録)}
 function scaleEntryFromSnap(e, snap, amt) {   // 開いた時点の値から比例配分する（何度変えても丸め誤差が溜まらない）
   if (Math.abs(amt - snap.amount) < 1e-9) { Object.assign(e, JSON.parse(JSON.stringify(snap))); return; }   // 元の量に戻すときは、開いた時点の値をそのまま復元する
@@ -1959,8 +2006,8 @@ function amtMul(id, m) { if (_amtOpen && _amtOpen.id === id) amtApply(id, clampA
 function amtRevert(id) { if (_amtOpen && _amtOpen.id === id) amtApply(id, _amtOpen.snap.amount); }
 function amtChipsHtml(cur, base, name, mulCall, setCall) {   // mulCall(m) / setCall(a): onclick に入れる呼び出しの文字列を返す関数
   const recent = recentAmountsFor(name).filter(a => a !== cur).slice(0, 3);
-  return `<div class="amt-chips">${AMT_MULTS.map(([m, l]) => `<button type="button" class="amt-chip${Math.round(base * m * 10) / 10 === cur ? ' on' : ''}" data-m="${m}" onclick="${mulCall(m)}">${l}</button>`).join('')}`
-    + (recent.length ? `<span class="amt-lbl">前回</span>${recent.map(a => `<button type="button" class="amt-chip" onclick="${setCall(a)}">${fmtAmt(a)}</button>`).join('')}` : '') + `</div>`;
+  return `<div class="amt-chips"><div class="amt-row">${AMT_MULTS.map(([m, l]) => `<button type="button" class="amt-chip${Math.round(base * m * 10) / 10 === cur ? ' on' : ''}" data-m="${m}" onclick="${mulCall(m)}">${l}</button>`).join('')}</div>`
+    + (recent.length ? `<div class="amt-row"><span class="amt-lbl">前回</span>${recent.map(a => `<button type="button" class="amt-chip" onclick="${setCall(a)}">${fmtAmt(a)}</button>`).join('')}</div>` : '') + `</div>`;
 }
 function amtStripHtml(e) {
   const base = _amtOpen.snap.amount, cur = e.amount, warn = amountWarning(cur, base, e.cal), changed = Math.abs(cur - base) > 1e-9;
@@ -1981,12 +2028,14 @@ function editAmtRefresh(id) {
   const cu = document.getElementById('eaCur' + id); if (cu) cu.textContent = fmtAmt(cur) + 'g';
   const w = document.getElementById('eaWarn' + id), msg = amountWarning(cur, base, e ? e.cal : 0); if (w) { w.style.display = msg ? 'block' : 'none'; w.textContent = msg ? '⚠ ' + msg : ''; }
   document.querySelectorAll(`#eaCtl${id} .amt-chip[data-m]`).forEach(b => b.classList.toggle('on', Math.round(base * Number(b.dataset.m) * 10) / 10 === cur));
+  const rv = document.getElementById('eaRev' + id); if (rv) { rv.style.display = Math.abs(cur - base) > 1e-9 ? '' : 'none'; rv.textContent = `↩ 元の量（${fmtAmt(base)}g）に戻す`; }
 }
 function editAmtControlsHtml(e) {
-  const recent = recentAmountsFor(e.name).filter(a => a !== e.amount).slice(0, 3);
+  const base = editAmtBase(e.id) || e.amount;
   return `<div class="amt-form" id="eaCtl${e.id}"><div class="amt-line"><button type="button" class="amt-step" onclick="editAmtStep(${e.id},-1)" aria-label="減らす">−</button><span class="amt-cur" id="eaCur${e.id}">${fmtAmt(e.amount)}g</span><button type="button" class="amt-step" onclick="editAmtStep(${e.id},1)" aria-label="増やす">＋</button></div>
-    <div class="amt-chips">${AMT_MULTS.map(([m, l]) => `<button type="button" class="amt-chip${m === 1 ? ' on' : ''}" data-m="${m}" onclick="editAmtMul(${e.id},${m})">${l}</button>`).join('')}${recent.length ? `<span class="amt-lbl">前回</span>${recent.map(a => `<button type="button" class="amt-chip" onclick="editAmtSet(${e.id},${a})">${fmtAmt(a)}</button>`).join('')}` : ''}</div>
-    <div class="amt-warn" id="eaWarn${e.id}" style="display:none"></div></div>`;
+    ${amtChipsHtml(e.amount, base, e.name, m => `editAmtMul(${e.id},${m})`, a => `editAmtSet(${e.id},${a})`)}
+    <div class="amt-warn" id="eaWarn${e.id}" style="display:none"></div>
+    <div class="amt-foot"><button type="button" class="amt-link" id="eaRev${e.id}" style="display:none" onclick="editAmtMul(${e.id},1)">↩ 元の量（${fmtAmt(base)}g）に戻す</button></div></div>`;
 }
 function duplicateEntry(id) {
   const idx = entries.findIndex(e => e.id === id); if (idx < 0) return;
@@ -2983,18 +3032,27 @@ function onStExChange() {
   if (sel && row) row.style.display = sel.value === '__custom' ? 'flex' : 'none';
   stDraft = []; renderStDraft();
 }
+// 1セットの表示。回数は任意（数えていないときは重量ときつさだけ）
+function stSetLabel(s) {
+  const hasReps = s.reps != null && s.reps !== '' && s.reps > 0, rir = s.rir != null ? '＠' + s.rir : '';
+  return (hasReps ? `${s.kg}kg×${s.reps}` : (s.kg > 0 ? `${s.kg}kg` : '自重')) + rir;
+}
 function stAddSet() {
-  const kg = parseFloat(document.getElementById('stKg').value), reps = parseInt(document.getElementById('stReps').value, 10);
+  const kg = parseFloat(document.getElementById('stKg').value), repsRaw = document.getElementById('stReps').value.trim(), nRaw = document.getElementById('stSets').value.trim();
   const rirRaw = document.getElementById('stRir').value, msg = document.getElementById('stMsg');
-  if (!(reps > 0) || !(kg >= 0)) { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = '重量(kg)と回数を入力してください（自重は0kg）'; } return; }
+  const reps = repsRaw === '' ? null : parseInt(repsRaw, 10), n = nRaw === '' ? 1 : parseInt(nRaw, 10);
+  const err = t => { if (msg) { msg.className = 'status-msg status-err'; msg.textContent = t; } };
+  if (!(kg >= 0)) return err('重量(kg)を入力してください（自重・重量なしは0kg）');
+  if (reps !== null && !(reps > 0)) return err('回数は1以上で入力するか、空欄のままにしてください（数えていなければ空欄でOK）');
+  if (!(n >= 1 && n <= 20)) return err('セット数は1〜20で入力してください');
   if (msg) msg.textContent = '';
-  stDraft.push({ kg, reps, rir: rirRaw === '' ? null : parseInt(rirRaw, 10) });
+  for (let i = 0; i < n; i++) stDraft.push({ kg, reps, rir: rirRaw === '' ? null : parseInt(rirRaw, 10) });
   renderStDraft();
 }
 function stRemoveDraftSet(i) { stDraft.splice(i, 1); renderStDraft(); }
 function renderStDraft() {
   const box = document.getElementById('stDraft'); if (!box) return;
-  box.innerHTML = stDraft.map((s, i) => `<span class="st-chip">${i + 1}. ${s.kg}kg×${s.reps}${s.rir != null ? '＠' + s.rir : ''}<button onclick="stRemoveDraftSet(${i})" aria-label="削除">✕</button></span>`).join('');
+  box.innerHTML = stDraft.map((s, i) => `<span class="st-chip">${i + 1}. ${stSetLabel(s)}<button onclick="stRemoveDraftSet(${i})" aria-label="削除">✕</button></span>`).join('');
   const b = document.getElementById('stSaveBtn'); if (b) b.disabled = !stDraft.length;
 }
 function saveStrengthEntry() {
@@ -3027,7 +3085,7 @@ function renderStrengthItems() {
   const day = strengthLog.filter(e => e.date === currentDate);
   box.innerHTML = day.length ? `<div class="meal-items">${day.map(e => `<div class="log-item">
       <div><div class="li-name">🏋 ${stEsc(e.name)}</div>
-      <div class="li-detail">${e.sets.map(s => `${s.kg}kg×${s.reps}${s.rir != null ? '＠' + s.rir : ''}`).join('　')}</div></div>
+      <div class="li-detail">${e.sets.map(stSetLabel).join('　')}</div></div>
       <div class="li-right"><button class="btn btn-sm btn-danger" onclick="deleteStrengthEntry(${e.id})" style="padding:6px 10px">✕</button></div>
     </div>`).join('')}</div>` : '';
 }
@@ -3098,7 +3156,7 @@ function renderStrengthEval() {
     ${seedForm}
     <details style="margin-top:8px"><summary style="font-size:11px;color:var(--text-sub);cursor:pointer">計算の仕組みと限界</summary>
     <div style="font-size:10px;color:var(--text-sub);line-height:1.7;margin-top:6px">
-    ・有効セット＝セット数 × 限界までの余力(RIR)の重み × 回数の重み。間接的に使われる部位は0.5セット換算。RIR未入力は2として扱います。<br>
+    ・有効セット＝セット数 × 限界までの余力(RIR)の重み × 回数の重み。間接的に使われる部位は0.5セット換算。RIR未入力は2として、回数が未入力なら5〜30回として扱います（回数は数えなくても評価できます）。<br>
     ・筋サイズ変化は「有効セットの平方根」に比例（週あたりの逓減）。頻度による上乗せは入れていません（Pelland 2026）。<br>
     ・エネルギー不足は、論文の回帰直線（平均して約500kcal/日の不足で除脂肪量の増加がゼロ。Murphy & Koehler 2022）のゼロ点を使い、維持カロリー付近では多くの人が増やしていたことと、筋肉を作るエネルギーは小さいこと（Slater 2019）から、軽い赤字ほど影響が小さい形にしています。さらに経験が浅いほど（最大で半分）、体脂肪が多いほど（最大で4割）緩めます（リコンプ: Barakat 2020）。緩め方の数値は本アプリの仮定です。<br>
     ・RIRの重み（Robinson 2024）、タンパク質1.6g/kgで頭打ち（Morton 2018）は研究に基づきますが、具体的な係数と「累積セット数による伸びしろの減衰」、範囲（×0.55〜×1.5）は本アプリの仮定です。<br>
@@ -4268,12 +4326,33 @@ function dailyCsvCells(d, bd, x) {
     csvQ(`表示 ${intake}kcal − 食物繊維 ${r1(daySum.fiber)}g × ${FIBER_NET_KCAL_PER_G}kcal = 実質 ${net.netCal}kcal（実質収支 = 実質摂取 − 総消費）`),
   ];
 }
-function downloadCsv(rows, filename) {
+// テキストをクリップボードへ。ユーザー操作中に同期的に呼ぶこと（iOS Safariは操作から離れると拒否する）。非対応・失敗時は旧方式(execCommand)に切り替える
+async function copyTextToClipboard(text) {
+  try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(text); return true; } } catch (e) {}
+  try {
+    const ta = document.createElement('textarea'); ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    const ok = document.execCommand && document.execCommand('copy'); ta.remove(); return !!ok;
+  } catch (e) { return false; }
+}
+// mode='copy' ならファイルではなくクリップボードへ（BOMなしのCSV本文）。コピーできなかったときは、手動でコピーできる欄に表示する
+function copyCsv(rows) {
+  const text = rows.join('\n'), kb = Math.max(1, Math.round(new TextEncoder().encode(text).length / 1024)), area = document.getElementById('csvCopyArea');
+  if (area) { area.style.display = 'none'; area.value = ''; }
+  return copyTextToClipboard(text).then(ok => {
+    if (ok) { showToast(`📋 CSVをコピーしました（${rows.length}行・約${kb}KB）`); return true; }
+    if (area) { area.value = text; area.style.display = 'block'; area.focus(); area.select(); }
+    showToast('⚠️ 自動でコピーできませんでした。下の欄を全選択してコピーしてください');
+    return false;
+  });
+}
+function downloadCsv(rows, filename, mode) {
+  if (mode === 'copy') return copyCsv(rows);
   const blob = new Blob(['\uFEFF' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
 }
-function exportCSV() {
+function exportCSV(mode) {
   const from=document.getElementById('csvFrom').value, to=document.getElementById('csvTo').value;
   let data=[...entries];
   if(from) data=data.filter(e=>e.date>=from);
@@ -4295,11 +4374,11 @@ function exportCSV() {
     const bd = getBmrDetail();
     dates.forEach(d => rows.push(dailyCsvCells(d, bd, di(d)).join(',')));
   }
-  downloadCsv(rows, `pfc_export_${toDateStr(new Date())}.csv`);
+  downloadCsv(rows, `pfc_export_${toDateStr(new Date())}.csv`, mode);
 }
 // 日別だけを1つの表にしたCSV（TDEE・運動・摂取・実質収支・計算式）。期間内の全日を出す（記録の無い日も含む）。表計算ソフトやpandasでそのまま読める
 const DAILY_CSV_HEADERS = [...TDEE_CSV_HEADERS, 'record_count', 'intake_net_carb_g'];
-function exportDailyCSV() {
+function exportDailyCSV(mode) {
   let from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
   const pool = [...entries.map(e => e.date), ...exercises.map(x => x.date), ...Object.keys(dailyActivity)].filter(Boolean).sort();
   if (!from) from = pool[0]; if (!to) to = pool[pool.length - 1];
@@ -4309,11 +4388,11 @@ function exportDailyCSV() {
   for (const d = new Date(from + 'T00:00:00'); toDateStr(d) <= to && dates.length < MAXD; d.setDate(d.getDate() + 1)) dates.push(toDateStr(d));
   const bd = getBmrDetail();
   const rows = [DAILY_CSV_HEADERS.join(','), ...dates.map(d => [...dailyCsvCells(d, bd, dayEnergyInfo(d)), getDayEntries(d).length, r1(sumNetCarb(getDayEntries(d)))].join(','))];
-  downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`);
+  downloadCsv(rows, `pfc_daily_${toDateStr(new Date())}.csv`, mode);
   if (dates.length >= MAXD && toDateStr(new Date(from + 'T00:00:00')) !== to) showToast(`期間が長いため、最初の${MAXD}日分を出力しました`);
 }
 // 筋トレCSV: 1セット1行の表 + 週×部位ごとの有効セット数の表（食事CSVと同じく期間指定に従う）
-function exportStrengthCSV() {
+function exportStrengthCSV(mode) {
   const from = document.getElementById('csvFrom').value, to = document.getElementById('csvTo').value;
   let data = [...strengthLog]; if (from) data = data.filter(e => e.date >= from); if (to) data = data.filter(e => e.date <= to);
   if (!data.length) { showToast('出力できる筋トレ記録がありません'); return; }
@@ -4323,11 +4402,11 @@ function exportStrengthCSV() {
   const rows = [header.join(',')];
   data.forEach(e => {
     const w = M.muscleWeights(e), direct = Object.keys(w).filter(k => w[k] === 1).map(mname).join('/'), indirect = Object.keys(w).filter(k => w[k] < 1).map(mname).join('/');
-    e.sets.forEach((s, i) => rows.push([e.date, csvQ(e.name), i + 1, s.kg, s.reps, s.rir == null ? '' : s.rir, r1(s.kg * s.reps), r2(M.setQuality(s)), csvQ(direct), csvQ(indirect)].join(',')));
+    e.sets.forEach((s, i) => rows.push([e.date, csvQ(e.name), i + 1, s.kg, s.reps == null ? '' : s.reps, s.rir == null ? '' : s.rir, s.reps > 0 ? r1(s.kg * s.reps) : '', r2(M.setQuality(s)), csvQ(direct), csvQ(indirect)].join(',')));
   });
   rows.push('', '# 週(月曜始まり)×部位ごとの有効セット数（有効セット = セット数 × RIRの重み × 回数の重み。間接的に使う部位は0.5倍）', 'week_start,muscle,effective_sets');
   M.weeklyEffectiveSets(data).forEach(r => rows.push([r.week, csvQ(r.name), r.sets].join(',')));
-  downloadCsv(rows, `pfc_strength_${toDateStr(new Date())}.csv`);
+  downloadCsv(rows, `pfc_strength_${toDateStr(new Date())}.csv`, mode);
 }
 function importCSV() {
   const text=document.getElementById('csvImportArea').value.trim();
@@ -5624,7 +5703,7 @@ function buildFullContext() {
     const recent = strengthLog.filter(e => e.date >= cutoff).sort((a, b) => a.date.localeCompare(b.date));
     if (recent.length) {
       lines.push('【筋トレ記録 直近14日（kg×回数@RIR）】');
-      recent.forEach(e => lines.push(`${dateLabel(e.date)}: ${e.name} ${e.sets.map(x => `${x.kg}×${x.reps}` + (x.rir != null ? `@${x.rir}` : '')).join(', ')}`));
+      recent.forEach(e => lines.push(`${dateLabel(e.date)}: ${e.name} ${e.sets.map(x => (x.reps > 0 ? `${x.kg}×${x.reps}` : `${x.kg}kg`) + (x.rir != null ? `@${x.rir}` : '')).join(', ')}`));
     }
   }
 
@@ -6421,6 +6500,33 @@ function findUnvaluedItems(parsed) {
   return out;
 }
 
+// ── AIサーバー呼び出し ──
+// 応答がJSONでない（プラットフォームのHTMLエラーページなど）場合も、状況が分かるエラーにする。
+// 時間切れ(502/504/524/408・サーバーが返す timeout:true・HTML)と判断できたときは、呼び出し側が「軽量モード」で1回だけ再試行する。
+const AI_LITE_NOTE = '\n\n【軽量モード（直前の応答が時間切れになったため）】応答をできるだけ短くしてください。登録系コマンド（add / add_custom_food / add_combo_food）の各食品は、name・per・cal・p・f・c と、ユーザーが数値を示した項目、fiber・salt だけを出力し、他のミクロ栄養素・yomi・fa/aa などは省略してください。message は1〜2文にしてください。';
+function aiHttpErrorMessage(status, bodyText) {
+  if ([502, 503, 504, 524, 408].includes(status) || /timed? ?out|gateway time/i.test(bodyText || '')) {
+    return `AIサーバーが時間内に応答しませんでした（HTTP ${status}）。出力が長い依頼は時間切れになりやすいため、品目を分けて（例: 3品ずつ）お試しください。`;
+  }
+  return `サーバーから想定外の応答がありました（HTTP ${status}）。`;
+}
+async function aiPost(system, messages, lite) {
+  const res = await fetch('/.netlify/functions/ai-chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...(localStorage.getItem('appAccessToken') ? { 'X-App-Token': localStorage.getItem('appAccessToken') } : {}) },
+    body: JSON.stringify({ system: system + (lite ? AI_LITE_NOTE : ''), messages, ...(lite ? { lite: true } : {}) }),
+  });
+  const raw = await res.text(); let data = null; try { data = JSON.parse(raw); } catch (e) {}
+  if (data === null) {   // HTMLなどJSON以外
+    const err = new Error(aiHttpErrorMessage(res.status, raw)); err.httpStatus = res.status; err.bodyHead = raw.slice(0, 200).replace(/\s+/g, ' ');
+    err.timeoutLike = [502, 503, 504, 524, 408].includes(res.status) || /timed? ?out|gateway time/i.test(raw); throw err;   // 500などのHTMLは時間切れとは限らないので再試行しない
+  }
+  if (!res.ok) {
+    const err = new Error(data.error || `サーバーエラー (${res.status})`); err.httpStatus = res.status;
+    err.timeoutLike = data.timeout === true || ([502, 504].includes(res.status) && !data.error); throw err;
+  }
+  return data;
+}
 async function sendAiMessage() {
   const inp = document.getElementById('aiInput');
   const btn = document.getElementById('aiSendBtn');
@@ -6700,6 +6806,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
 - 「〇〇を食べた」に対して、カロリーやPFCが分からないという理由でユーザーに聞き返すことは禁止。あなたの知識で一般的な値を推定するか、銘柄が特定できる市販品・チェーン店メニューなど確度を上げたい場合は検索ツールを使って調べ、必ず自分で数値を確定させて登録すること。ユーザーへの質問は、量や食事区分など、あなたの知識や検索では埋められない情報が本当に無い場合のみに限る
 - amount は必ず正の数値。単位はg（人前ではなくg換算で記入）
 - 複数の食品を同じ meal に追加する場合は items 配列を使い、コマンドは1つにまとめる
+- 4件以上をまとめて登録する依頼では、応答が長いと時間切れになるため、各食品は cal/p/f/c・fiber・salt とユーザーが示した項目だけにして、他のミクロ栄養素・yomi は省略してよい（このときも聞き返さない）
 - add と add_custom_food を混同しない。食べた記録は add、DBへの保存は add_custom_food
 - register_logged_food / register_combo_from_log / combo_food_from_log の entry_id は必ずコンテキストの食事記録に実在する id を使う。id が見つからない・該当日が直近14日の詳細範囲外の場合は無理に実行せず、message で「id特定できないため対応できません」と案内する
 - register_combo_from_log の name は必ずコンテキストの【カスタム食品】一覧と重複しないこと。似た名前になりそうな場合は「（自家製）」「（〇月〇日）」等を付けて区別する
@@ -6733,25 +6840,22 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
   try {
     let workingMessages = [...aiHistory]; // ツール呼び出しのやりとり用のローカル作業コピー（aiHistory本体には最終応答だけ残す）
     let rawText = '';
+    // 時間切れ（応答がHTMLエラーページ/504）のときは、思考を止めて出力も絞った「軽量モード」で1回だけ自動で再試行する
+    let lite = false;
+    const callAi = async (msgs) => {
+      try { return await aiPost(systemPrompt, msgs, lite); }
+      catch (e) {
+        if (lite || !e.timeoutLike) throw e;
+        lite = true;
+        logError('AI通信', `時間切れのため軽量モードで再試行します（${e.message}）`, `HTTP ${e.httpStatus || '-'} ${e.bodyHead || ''}`);
+        showToast('⏱ 時間切れのため、軽量モードで再試行しています…', 4000);
+        return await aiPost(systemPrompt, msgs, true);
+      }
+    };
     const MAX_TOOL_LOOPS = 3;
 
     for (let loop = 0; loop <= MAX_TOOL_LOOPS; loop++) {
-      const res = await fetch('/.netlify/functions/ai-chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(localStorage.getItem('appAccessToken') ? { 'X-App-Token': localStorage.getItem('appAccessToken') } : {}),
-        },
-        body: JSON.stringify({
-          system: systemPrompt,
-          messages: workingMessages,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || `サーバーエラー (${res.status})`);
-      }
+      const data = await callAi(workingMessages);
 
       if (data.functionCall) {
         const { name, args } = data.functionCall;
@@ -6806,13 +6910,8 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
     const retryAi = async (userNote, accept) => {
       try {
         const retryMessages = [...workingMessages, { role: 'assistant', content: rawText }, { role: 'user', content: userNote }];
-        const res2 = await fetch('/.netlify/functions/ai-chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(localStorage.getItem('appAccessToken') ? { 'X-App-Token': localStorage.getItem('appAccessToken') } : {}) },
-          body: JSON.stringify({ system: systemPrompt, messages: retryMessages }),
-        });
-        const data2 = await res2.json();
-        if (!res2.ok || data2.functionCall) return false;
+        const data2 = await callAi(retryMessages);
+        if (data2.functionCall) return false;
         const rawText2 = (data2.content || []).map(b => b.text || '').join('');
         const pr2 = parseAiResponse(rawText2);
         if (!accept(pr2)) return false;
@@ -6904,7 +7003,7 @@ JSONブロックは必ず \`\`\`json で始め \`\`\` で終わること。他�
       ? msg
       : `通信エラーが発生しました。\n${msg}`;
     appendAiMessage('ai', hint);
-    logError('AI通信', msg, err.stack || '');
+    logError('AI通信', msg, `${err.httpStatus ? `HTTP ${err.httpStatus} ` : ''}${err.bodyHead ? `本文: ${err.bodyHead}\n` : ''}${err.stack || ''}`);
     aiHistory.pop();
   }
 
